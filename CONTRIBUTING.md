@@ -45,6 +45,7 @@ Quality checks run automatically on every commit via a git hook:
 
 - **Prettier** auto-formats staged `.ts` files (writes back + re-stages)
 - **ESLint** lints staged `.ts` files (blocks commit on any warning or error)
+- **TSDoc** — ESLint enforces that all exported functions, classes, interfaces, types, and constants have JSDoc/TSDoc documentation with `@param` and `@returns` tags
 - Runs only on staged files — fast even in large repos
 - Activated automatically by `npm install` (via the `prepare` script)
 

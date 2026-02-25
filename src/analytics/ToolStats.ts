@@ -119,6 +119,7 @@ export class ToolStats {
     return entry;
   }
 
+  /** Reset all tool statistics and pending call tracking. */
   clear(): void {
     this.stats.clear();
     this.pendingCalls.clear();

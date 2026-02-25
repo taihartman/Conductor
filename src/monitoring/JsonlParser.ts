@@ -149,7 +149,11 @@ export class JsonlParser {
     this.lineBuffer = '';
   }
 
-  /** Returns the current contents of the line buffer (for testing/debugging). */
+  /**
+   * Returns the current contents of the line buffer (for testing/debugging).
+   *
+   * @returns The buffered partial line content
+   */
   getBufferedContent(): string {
     return this.lineBuffer;
   }

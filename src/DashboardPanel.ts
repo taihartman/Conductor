@@ -160,6 +160,7 @@ export class DashboardPanel implements vscode.Disposable {
 </html>`;
   }
 
+  /** Dispose the panel, clear the singleton, and release all subscriptions. */
   dispose(): void {
     DashboardPanel.currentPanel = undefined;
     this.panel.dispose();

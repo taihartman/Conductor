@@ -11,6 +11,11 @@ import {
 
 let sessionTracker: SessionTracker | undefined;
 
+/**
+ * Activate the Conductor extension.
+ *
+ * @param context - VS Code extension context for registering commands and disposables
+ */
 export function activate(context: vscode.ExtensionContext): void {
   console.log(`${LOG_PREFIX.EXTENSION} Activating extension...`);
   const outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
@@ -44,6 +49,7 @@ export function activate(context: vscode.ExtensionContext): void {
   console.log(`${LOG_PREFIX.EXTENSION} Extension activated successfully`);
 }
 
+/** Deactivate the Conductor extension and release resources. */
 export function deactivate(): void {
   console.log(`${LOG_PREFIX.EXTENSION} Deactivating extension`);
   sessionTracker = undefined;

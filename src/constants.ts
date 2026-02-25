@@ -1,16 +1,19 @@
-// Extension identity
+/** Name shown in the VS Code Output panel dropdown. */
 export const OUTPUT_CHANNEL_NAME = 'Conductor';
+/** Status bar item text (includes a codicon pulse icon). */
 export const STATUS_BAR_TEXT = '$(pulse) Conductor';
+/** Tooltip shown on hover over the status bar item. */
 export const STATUS_BAR_TOOLTIP = 'Open Conductor';
+/** Title displayed in the webview panel tab. */
 export const PANEL_TITLE = 'Conductor';
 
-// Command IDs (must match package.json)
+/** VS Code command identifiers (must match `contributes.commands` in package.json). */
 export const COMMANDS = {
   OPEN: 'conductor.open',
   REFRESH: 'conductor.refresh',
 } as const;
 
-// Log prefixes
+/** Structured log prefixes for Debug Console output. */
 export const LOG_PREFIX = {
   EXTENSION: '[Conductor]',
   PANEL: '[Conductor:Panel]',
@@ -19,7 +22,7 @@ export const LOG_PREFIX = {
   SCANNER: '[Conductor:Scanner]',
 } as const;
 
-// File system path segments
+/** Path segments used to locate Claude transcript files on disk. */
 export const FS_PATHS = {
   CLAUDE_DIR: '.claude',
   PROJECTS_DIR: 'projects',
@@ -28,7 +31,7 @@ export const FS_PATHS = {
   AGENT_PREFIX: 'agent-',
 } as const;
 
-// Text truncation limits
+/** Character limits for truncating text in activity events and tool summaries. */
 export const TRUNCATION = {
   TEXT_MAX: 200,
   DESCRIPTION_MAX: 100,
@@ -37,7 +40,7 @@ export const TRUNCATION = {
   ERROR_MESSAGE_MAX: 200,
 } as const;
 
-// Special record/tool names
+/** Well-known record and tool names used for special-case handling. */
 export const SPECIAL_NAMES = {
   ASK_USER_QUESTION: 'AskUserQuestion',
   TURN_DURATION_SUBTYPE: 'turn_duration',

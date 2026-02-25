@@ -68,31 +68,67 @@ export class SessionStateMachine implements ISessionStateMachine {
     this.onStateChanged = onStateChanged;
   }
 
+  /**
+   * Current session status.
+   *
+   * @returns The current {@link SessionStatus}
+   */
   get status(): SessionStatus {
     return this._status;
   }
 
+  /**
+   * The `stop_reason` from the most recent assistant message.
+   *
+   * @returns The stop reason string, or `null` if no assistant message has been processed
+   */
   get lastStopReason(): string | null {
     return this._lastStopReason;
   }
 
+  /**
+   * Timestamp (ms since epoch) of the last assistant message.
+   *
+   * @returns Milliseconds since epoch, or `0` if no assistant message has been processed
+   */
   get lastAssistantTime(): number {
     return this._lastAssistantTime;
   }
 
+  /**
+   * The question text if Claude is waiting for user input via AskUserQuestion.
+   *
+   * @returns The question string, or `undefined` if not waiting
+   */
   get pendingQuestion(): string | undefined {
     return this._pendingQuestion;
   }
 
+  /**
+   * Number of tool errors in the recent time window.
+   *
+   * @returns Count of errors within the last {@link ERROR_WINDOW_MS} milliseconds
+   */
   get recentErrorCount(): number {
     this.pruneOldErrors();
     return this.recentErrors.length;
   }
 
+  /**
+   * Force the session to a specific status (e.g., for idle timeout).
+   *
+   * @param status - The new session status
+   */
   setStatus(status: SessionStatus): void {
     this._status = status;
   }
 
+  /**
+   * Process an assistant record and return the updated status.
+   *
+   * @param record - The assistant JSONL record
+   * @returns The new session status after processing
+   */
   handleAssistantRecord(record: AssistantRecord): SessionStatus {
     const msg = record.message;
     if (!msg) return this._status;
@@ -143,6 +179,12 @@ export class SessionStateMachine implements ISessionStateMachine {
     return this._status;
   }
 
+  /**
+   * Process a user record and return the updated status.
+   *
+   * @param record - The user JSONL record
+   * @returns The new session status after processing
+   */
   handleUserRecord(record: UserRecord): SessionStatus {
     const msg = record.message;
     if (!msg) return this._status;
@@ -181,6 +223,12 @@ export class SessionStateMachine implements ISessionStateMachine {
     return this._status;
   }
 
+  /**
+   * Process a system record and return the updated status.
+   *
+   * @param record - The system JSONL record
+   * @returns The new session status after processing
+   */
   handleSystemRecord(record: SystemRecord): SessionStatus {
     if (record.subtype === 'turn_duration') {
       this.cancelTimers();
@@ -190,6 +238,12 @@ export class SessionStateMachine implements ISessionStateMachine {
     return this._status;
   }
 
+  /**
+   * Process a progress record and return the updated status.
+   *
+   * @param _record - The progress JSONL record
+   * @returns The new session status after processing
+   */
   handleProgressRecord(_record: ProgressRecord): SessionStatus {
     this.cancelTimers();
     if (this._status !== 'working') {
@@ -198,6 +252,7 @@ export class SessionStateMachine implements ISessionStateMachine {
     return this._status;
   }
 
+  /** Cancel all pending timers and release resources. */
   dispose(): void {
     this.cancelTimers();
   }

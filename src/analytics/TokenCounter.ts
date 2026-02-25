@@ -220,6 +220,7 @@ export class TokenCounter {
     return Math.round((inputCost + outputCost + cacheReadCost + cacheCreationCost) * 10000) / 10000;
   }
 
+  /** Reset all tracked session token data. */
   clear(): void {
     this.sessions.clear();
   }

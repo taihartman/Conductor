@@ -211,6 +211,7 @@ export class TranscriptWatcher implements vscode.Disposable {
     }
   }
 
+  /** Stop all timers, file watchers, and release resources. */
   dispose(): void {
     if (this.scanTimer) {
       clearInterval(this.scanTimer);

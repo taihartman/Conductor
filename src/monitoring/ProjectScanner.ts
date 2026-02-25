@@ -69,7 +69,11 @@ export class ProjectScanner {
     console.log(`${LOG_PREFIX.SCANNER} Projects dir: ${this.claudeProjectsDir}`);
   }
 
-  /** Returns the absolute path to the Claude projects directory. */
+  /**
+   * Returns the absolute path to the Claude projects directory.
+   *
+   * @returns The resolved projects directory path
+   */
   getProjectsDir(): string {
     return this.claudeProjectsDir;
   }

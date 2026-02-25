@@ -1,4 +1,5 @@
 import tseslint from 'typescript-eslint';
+import jsdoc from 'eslint-plugin-jsdoc';
 
 export default tseslint.config(
   {
@@ -16,6 +17,7 @@ export default tseslint.config(
   },
   ...tseslint.configs.recommended,
   {
+    plugins: { jsdoc },
     languageOptions: {
       parserOptions: {
         projectService: true,
@@ -32,6 +34,30 @@ export default tseslint.config(
         'warn',
         { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
       ],
+
+      // TSDoc enforcement
+      'jsdoc/require-jsdoc': [
+        'warn',
+        {
+          publicOnly: true,
+          require: {
+            FunctionDeclaration: true,
+            MethodDefinition: true,
+            ClassDeclaration: true,
+          },
+          contexts: [
+            'TSInterfaceDeclaration',
+            'TSTypeAliasDeclaration',
+            'TSEnumDeclaration',
+            'ExportNamedDeclaration > VariableDeclaration',
+          ],
+          checkConstructors: false,
+          checkGetters: true,
+        },
+      ],
+      'jsdoc/require-param': 'warn',
+      'jsdoc/require-returns': ['warn', { forceRequireReturn: false }],
+      'jsdoc/check-param-names': 'warn',
     },
   }
 );
