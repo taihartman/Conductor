@@ -1,20 +1,11 @@
 import React from 'react';
 import type { TokenSummary } from '@shared/types';
+import { formatTokens, formatCost, formatModel } from '../utils/formatters';
+import { UI_STRINGS } from '../config/strings';
+import { COLORS } from '../config/colors';
 
 interface TokenUsagePanelInlineProps {
   tokenSummaries: TokenSummary[];
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
-}
-
-function formatCost(usd: number): string {
-  if (usd < 0.01) return `$${usd.toFixed(4)}`;
-  if (usd < 1) return `$${usd.toFixed(3)}`;
-  return `$${usd.toFixed(2)}`;
 }
 
 export function TokenUsagePanelInline({
@@ -30,7 +21,7 @@ export function TokenUsagePanelInline({
           fontSize: '12px',
         }}
       >
-        No token data available
+        {UI_STRINGS.TOKEN_USAGE_EMPTY}
       </div>
     );
   }
@@ -54,19 +45,19 @@ export function TokenUsagePanelInline({
           marginBottom: 'var(--spacing-sm)',
         }}
       >
-        <TokenStat label="Input" value={totalInput} />
-        <TokenStat label="Output" value={totalOutput} />
-        <TokenStat label="Cache" value={totalCacheRead} />
+        <TokenStat label={UI_STRINGS.TOKEN_STAT_INPUT} value={totalInput} />
+        <TokenStat label={UI_STRINGS.TOKEN_STAT_OUTPUT} value={totalOutput} />
+        <TokenStat label={UI_STRINGS.TOKEN_STAT_CACHE} value={totalCacheRead} />
         <div>
           <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}>
-            Cost
+            {UI_STRINGS.TOKEN_STAT_COST}
           </div>
           <div
             style={{
               fontSize: '14px',
               fontWeight: 600,
               fontFamily: 'var(--font-mono)',
-              color: totalCost > 1 ? '#f0ad4e' : 'var(--fg-primary)',
+              color: totalCost > 1 ? COLORS.HIGH_COST_WARNING : 'var(--fg-primary)',
             }}
           >
             {formatCost(totalCost)}
@@ -97,13 +88,7 @@ export function TokenUsagePanelInline({
             }}
             title={ts.model}
           >
-            {ts.model.includes('opus')
-              ? 'Opus'
-              : ts.model.includes('sonnet')
-                ? 'Sonnet'
-                : ts.model.includes('haiku')
-                  ? 'Haiku'
-                  : ts.model}
+            {formatModel(ts.model)}
           </span>
           <span style={{ color: 'var(--fg-muted)', fontSize: '10px' }}>
             {formatTokens(ts.inputTokens + ts.outputTokens)} tokens

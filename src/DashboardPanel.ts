@@ -14,6 +14,7 @@
 import * as vscode from 'vscode';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/protocol';
+import { PANEL_TITLE, LOG_PREFIX } from './constants';
 
 /**
  * Singleton webview panel for the Conductor.
@@ -51,14 +52,14 @@ export class DashboardPanel implements vscode.Disposable {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
     if (DashboardPanel.currentPanel) {
-      console.log('[Conductor:Panel] Revealing existing panel');
+      console.log(`${LOG_PREFIX.PANEL} Revealing existing panel`);
       DashboardPanel.currentPanel.panel.reveal(column);
       return DashboardPanel.currentPanel;
     }
 
     const panel = vscode.window.createWebviewPanel(
       DashboardPanel.viewType,
-      'Conductor',
+      PANEL_TITLE,
       column || vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -67,7 +68,7 @@ export class DashboardPanel implements vscode.Disposable {
       }
     );
 
-    console.log('[Conductor:Panel] Creating new dashboard panel');
+    console.log(`${LOG_PREFIX.PANEL} Creating new dashboard panel`);
     DashboardPanel.currentPanel = new DashboardPanel(panel, context.extensionUri, sessionTracker);
 
     return DashboardPanel.currentPanel;
@@ -106,7 +107,7 @@ export class DashboardPanel implements vscode.Disposable {
   public postFullState(): void {
     const state = this.sessionTracker.getState();
     console.log(
-      `[Conductor:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
+      `${LOG_PREFIX.PANEL} Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
 
     this.postMessage({ type: 'sessions:update', sessions: state.sessions });
@@ -120,7 +121,7 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   private handleMessage(message: WebviewToExtensionMessage): void {
-    console.log(`[Conductor:Panel] Webview message received: ${message.type}`);
+    console.log(`${LOG_PREFIX.PANEL} Webview message received: ${message.type}`);
     switch (message.type) {
       case 'ready':
         this.postFullState();
@@ -150,7 +151,7 @@ export class DashboardPanel implements vscode.Disposable {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
   <link rel="stylesheet" href="${styleUri}">
-  <title>Conductor</title>
+  <title>${PANEL_TITLE}</title>
 </head>
 <body>
   <div id="root"></div>

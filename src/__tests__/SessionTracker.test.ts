@@ -91,7 +91,7 @@ describe('SessionTracker record processing', () => {
         case 'system': {
           const sys = record as SystemRecord;
           if (sys.subtype === 'turn_duration') {
-            statusTransitions.push('done');
+            statusTransitions.push('waiting');
             turnCount++;
           }
           break;
@@ -101,7 +101,7 @@ describe('SessionTracker record processing', () => {
 
     // Verify state machine transitions make sense
     expect(statusTransitions.length).toBeGreaterThan(0);
-    expect(statusTransitions[statusTransitions.length - 1]).toBe('done');
+    expect(statusTransitions[statusTransitions.length - 1]).toBe('waiting');
     expect(totalInput).toBeGreaterThan(0);
     expect(totalOutput).toBeGreaterThan(0);
     expect(turnCount).toBeGreaterThanOrEqual(1);

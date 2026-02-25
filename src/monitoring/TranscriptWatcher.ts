@@ -19,6 +19,7 @@ import * as path from 'path';
 import { ProjectScanner, SessionFile } from './ProjectScanner';
 import { JsonlParser, ParseResult } from './JsonlParser';
 import { JsonlRecord } from '../models/types';
+import { LOG_PREFIX, FS_PATHS } from '../constants';
 
 /** Event emitted when new records are read from a transcript file. */
 export interface WatcherEvent {
@@ -76,13 +77,13 @@ export class TranscriptWatcher implements vscode.Disposable {
    * both the scan timer ({@link SCAN_INTERVAL_MS}) and poll timer ({@link POLL_INTERVAL_MS}).
    */
   start(): void {
-    console.log('[Conductor:Watcher] Starting transcript watcher...');
+    console.log(`${LOG_PREFIX.WATCHER} Starting transcript watcher...`);
     this.setupFileWatcher();
     this.scanForFiles();
     this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
     this.pollTimer = setInterval(() => this.pollTracked(), POLL_INTERVAL_MS);
     console.log(
-      `[Conductor:Watcher] Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`
+      `${LOG_PREFIX.WATCHER} Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`
     );
   }
 
@@ -90,12 +91,12 @@ export class TranscriptWatcher implements vscode.Disposable {
     const files = this.scanner.scanSessionFiles(undefined, MAX_AGE_MS);
     const newCount = files.filter((f) => !this.trackedFiles.has(f.filePath)).length;
     console.log(
-      `[Conductor:Watcher] Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
+      `${LOG_PREFIX.WATCHER} Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
     );
     for (const file of files) {
       if (!this.trackedFiles.has(file.filePath)) {
         console.log(
-          `[Conductor:Watcher] Tracking new file: ${file.sessionId} (${file.projectDir})`
+          `${LOG_PREFIX.WATCHER} Tracking new file: ${file.sessionId} (${file.projectDir})`
         );
         this.trackedFiles.set(file.filePath, file);
         this.onNewFileCallback(file);
@@ -114,7 +115,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
   private setupFileWatcher(): void {
     const projectsDir = this.scanner.getProjectsDir();
-    console.log(`[Conductor:Watcher] Setting up FileSystemWatcher on: ${projectsDir}`);
+    console.log(`${LOG_PREFIX.WATCHER} Setting up FileSystemWatcher on: ${projectsDir}`);
 
     try {
       const pattern = new vscode.RelativePattern(vscode.Uri.file(projectsDir), '**/*.jsonl');
@@ -124,14 +125,14 @@ export class TranscriptWatcher implements vscode.Disposable {
       watcher.onDidCreate((uri) => {
         const filePath = uri.fsPath;
         if (!this.trackedFiles.has(filePath)) {
-          const baseName = path.basename(filePath, '.jsonl');
+          const baseName = path.basename(filePath, FS_PATHS.JSONL_EXT);
           const parentDir = path.basename(path.dirname(filePath));
-          const isSubAgent = baseName.startsWith('agent-');
+          const isSubAgent = baseName.startsWith(FS_PATHS.AGENT_PREFIX);
 
           let projectDir: string;
           let parentSessionId: string | undefined;
 
-          if (parentDir === 'subagents') {
+          if (parentDir === FS_PATHS.SUBAGENTS_DIR) {
             // File is in [UUID]/subagents/agent-xyz.jsonl
             const grandparentDir = path.basename(path.dirname(path.dirname(filePath)));
             const greatGrandparentDir = path.basename(
@@ -201,7 +202,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
     if (result.records.length > 0) {
       console.log(
-        `[Conductor:Watcher] Read ${result.records.length} new record(s) from ${file.sessionId} (offset ${currentOffset} → ${result.newOffset})`
+        `${LOG_PREFIX.WATCHER} Read ${result.records.length} new record(s) from ${file.sessionId} (offset ${currentOffset} → ${result.newOffset})`
       );
       this.offsets.set(file.filePath, result.newOffset);
       this.onRecordsCallback({ sessionFile: file, records: result.records });

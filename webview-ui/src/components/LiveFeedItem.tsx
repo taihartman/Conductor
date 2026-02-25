@@ -1,5 +1,7 @@
 import React from 'react';
 import type { ActivityEvent } from '@shared/types';
+import { UI_STRINGS } from '../config/strings';
+import { COLORS } from '../config/colors';
 
 interface LiveFeedItemProps {
   event: ActivityEvent;
@@ -10,20 +12,22 @@ function getDescription(event: ActivityEvent): string {
     case 'tool_call':
       return event.toolInput
         ? `${event.toolName} - ${event.toolInput}`
-        : event.toolName || 'Tool call';
+        : event.toolName || UI_STRINGS.TOOL_CALL_FALLBACK;
     case 'tool_result':
       if (event.isError) {
-        return event.errorMessage ? `Error: ${event.errorMessage}` : 'Error';
+        return event.errorMessage
+          ? `${UI_STRINGS.RESULT_ERROR}: ${event.errorMessage}`
+          : UI_STRINGS.RESULT_ERROR;
       }
-      return 'Completed';
+      return UI_STRINGS.RESULT_COMPLETED;
     case 'text':
       return event.text || '';
     case 'turn_end':
       return event.durationMs
-        ? `Turn completed (${(event.durationMs / 1000).toFixed(1)}s)`
-        : 'Turn completed';
+        ? `${UI_STRINGS.TURN_COMPLETED} (${(event.durationMs / 1000).toFixed(1)}s)`
+        : UI_STRINGS.TURN_COMPLETED;
     case 'user_input':
-      return event.text || 'User message';
+      return event.text || UI_STRINGS.USER_MESSAGE_FALLBACK;
     default:
       return '';
   }
@@ -57,9 +61,9 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
         borderBottom: '1px solid var(--border)',
         opacity: isTurnEnd ? 0.6 : 1,
         backgroundColor: isError
-          ? 'rgba(220, 53, 69, 0.1)'
+          ? COLORS.ERROR_ROW_BG
           : isUserInput
-            ? 'rgba(0, 122, 204, 0.05)'
+            ? COLORS.USER_INPUT_ROW_BG
             : undefined,
       }}
     >
@@ -108,7 +112,7 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
             display: 'inline-block',
             padding: '0 4px',
             borderRadius: '3px',
-            backgroundColor: 'rgba(0, 122, 204, 0.15)',
+            backgroundColor: COLORS.TOOL_BADGE_BG,
             color: 'var(--accent)',
             fontFamily: 'var(--font-mono)',
             fontSize: '11px',

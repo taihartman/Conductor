@@ -309,14 +309,38 @@ Formal plugin manifest and lifecycle, building on all previous phases:
 Track these when contributing. PRs that address debt items are welcome.
 
 - [ ] **Duplicate types in webview** — `webview-ui/src/store/dashboardStore.ts` re-declares types from `src/models/types.ts`. Must be unified via shared types package or path alias.
-- [ ] **Hardcoded tool summarization** — `SessionTracker.summarizeToolInput()` uses a switch over 9 tool names. New tools produce empty summaries. Convert to a configurable map/registry.
+- [x] **Hardcoded tool summarization** — Resolved: extracted to `src/config/toolSummarizers.ts` with a `TOOL_SUMMARIZERS` registry map. New tools can be added without modifying `SessionTracker`.
 - [ ] **Hardcoded model pricing** — `TokenCounter.MODEL_PRICING` requires code changes when pricing changes. Move to external config or VS Code settings.
 - [ ] **Dead `config:theme` protocol message** — Defined in `protocol.ts` but never sent or handled. Remove it.
 - [ ] **Loose typing at IPC boundary** — `useVsCodeMessage.ts` uses a local `ExtensionMessage` interface instead of the typed `ExtensionToWebviewMessage` union. Fix to use shared protocol types.
 - [ ] **No webview dev stub** — Running `npm run dev` in `webview-ui/` crashes because `acquireVsCodeApi` is undefined in browser. Add a dev-mode mock.
 - [ ] **Session focus state duplication** — `focusedSessionId` lives in both `SessionTracker` and `dashboardStore`. Can drift. Single-source it.
-- [ ] **Missing tests** — `ProjectScanner`, `TranscriptWatcher`, `SessionTracker`, `ToolStats`, `DashboardPanel`, all React components, and the IPC boundary lack tests.
+- [ ] **Missing tests** — `TranscriptWatcher`, `ToolStats`, `DashboardPanel`, all React components, and the IPC boundary lack tests.
 - [ ] **Hardcoded asset paths** — `DashboardPanel.getHtml()` hardcodes `assets/index.js` / `assets/index.css`. These must match Vite output config exactly. Consider reading a manifest file.
+
+---
+
+## Constants & Localization
+
+All magic numbers, inline strings, and color literals must be centralized. No inline literals in component or service code.
+
+### Where Constants Live
+
+| Scope | File | Contents |
+|---|---|---|
+| Extension identity, commands, log prefixes, FS paths, truncation limits | `src/constants.ts` | `COMMANDS`, `LOG_PREFIX`, `FS_PATHS`, `TRUNCATION`, `SPECIAL_NAMES` |
+| Tool summarization registry | `src/config/toolSummarizers.ts` | `TOOL_SUMMARIZERS` map + `summarizeToolInput()` |
+| Webview UI strings | `webview-ui/src/config/strings.ts` | `UI_STRINGS` — all user-visible text |
+| Webview inline colors | `webview-ui/src/config/colors.ts` | `COLORS` — rgba/hex literals used in JS styles |
+| Webview formatting utilities | `webview-ui/src/utils/formatters.ts` | `formatModel`, `formatTokens`, `formatCost`, `formatCostCompact`, `timeAgo`, `formatDuration` |
+
+### Rules
+
+- **No inline color literals in components.** Use CSS custom properties (`var(--...)`) or `COLORS` constants.
+- **No duplicate utility functions.** Check `formatters.ts` before writing a new formatter.
+- **No inline magic numbers** in extension code. Promote to module-level named constants or import from `src/constants.ts`.
+- **Tool-specific behavior** (input summarization) goes in `src/config/toolSummarizers.ts`, not in `SessionTracker`.
+- **UI strings** go in `webview-ui/src/config/strings.ts`. Components import from `UI_STRINGS`.
 
 ---
 

@@ -20,7 +20,7 @@ echo "$STAGED_TS" | xargs npx prettier --write
 echo "$STAGED_TS" | xargs git add
 
 echo "[pre-commit] Linting staged .ts files..."
-echo "$STAGED_TS" | xargs npx eslint --max-warnings=0
+echo "$STAGED_TS" | xargs npx eslint --max-warnings=0 --no-warn-ignored
 LINT_EXIT=$?
 
 if [ $LINT_EXIT -ne 0 ]; then

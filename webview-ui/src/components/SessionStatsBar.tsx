@@ -2,25 +2,13 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { STATUS_CONFIG } from '../config/statusConfig';
+import { formatModel, formatTokens, formatCostCompact } from '../utils/formatters';
 
 interface SessionStatsBarProps {
   session: SessionInfo;
   cost: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
-}
-
-function formatModel(model: string): string {
-  if (model.includes('opus')) return 'Opus';
-  if (model.includes('sonnet')) return 'Sonnet';
-  if (model.includes('haiku')) return 'Haiku';
-  return model.split('-').pop() || model;
-}
-
-function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 export function SessionStatsBar({
@@ -100,7 +88,7 @@ export function SessionStatsBar({
 
       {cost > 0 && (
         <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
-          ${cost.toFixed(2)}
+          {formatCostCompact(cost)}
         </span>
       )}
 

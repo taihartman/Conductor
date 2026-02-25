@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import { LOG_PREFIX, FS_PATHS } from '../constants';
 
 /** A discovered Claude Code project directory. */
 export interface ProjectDir {
@@ -63,8 +64,9 @@ export class ProjectScanner {
    * Primarily used for testing.
    */
   constructor(claudeDir?: string) {
-    this.claudeProjectsDir = claudeDir || path.join(os.homedir(), '.claude', 'projects');
-    console.log(`[Conductor:Scanner] Projects dir: ${this.claudeProjectsDir}`);
+    this.claudeProjectsDir =
+      claudeDir || path.join(os.homedir(), FS_PATHS.CLAUDE_DIR, FS_PATHS.PROJECTS_DIR);
+    console.log(`${LOG_PREFIX.SCANNER} Projects dir: ${this.claudeProjectsDir}`);
   }
 
   /** Returns the absolute path to the Claude projects directory. */
@@ -110,7 +112,7 @@ export class ProjectScanner {
       ? [{ name: path.basename(projectDir), path: projectDir }]
       : this.scanProjectDirs();
     console.log(
-      `[Conductor:Scanner] Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
+      `${LOG_PREFIX.SCANNER} Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
     );
 
     const files: SessionFile[] = [];
@@ -123,10 +125,10 @@ export class ProjectScanner {
       const entries = fs.readdirSync(dir.path, { withFileTypes: true });
 
       for (const entry of entries) {
-        if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+        if (entry.isFile() && entry.name.endsWith(FS_PATHS.JSONL_EXT)) {
           const filePath = path.join(dir.path, entry.name);
-          const baseName = entry.name.replace('.jsonl', '');
-          const isSubAgent = baseName.startsWith('agent-');
+          const baseName = entry.name.replace(FS_PATHS.JSONL_EXT, '');
+          const isSubAgent = baseName.startsWith(FS_PATHS.AGENT_PREFIX);
           const sessionId = baseName;
 
           let modifiedAt: Date;
@@ -152,18 +154,18 @@ export class ProjectScanner {
 
         // Scan subdirectories for sub-agent files: [UUID]/subagents/*.jsonl
         if (entry.isDirectory()) {
-          const subagentsDir = path.join(dir.path, entry.name, 'subagents');
+          const subagentsDir = path.join(dir.path, entry.name, FS_PATHS.SUBAGENTS_DIR);
           try {
             if (!fs.existsSync(subagentsDir)) {
               continue;
             }
             const subEntries = fs.readdirSync(subagentsDir, { withFileTypes: true });
             for (const subEntry of subEntries) {
-              if (!subEntry.isFile() || !subEntry.name.endsWith('.jsonl')) {
+              if (!subEntry.isFile() || !subEntry.name.endsWith(FS_PATHS.JSONL_EXT)) {
                 continue;
               }
               const subFilePath = path.join(subagentsDir, subEntry.name);
-              const subBaseName = subEntry.name.replace('.jsonl', '');
+              const subBaseName = subEntry.name.replace(FS_PATHS.JSONL_EXT, '');
 
               let subModifiedAt: Date;
               try {

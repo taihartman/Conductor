@@ -2,6 +2,8 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { STATUS_CONFIG } from '../config/statusConfig';
+import { formatModel } from '../utils/formatters';
+import { UI_STRINGS } from '../config/strings';
 
 interface CollapsedBarProps {
   session: SessionInfo;
@@ -48,18 +50,12 @@ export function CollapsedBar({ session, onExpand }: CollapsedBarProps): React.Re
       >
         {config.label}
       </span>
-      <span style={{ color: 'var(--fg-muted)' }}>
-        {session.model && session.model.includes('opus')
-          ? 'Opus'
-          : session.model?.includes('sonnet')
-            ? 'Sonnet'
-            : session.model?.includes('haiku')
-              ? 'Haiku'
-              : ''}
-      </span>
+      {session.model && (
+        <span style={{ color: 'var(--fg-muted)' }}>{formatModel(session.model)}</span>
+      )}
       <span style={{ flex: 1 }} />
       <span style={{ color: 'var(--fg-muted)', fontSize: '11px' }}>
-        Esc to collapse
+        {UI_STRINGS.COLLAPSE_HINT}
       </span>
     </div>
   );

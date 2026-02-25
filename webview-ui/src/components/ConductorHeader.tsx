@@ -1,16 +1,12 @@
 import React from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
+import { formatCost } from '../utils/formatters';
+import { UI_STRINGS } from '../config/strings';
 
 interface ConductorHeaderProps {
   sessions: SessionInfo[];
   tokenSummaries: TokenSummary[];
   onRefresh: () => void;
-}
-
-function formatCost(usd: number): string {
-  if (usd === 0) return '$0.00';
-  if (usd < 0.01) return '<$0.01';
-  return `$${usd.toFixed(2)}`;
 }
 
 export function ConductorHeader({
@@ -46,7 +42,7 @@ export function ConductorHeader({
             margin: 0,
           }}
         >
-          Conductor
+          {UI_STRINGS.CONDUCTOR_HEADING}
         </h1>
         <div
           style={{
@@ -107,7 +103,7 @@ export function ConductorHeader({
         }}
         title="Refresh sessions"
       >
-        Refresh
+        {UI_STRINGS.REFRESH_BUTTON}
       </button>
     </div>
   );

@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { ActivityEvent } from '@shared/types';
 import { LiveFeedItem } from './LiveFeedItem';
+import { UI_STRINGS } from '../config/strings';
 
 interface LiveFeedProps {
   activities: ActivityEvent[];
@@ -52,7 +53,7 @@ export function LiveFeed({ activities }: LiveFeedProps): React.ReactElement {
               fontSize: '12px',
             }}
           >
-            No activity yet...
+            {UI_STRINGS.LIVE_FEED_EMPTY}
           </div>
         ) : (
           activities.map((event) => (

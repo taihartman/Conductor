@@ -1,13 +1,11 @@
 import React from 'react';
 import type { ToolStatEntry } from '@shared/types';
+import { formatDuration } from '../utils/formatters';
+import { UI_STRINGS } from '../config/strings';
+import { COLORS } from '../config/colors';
 
 interface ToolStatsPanelInlineProps {
   toolStats: ToolStatEntry[];
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): React.ReactElement {
@@ -23,7 +21,7 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
           fontSize: '12px',
         }}
       >
-        No tool calls recorded
+        {UI_STRINGS.TOOL_USAGE_EMPTY}
       </div>
     );
   }
@@ -71,7 +69,7 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
                 height: '100%',
                 width: `${(stat.callCount / maxCount) * 100}%`,
                 backgroundColor:
-                  stat.errorCount > 0 ? 'rgba(220, 53, 69, 0.6)' : 'rgba(0, 122, 204, 0.5)',
+                  stat.errorCount > 0 ? COLORS.ERROR_BAR : COLORS.NORMAL_BAR,
                 borderRadius: '3px',
                 minWidth: '2px',
               }}

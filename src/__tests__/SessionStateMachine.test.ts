@@ -184,8 +184,8 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('working');
   });
 
-  // --- end_turn without tool_use → idle → done after 5s ---
-  it('transitions idle → done after 5s intermission on end_turn', () => {
+  // --- end_turn without tool_use → waiting ---
+  it('transitions to waiting on end_turn without tool_use', () => {
     // First make it working via tool call
     sm.handleAssistantRecord(
       makeAssistantRecord({
@@ -196,7 +196,7 @@ describe('SessionStateMachine', () => {
     );
     expect(sm.status).toBe('working');
 
-    // end_turn text-only → idle
+    // end_turn text-only → waiting (Claude is ready for user input)
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
@@ -205,16 +205,11 @@ describe('SessionStateMachine', () => {
         },
       })
     );
-    expect(sm.status).toBe('idle');
-
-    // After 5s intermission → done
-    vi.advanceTimersByTime(5_000);
-    expect(sm.status).toBe('done');
-    expect(onStateChanged).toHaveBeenCalled();
+    expect(sm.status).toBe('waiting');
   });
 
-  // --- turn_duration → immediately done, cancels intermission ---
-  it('transitions to done immediately on turn_duration', () => {
+  // --- turn_duration → waiting (turn complete, awaiting next user message) ---
+  it('transitions to waiting on turn_duration', () => {
     // Make working first
     sm.handleAssistantRecord(
       makeAssistantRecord({
@@ -226,13 +221,21 @@ describe('SessionStateMachine', () => {
 
     const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 5000 });
     const status = sm.handleSystemRecord(record);
-    expect(status).toBe('done');
+    expect(status).toBe('waiting');
   });
 
-  // --- User input on done → working ---
-  it('transitions from done to working on user text input', () => {
-    sm.setStatus('done');
-    expect(sm.status).toBe('done');
+  // --- User input on waiting → working ---
+  it('transitions from waiting to working on user text input', () => {
+    // Get to waiting via end_turn
+    sm.handleAssistantRecord(
+      makeAssistantRecord({
+        message: {
+          content: [{ type: 'text', text: 'Done' }],
+          stop_reason: 'end_turn',
+        },
+      })
+    );
+    expect(sm.status).toBe('waiting');
 
     sm.handleUserRecord(
       makeUserRecord({
@@ -242,9 +245,9 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('working');
   });
 
-  // --- New data cancels all timers ---
-  it('cancels intermission timer on new data', () => {
-    // Make working, then idle with intermission
+  // --- User input transitions from waiting back to working ---
+  it('transitions from waiting to working when user provides new input', () => {
+    // Make working, then waiting via end_turn
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
@@ -260,17 +263,14 @@ describe('SessionStateMachine', () => {
         },
       })
     );
-    expect(sm.status).toBe('idle');
+    expect(sm.status).toBe('waiting');
 
-    // New user input before timer fires
+    // New user input
     sm.handleUserRecord(
       makeUserRecord({
         message: { content: [{ type: 'text', text: 'More' }] },
       })
     );
-
-    // Advance past intermission — should NOT go to done
-    vi.advanceTimersByTime(5_000);
     expect(sm.status).toBe('working');
   });
 
@@ -365,7 +365,7 @@ describe('SessionStateMachine', () => {
   });
 
   // --- Dispose ---
-  it('dispose cleans up intermission timer', () => {
+  it('dispose cleans up without error', () => {
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
@@ -373,20 +373,7 @@ describe('SessionStateMachine', () => {
         },
       })
     );
-    sm.handleAssistantRecord(
-      makeAssistantRecord({
-        message: {
-          content: [{ type: 'text', text: 'Done' }],
-          stop_reason: 'end_turn',
-        },
-      })
-    );
-
-    sm.dispose();
-
-    // After dispose, timer should not fire
-    vi.advanceTimersByTime(5_000);
-    expect(onStateChanged).not.toHaveBeenCalled();
+    expect(() => sm.dispose()).not.toThrow();
   });
 
   // --- Error window expiry ---

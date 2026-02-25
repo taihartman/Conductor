@@ -1,4 +1,5 @@
 import React from 'react';
+import { UI_STRINGS } from '../config/strings';
 
 export function EmptyState(): React.ReactElement {
   return (
@@ -26,11 +27,10 @@ export function EmptyState(): React.ReactElement {
           marginBottom: 'var(--spacing-sm)',
         }}
       >
-        No Sessions Detected
+        {UI_STRINGS.EMPTY_STATE_HEADING}
       </h2>
       <p style={{ maxWidth: '400px', lineHeight: 1.6 }}>
-        Start one or more Claude Code sessions in your terminal. The dashboard
-        will automatically discover sessions and display their activity in real time.
+        {UI_STRINGS.EMPTY_STATE_DESCRIPTION}
       </p>
       <p
         style={{
@@ -40,7 +40,7 @@ export function EmptyState(): React.ReactElement {
           fontFamily: 'var(--font-mono)',
         }}
       >
-        Monitoring ~/.claude/projects/
+        {UI_STRINGS.EMPTY_STATE_MONITORING}
       </p>
     </div>
   );

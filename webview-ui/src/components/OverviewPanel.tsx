@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
-import { OverviewRow } from './OverviewRow';
+import { OverviewCard } from './OverviewCard';
+import { UI_STRINGS } from '../config/strings';
 
 interface OverviewPanelProps {
   sessions: SessionInfo[];
@@ -33,6 +34,7 @@ export function OverviewPanel({
         overflowY: 'auto',
         overflowX: 'hidden',
         minHeight: 0,
+        padding: 'var(--spacing-sm)',
       }}
     >
       {topLevelSessions.length === 0 ? (
@@ -44,19 +46,27 @@ export function OverviewPanel({
             fontSize: '12px',
           }}
         >
-          No sessions match the current filter
+          {UI_STRINGS.NO_SESSIONS_MATCH}
         </div>
       ) : (
-        topLevelSessions.map((session) => (
-          <OverviewRow
-            key={session.sessionId}
-            session={session}
-            isSelected={focusedSessionId === session.sessionId}
-            cost={costBySession.get(session.sessionId) || 0}
-            onClick={() => onSessionClick(session.sessionId)}
-            onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
-          />
-        ))
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 'var(--spacing-sm)',
+          }}
+        >
+          {topLevelSessions.map((session) => (
+            <OverviewCard
+              key={session.sessionId}
+              session={session}
+              isSelected={focusedSessionId === session.sessionId}
+              cost={costBySession.get(session.sessionId) || 0}
+              onClick={() => onSessionClick(session.sessionId)}
+              onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
+            />
+          ))}
+        </div>
       )}
     </div>
   );

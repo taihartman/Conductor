@@ -24,6 +24,8 @@ import { SessionFile } from './ProjectScanner';
 import { SessionStateMachine, ISessionStateMachine } from './SessionStateMachine';
 import { ToolStats } from '../analytics/ToolStats';
 import { TokenCounter } from '../analytics/TokenCounter';
+import { summarizeToolInput } from '../config/toolSummarizers';
+import { LOG_PREFIX, TRUNCATION, SPECIAL_NAMES } from '../constants';
 import {
   JsonlRecord,
   AssistantRecord,
@@ -74,6 +76,14 @@ const MAX_ACTIVITIES = 500;
 const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
 /** Interval for the stale session cleanup sweep (5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+/** Records older than this on first file read are considered historical replay. */
+const REPLAY_STALE_THRESHOLD_MS = 5 * 60 * 1000;
+/** Debounce interval (ms) for batching state change notifications. */
+const DEBOUNCE_MS = 100;
+/** Maximum activity events sent to the webview in a single state snapshot. */
+const MAX_ACTIVITIES_FOR_WEBVIEW = 200;
+/** Maximum age of session files considered during manual refresh (24 hours). */
+const REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /**
  * Core session orchestrator that processes JSONL records into dashboard state.
@@ -117,7 +127,7 @@ export class SessionTracker implements vscode.Disposable {
    * stale session cleanup. Call once after construction.
    */
   start(): void {
-    console.log('[Conductor:SessionTracker] Starting session tracking...');
+    console.log(`${LOG_PREFIX.SESSION_TRACKER} Starting session tracking...`);
     this.watcher = new TranscriptWatcher(
       this.scanner,
       this.outputChannel,
@@ -127,7 +137,7 @@ export class SessionTracker implements vscode.Disposable {
     this.watcher.start();
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
     this.outputChannel.appendLine('Session tracking started');
-    console.log('[Conductor:SessionTracker] Session tracking started');
+    console.log(`${LOG_PREFIX.SESSION_TRACKER} Session tracking started`);
   }
 
   /**
@@ -139,7 +149,7 @@ export class SessionTracker implements vscode.Disposable {
    */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
-    const files = this.scanner.scanSessionFiles(undefined, 24 * 60 * 60 * 1000);
+    const files = this.scanner.scanSessionFiles(undefined, REFRESH_WINDOW_MS);
     for (const file of files) {
       if (!this.sessions.has(file.sessionId)) {
         this.handleNewFile(file);
@@ -230,7 +240,7 @@ export class SessionTracker implements vscode.Disposable {
 
     return {
       sessions,
-      activities: activities.slice(-200),
+      activities: activities.slice(-MAX_ACTIVITIES_FOR_WEBVIEW),
       toolStats: this.toolStats.getStats(),
       tokenSummaries: this.tokenCounter.getSummaries(),
     };
@@ -238,7 +248,7 @@ export class SessionTracker implements vscode.Disposable {
 
   private handleNewFile(file: SessionFile): void {
     console.log(
-      `[Conductor:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`
+      `${LOG_PREFIX.SESSION_TRACKER} New file: ${file.sessionId} (subAgent=${file.isSubAgent})`
     );
     if (!this.sessions.has(file.sessionId)) {
       const stateMachine = new SessionStateMachine(() => this.emitStateChanged());
@@ -273,7 +283,7 @@ export class SessionTracker implements vscode.Disposable {
   private handleRecords(event: WatcherEvent): void {
     const { sessionFile, records } = event;
     console.log(
-      `[Conductor:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`
+      `${LOG_PREFIX.SESSION_TRACKER} Processing ${records.length} record(s) for session ${sessionFile.sessionId}`
     );
 
     for (const record of records) {
@@ -286,8 +296,7 @@ export class SessionTracker implements vscode.Disposable {
       session.isInitialReplayDone = true;
       const lastRecord = records[records.length - 1];
       const lastRecordTime = lastRecord?.timestamp ? new Date(lastRecord.timestamp).getTime() : 0;
-      const STALE_THRESHOLD_MS = 5 * 60 * 1000;
-      if (lastRecordTime > 0 && Date.now() - lastRecordTime > STALE_THRESHOLD_MS) {
+      if (lastRecordTime > 0 && Date.now() - lastRecordTime > REPLAY_STALE_THRESHOLD_MS) {
         session.stateMachine.setStatus('done');
         session.info.status = 'done';
       }
@@ -298,7 +307,7 @@ export class SessionTracker implements vscode.Disposable {
 
   private processRecord(file: SessionFile, record: JsonlRecord): void {
     console.log(
-      `[Conductor:SessionTracker] Record type=${record.type} session=${file.sessionId}`
+      `${LOG_PREFIX.SESSION_TRACKER} Record type=${record.type} session=${file.sessionId}`
     );
     // Ensure session exists
     if (!this.sessions.has(file.sessionId)) {
@@ -380,7 +389,7 @@ export class SessionTracker implements vscode.Disposable {
     for (const block of msg.content || []) {
       if (block.type === 'tool_use') {
         const toolBlock = block as ToolUseContentBlock;
-        const summarized = this.summarizeToolInput(toolBlock.name, toolBlock.input);
+        const summarized = summarizeToolInput(toolBlock.name, toolBlock.input);
 
         // Track last tool for overview display
         session.info.lastToolName = toolBlock.name;
@@ -411,8 +420,8 @@ export class SessionTracker implements vscode.Disposable {
             timestamp: record.timestamp || new Date().toISOString(),
             type: 'text',
             text:
-              textBlock.text.length > 200
-                ? textBlock.text.substring(0, 200) + '...'
+              textBlock.text.length > TRUNCATION.TEXT_MAX
+                ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
                 : textBlock.text,
           });
         }
@@ -427,7 +436,7 @@ export class SessionTracker implements vscode.Disposable {
 
     // Track turn count on end_turn with no tool_use
     const hasToolUse = (msg.content || []).some((b) => b.type === 'tool_use');
-    if (msg.stop_reason === 'end_turn' && !hasToolUse) {
+    if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON && !hasToolUse) {
       session.info.turnCount++;
     }
   }
@@ -442,7 +451,7 @@ export class SessionTracker implements vscode.Disposable {
         if (block.type === 'text') {
           const textBlock = block as TextContentBlock;
           if (textBlock.text && textBlock.text.trim().length > 0) {
-            session.description = textBlock.text.substring(0, 100);
+            session.description = textBlock.text.substring(0, TRUNCATION.DESCRIPTION_MAX);
             break;
           }
         }
@@ -463,13 +472,13 @@ export class SessionTracker implements vscode.Disposable {
         let errorMessage: string | undefined;
         if (resultBlock.is_error && resultBlock.content) {
           if (typeof resultBlock.content === 'string') {
-            errorMessage = resultBlock.content.substring(0, 200);
+            errorMessage = resultBlock.content.substring(0, TRUNCATION.ERROR_MESSAGE_MAX);
           } else if (Array.isArray(resultBlock.content)) {
             const text = resultBlock.content
               .filter((c) => c.type === 'text' && c.text)
               .map((c) => c.text)
               .join(' ');
-            errorMessage = text.substring(0, 200) || undefined;
+            errorMessage = text.substring(0, TRUNCATION.ERROR_MESSAGE_MAX) || undefined;
           }
         }
 
@@ -492,8 +501,8 @@ export class SessionTracker implements vscode.Disposable {
             timestamp: record.timestamp || new Date().toISOString(),
             type: 'user_input',
             text:
-              textBlock.text.length > 200
-                ? textBlock.text.substring(0, 200) + '...'
+              textBlock.text.length > TRUNCATION.TEXT_MAX
+                ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
                 : textBlock.text,
           });
         }
@@ -505,7 +514,7 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private processSystem(session: InternalSessionState, record: SystemRecord): void {
-    if (record.subtype === 'turn_duration') {
+    if (record.subtype === SPECIAL_NAMES.TURN_DURATION_SUBTYPE) {
       session.info.turnCount++;
 
       this.addActivity({
@@ -549,46 +558,21 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
-    switch (toolName) {
-      case 'Read':
-        return String(input.file_path || '');
-      case 'Write':
-        return String(input.file_path || '');
-      case 'Edit':
-        return String(input.file_path || '');
-      case 'Bash':
-        return String(input.command || '').substring(0, 100);
-      case 'Glob':
-        return String(input.pattern || '');
-      case 'Grep':
-        return `${input.pattern || ''} ${input.path || ''}`.trim();
-      case 'Task':
-        return String(input.description || '');
-      case 'WebSearch':
-        return String(input.query || '');
-      case 'WebFetch':
-        return String(input.url || '').substring(0, 80);
-      default:
-        return '';
-    }
-  }
-
   private emitStateChanged(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
     this.debounceTimer = setTimeout(() => {
       console.log(
-        `[Conductor:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
+        `${LOG_PREFIX.SESSION_TRACKER} State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
       );
       this._onStateChanged.fire();
-    }, 100);
+    }, DEBOUNCE_MS);
   }
 
   private cleanupStaleSessions(): void {
     console.log(
-      `[Conductor:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`
+      `${LOG_PREFIX.SESSION_TRACKER} Running stale session cleanup (${this.sessions.size} sessions)`
     );
     const now = Date.now();
     const toRemove: string[] = [];
@@ -596,7 +580,7 @@ export class SessionTracker implements vscode.Disposable {
     for (const [id, session] of this.sessions) {
       const status = session.stateMachine.status;
       if (
-        (status === 'idle' || status === 'done' || status === 'error') &&
+        (status === 'idle' || status === 'done' || status === 'error' || status === 'waiting') &&
         now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
       ) {
         toRemove.push(id);
