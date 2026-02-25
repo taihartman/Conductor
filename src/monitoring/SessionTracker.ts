@@ -13,6 +13,7 @@ import {
   ProgressRecord,
   SessionInfo,
   SessionStatus,
+  SubAgentInfo,
   ActivityEvent,
   ToolStatEntry,
   TokenSummary,
@@ -27,6 +28,8 @@ interface InternalSessionState {
   lastStopReason: string | null;
   idleTimer?: ReturnType<typeof setTimeout>;
   isInitialReplayDone: boolean;
+  parentSessionId?: string;
+  description: string;
 }
 
 export interface DashboardState {
@@ -38,6 +41,8 @@ export interface DashboardState {
 
 const IDLE_TIMEOUT_MS = 30_000;
 const MAX_ACTIVITIES = 500;
+const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
+const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
 export class SessionTracker implements vscode.Disposable {
   private readonly scanner: ProjectScanner;
@@ -52,6 +57,7 @@ export class SessionTracker implements vscode.Disposable {
   public readonly onStateChanged = this._onStateChanged.event;
 
   private debounceTimer?: ReturnType<typeof setTimeout>;
+  private cleanupTimer?: ReturnType<typeof setInterval>;
   private focusedSessionId?: string;
   private eventCounter = 0;
 
@@ -61,6 +67,7 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   start(): void {
+    console.log('[ClaudeDashboard:SessionTracker] Starting session tracking...');
     this.watcher = new TranscriptWatcher(
       this.scanner,
       this.outputChannel,
@@ -68,7 +75,9 @@ export class SessionTracker implements vscode.Disposable {
       (file) => this.handleNewFile(file)
     );
     this.watcher.start();
+    this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
     this.outputChannel.appendLine('Session tracking started');
+    console.log('[ClaudeDashboard:SessionTracker] Session tracking started');
   }
 
   refresh(): void {
@@ -87,19 +96,63 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   getState(): DashboardState {
-    const sessions = Array.from(this.sessions.values())
-      .map((s) => s.info)
-      .sort(
-        (a, b) =>
-          new Date(b.lastActivityAt).getTime() -
-          new Date(a.lastActivityAt).getTime()
-      );
+    // Build parent → children mapping
+    const childrenByParent = new Map<string, SubAgentInfo[]>();
+    const orphanedAgents: SessionInfo[] = [];
 
-    const activities = this.focusedSessionId
-      ? this.activities.filter(
+    for (const session of this.sessions.values()) {
+      if (!session.info.isSubAgent) continue;
+
+      const parentId = session.parentSessionId;
+      if (parentId && this.sessions.has(parentId)) {
+        const children = childrenByParent.get(parentId) || [];
+        children.push({
+          sessionId: session.info.sessionId,
+          slug: session.info.slug,
+          status: session.info.status,
+          description: session.description || session.info.slug,
+          totalInputTokens: session.info.totalInputTokens,
+          totalOutputTokens: session.info.totalOutputTokens,
+          lastActivityAt: session.info.lastActivityAt,
+        });
+        childrenByParent.set(parentId, children);
+      } else {
+        orphanedAgents.push(session.info);
+      }
+    }
+
+    // Build final sessions list: parents with nested children + orphans
+    const parentSessions = Array.from(this.sessions.values())
+      .filter((s) => !s.info.isSubAgent)
+      .map((s) => ({
+        ...s.info,
+        childAgents: childrenByParent.get(s.info.sessionId) || [],
+      }));
+
+    const sessions = [...parentSessions, ...orphanedAgents].sort(
+      (a, b) =>
+        new Date(b.lastActivityAt).getTime() -
+        new Date(a.lastActivityAt).getTime()
+    );
+
+    // Filter activities: when focused on parent, include child activities
+    let activities: ActivityEvent[];
+    if (this.focusedSessionId) {
+      const childIds =
+        childrenByParent.get(this.focusedSessionId)?.map((c) => c.sessionId) || [];
+      const focusSet = new Set([this.focusedSessionId, ...childIds]);
+      // If focused on a sub-agent directly, just show that agent's activities
+      const isSubAgent = this.sessions.get(this.focusedSessionId)?.info.isSubAgent;
+      if (isSubAgent) {
+        activities = this.activities.filter(
           (a) => a.sessionId === this.focusedSessionId
-        )
-      : this.activities;
+        );
+      } else {
+        activities = this.activities.filter((a) => focusSet.has(a.sessionId));
+      }
+    } else {
+      activities = this.activities;
+    }
 
     return {
       sessions,
@@ -110,6 +163,7 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private handleNewFile(file: SessionFile): void {
+    console.log(`[ClaudeDashboard:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`);
     if (!this.sessions.has(file.sessionId)) {
       this.sessions.set(file.sessionId, {
         info: {
@@ -128,17 +182,21 @@ export class SessionTracker implements vscode.Disposable {
           totalCacheReadTokens: 0,
           totalCacheCreationTokens: 0,
           isSubAgent: file.isSubAgent,
+          parentSessionId: file.parentSessionId,
           filePath: file.filePath,
         },
         lastAssistantTime: 0,
         lastStopReason: null,
         isInitialReplayDone: false,
+        parentSessionId: file.parentSessionId,
+        description: '',
       });
     }
   }
 
   private handleRecords(event: WatcherEvent): void {
     const { sessionFile, records } = event;
+    console.log(`[ClaudeDashboard:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`);
 
     for (const record of records) {
       this.processRecord(sessionFile, record);
@@ -163,6 +221,7 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private processRecord(file: SessionFile, record: JsonlRecord): void {
+    console.log(`[ClaudeDashboard:SessionTracker] Record type=${record.type} session=${file.sessionId}`);
     // Ensure session exists
     if (!this.sessions.has(file.sessionId)) {
       this.handleNewFile(file);
@@ -172,9 +231,14 @@ export class SessionTracker implements vscode.Disposable {
     // Update common metadata from any record
     if (record.slug) {
       session.info.slug = record.slug;
+      // Use slug as default description for sub-agents
+      if (session.info.isSubAgent && !session.description) {
+        session.description = record.slug;
+      }
     }
-    if (record.sessionId && record.sessionId !== file.sessionId) {
-      // Some records have a different sessionId (sub-agents reference parent)
+    if (record.sessionId && record.sessionId !== file.sessionId && session.info.isSubAgent) {
+      session.parentSessionId = record.sessionId;
+      session.info.parentSessionId = record.sessionId;
     }
     if (record.gitBranch) {
       session.info.gitBranch = record.gitBranch;
@@ -306,6 +370,19 @@ export class SessionTracker implements vscode.Disposable {
   ): void {
     const msg = record.message;
     if (!msg) return;
+
+    // Capture description from first user text in sub-agent sessions (the Task prompt)
+    if (session.info.isSubAgent && !session.description) {
+      for (const block of msg.content || []) {
+        if (block.type === 'text') {
+          const textBlock = block as TextContentBlock;
+          if (textBlock.text && textBlock.text.trim().length > 0) {
+            session.description = textBlock.text.substring(0, 100);
+            break;
+          }
+        }
+      }
+    }
 
     for (const block of msg.content || []) {
       if (block.type === 'tool_result') {
@@ -459,14 +536,56 @@ export class SessionTracker implements vscode.Disposable {
       clearTimeout(this.debounceTimer);
     }
     this.debounceTimer = setTimeout(() => {
+      console.log(`[ClaudeDashboard:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`);
       this._onStateChanged.fire();
     }, 100);
+  }
+
+  private cleanupStaleSessions(): void {
+    console.log(`[ClaudeDashboard:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`);
+    const now = Date.now();
+    const toRemove: string[] = [];
+
+    for (const [id, session] of this.sessions) {
+      if (
+        session.info.status === 'idle' &&
+        now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
+      ) {
+        toRemove.push(id);
+      }
+    }
+
+    if (toRemove.length === 0) return;
+
+    const removeSet = new Set(toRemove);
+
+    // When removing a parent, also remove all its children
+    for (const session of this.sessions.values()) {
+      if (session.parentSessionId && removeSet.has(session.parentSessionId)) {
+        removeSet.add(session.info.sessionId);
+      }
+    }
+
+    for (const id of removeSet) {
+      const session = this.sessions.get(id);
+      if (session) {
+        this.clearIdleTimer(session);
+        this.watcher?.removeTracked(session.info.filePath);
+        this.sessions.delete(id);
+      }
+    }
+
+    this.outputChannel.appendLine(`Cleaned up ${removeSet.size} stale session(s)`);
+    this.emitStateChanged();
   }
 
   dispose(): void {
     this.watcher?.dispose();
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
+    }
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
     }
     for (const session of this.sessions.values()) {
       this.clearIdleTimer(session);

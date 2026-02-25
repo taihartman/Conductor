@@ -14,7 +14,7 @@ const FILTER_OPTIONS: { label: string; value: FilterMode }[] = [
   { label: 'All', value: 'all' },
 ];
 
-const RECENT_THRESHOLD_MS = 24 * 60 * 60 * 1000;
+const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 
 export function Dashboard(): React.ReactElement {
   const sessions = useDashboardStore((s) => s.sessions);
@@ -23,6 +23,7 @@ export function Dashboard(): React.ReactElement {
   const setFocusedSession = useDashboardStore((s) => s.setFocusedSession);
   const setFilterMode = useDashboardStore((s) => s.setFilterMode);
 
+  // Sessions from backend are already hierarchical: parents have childAgents, orphans are top-level
   const filteredSessions = (() => {
     switch (filterMode) {
       case 'active':
@@ -36,14 +37,12 @@ export function Dashboard(): React.ReactElement {
     }
   })();
 
-  // Separate parent sessions and sub-agents
-  const parentSessions = filteredSessions.filter((s) => !s.isSubAgent);
-  const subAgentSessions = filteredSessions.filter((s) => s.isSubAgent);
+  // Only show parent sessions + orphaned agents at top level (sub-agents nested in cards)
+  const topLevelSessions = filteredSessions.filter((s) => !s.isSubAgent || !s.parentSessionId);
 
-  const activeSessions = sessions.filter((s) => s.status === 'active').length;
-  const waitingSessions = sessions.filter(
-    (s) => s.status === 'waiting'
-  ).length;
+  const parentOnly = sessions.filter((s) => !s.isSubAgent || !s.parentSessionId);
+  const activeSessions = parentOnly.filter((s) => s.status === 'active').length;
+  const waitingSessions = parentOnly.filter((s) => s.status === 'waiting').length;
 
   function handleSessionClick(sessionId: string): void {
     const newFocus = focusedSessionId === sessionId ? null : sessionId;
@@ -101,7 +100,7 @@ export function Dashboard(): React.ReactElement {
             {activeSessions} active
             {waitingSessions > 0 && ` / ${waitingSessions} waiting`}
             {' / '}
-            {sessions.length} total
+            {parentOnly.length} total
           </span>
         </div>
 
@@ -168,41 +167,16 @@ export function Dashboard(): React.ReactElement {
             paddingRight: 'var(--spacing-xs)',
           }}
         >
-          {parentSessions.map((session) => (
+          {topLevelSessions.map((session) => (
             <AgentCard
               key={session.sessionId}
               session={session}
               isSelected={focusedSessionId === session.sessionId}
               onClick={() => handleSessionClick(session.sessionId)}
+              childAgents={session.childAgents}
+              onSubAgentClick={(subAgentId) => handleSessionClick(subAgentId)}
             />
           ))}
-          {subAgentSessions.length > 0 && (
-            <>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'var(--fg-muted)',
-                  padding: 'var(--spacing-xs) 0',
-                  borderTop: '1px solid var(--border)',
-                  marginTop: 'var(--spacing-xs)',
-                }}
-              >
-                Sub-agents ({subAgentSessions.length})
-              </div>
-              {subAgentSessions.map((session) => (
-                <div
-                  key={session.sessionId}
-                  style={{ paddingLeft: 'var(--spacing-md)' }}
-                >
-                  <AgentCard
-                    session={session}
-                    isSelected={focusedSessionId === session.sessionId}
-                    onClick={() => handleSessionClick(session.sessionId)}
-                  />
-                </div>
-              ))}
-            </>
-          )}
         </div>
 
         {/* Center: Activity feed */}

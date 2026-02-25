@@ -11,7 +11,7 @@ export interface WatcherEvent {
 
 const SCAN_INTERVAL_MS = 30_000;
 const POLL_INTERVAL_MS = 1_000;
-const MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 4 * 60 * 60 * 1000;
 
 export class TranscriptWatcher implements vscode.Disposable {
   private readonly scanner: ProjectScanner;
@@ -38,16 +38,21 @@ export class TranscriptWatcher implements vscode.Disposable {
   }
 
   start(): void {
+    console.log('[ClaudeDashboard:Watcher] Starting transcript watcher...');
     this.setupFileWatcher();
     this.scanForFiles();
     this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
     this.pollTimer = setInterval(() => this.pollTracked(), POLL_INTERVAL_MS);
+    console.log(`[ClaudeDashboard:Watcher] Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`);
   }
 
   private scanForFiles(): void {
     const files = this.scanner.scanSessionFiles(undefined, MAX_AGE_MS);
+    const newCount = files.filter(f => !this.trackedFiles.has(f.filePath)).length;
+    console.log(`[ClaudeDashboard:Watcher] Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`);
     for (const file of files) {
       if (!this.trackedFiles.has(file.filePath)) {
+        console.log(`[ClaudeDashboard:Watcher] Tracking new file: ${file.sessionId} (${file.projectDir})`);
         this.trackedFiles.set(file.filePath, file);
         this.onNewFileCallback(file);
       }
@@ -65,6 +70,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
   private setupFileWatcher(): void {
     const projectsDir = this.scanner.getProjectsDir();
+    console.log(`[ClaudeDashboard:Watcher] Setting up FileSystemWatcher on: ${projectsDir}`);
 
     try {
       const pattern = new vscode.RelativePattern(
@@ -78,13 +84,32 @@ export class TranscriptWatcher implements vscode.Disposable {
         const filePath = uri.fsPath;
         if (!this.trackedFiles.has(filePath)) {
           const baseName = path.basename(filePath, '.jsonl');
-          const dirName = path.basename(path.dirname(filePath));
+          const parentDir = path.basename(path.dirname(filePath));
+          const isSubAgent = baseName.startsWith('agent-');
+
+          let projectDir: string;
+          let parentSessionId: string | undefined;
+
+          if (parentDir === 'subagents') {
+            // File is in [UUID]/subagents/agent-xyz.jsonl
+            const grandparentDir = path.basename(path.dirname(path.dirname(filePath)));
+            const greatGrandparentDir = path.basename(
+              path.dirname(path.dirname(path.dirname(filePath)))
+            );
+            projectDir = greatGrandparentDir;
+            parentSessionId = grandparentDir;
+          } else {
+            projectDir = parentDir;
+            parentSessionId = undefined;
+          }
+
           const sessionFile: SessionFile = {
             sessionId: baseName,
             filePath,
-            projectDir: dirName,
-            isSubAgent: baseName.startsWith('agent-'),
+            projectDir,
+            isSubAgent,
             modifiedAt: new Date(),
+            parentSessionId,
           };
           this.trackedFiles.set(filePath, sessionFile);
           this.onNewFileCallback(sessionFile);
@@ -98,6 +123,12 @@ export class TranscriptWatcher implements vscode.Disposable {
         `FileSystemWatcher setup failed: ${e}. Falling back to polling only.`
       );
     }
+  }
+
+  removeTracked(filePath: string): void {
+    this.trackedFiles.delete(filePath);
+    this.parsers.delete(filePath);
+    this.offsets.delete(filePath);
   }
 
   readNewRecords(file: SessionFile): void {
@@ -115,6 +146,7 @@ export class TranscriptWatcher implements vscode.Disposable {
     );
 
     if (result.records.length > 0) {
+      console.log(`[ClaudeDashboard:Watcher] Read ${result.records.length} new record(s) from ${file.sessionId} (offset ${currentOffset} → ${result.newOffset})`);
       this.offsets.set(file.filePath, result.newOffset);
       this.onRecordsCallback({ sessionFile: file, records: result.records });
     } else if (result.newOffset > currentOffset) {

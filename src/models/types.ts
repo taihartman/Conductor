@@ -145,6 +145,16 @@ export type JsonlRecord =
 // Dashboard state types
 export type SessionStatus = 'active' | 'idle' | 'waiting';
 
+export interface SubAgentInfo {
+  sessionId: string;
+  slug: string;
+  status: SessionStatus;
+  description: string;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  lastActivityAt: string;
+}
+
 export interface SessionInfo {
   sessionId: string;
   slug: string;
@@ -163,6 +173,7 @@ export interface SessionInfo {
   isSubAgent: boolean;
   parentSessionId?: string;
   filePath: string;
+  childAgents?: SubAgentInfo[];
 }
 
 export interface ActivityEvent {

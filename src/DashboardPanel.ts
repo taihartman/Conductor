@@ -19,6 +19,7 @@ export class DashboardPanel implements vscode.Disposable {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
     if (DashboardPanel.currentPanel) {
+      console.log('[ClaudeDashboard:Panel] Revealing existing panel');
       DashboardPanel.currentPanel.panel.reveal(column);
       return DashboardPanel.currentPanel;
     }
@@ -36,6 +37,7 @@ export class DashboardPanel implements vscode.Disposable {
       }
     );
 
+    console.log('[ClaudeDashboard:Panel] Creating new dashboard panel');
     DashboardPanel.currentPanel = new DashboardPanel(
       panel,
       context.extensionUri,
@@ -69,6 +71,7 @@ export class DashboardPanel implements vscode.Disposable {
 
   public postFullState(): void {
     const state = this.sessionTracker.getState();
+    console.log(`[ClaudeDashboard:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`);
 
     this.postMessage({ type: 'sessions:update', sessions: state.sessions });
     this.postMessage({ type: 'activity:full', events: state.activities });
@@ -81,6 +84,7 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   private handleMessage(message: WebviewToExtensionMessage): void {
+    console.log(`[ClaudeDashboard:Panel] Webview message received: ${message.type}`);
     switch (message.type) {
       case 'ready':
         this.postFullState();

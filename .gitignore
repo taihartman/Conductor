@@ -5,3 +5,6 @@ out/
 .DS_Store
 webview-ui/node_modules/
 webview-ui/dist/
+docs/api/
+firebase-debug.log
+.eslintcache

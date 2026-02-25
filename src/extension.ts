@@ -5,6 +5,7 @@ import { SessionTracker } from './monitoring/SessionTracker';
 let sessionTracker: SessionTracker | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
+  console.log('[ClaudeDashboard] Activating extension...');
   const outputChannel = vscode.window.createOutputChannel('Claude Agent Dashboard');
   context.subscriptions.push(outputChannel);
 
@@ -14,6 +15,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const openCommand = vscode.commands.registerCommand(
     'claudeAgentDashboard.open',
     () => {
+      console.log('[ClaudeDashboard] Open command invoked');
       DashboardPanel.createOrShow(context, sessionTracker!);
     }
   );
@@ -21,6 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const refreshCommand = vscode.commands.registerCommand(
     'claudeAgentDashboard.refresh',
     () => {
+      console.log('[ClaudeDashboard] Refresh command invoked');
       sessionTracker?.refresh();
       DashboardPanel.currentPanel?.postFullState();
     }
@@ -40,8 +43,10 @@ export function activate(context: vscode.ExtensionContext): void {
 
   sessionTracker.start();
   outputChannel.appendLine('Claude Agent Dashboard activated');
+  console.log('[ClaudeDashboard] Extension activated successfully');
 }
 
 export function deactivate(): void {
+  console.log('[ClaudeDashboard] Deactivating extension');
   sessionTracker = undefined;
 }

@@ -1,11 +1,13 @@
-import React from 'react';
-import type { SessionInfo } from '../store/dashboardStore';
+import React, { useState } from 'react';
+import type { SessionInfo, SubAgentInfo } from '../store/dashboardStore';
 import { StatusBadge } from './StatusBadge';
 
 interface AgentCardProps {
   session: SessionInfo;
   isSelected: boolean;
   onClick: () => void;
+  childAgents?: SubAgentInfo[];
+  onSubAgentClick?: (sessionId: string) => void;
 }
 
 function formatModel(model: string): string {
@@ -32,11 +34,22 @@ function timeAgo(timestamp: string): string {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+const STATUS_DOT_COLORS: Record<string, string> = {
+  active: 'var(--status-active)',
+  idle: 'var(--status-idle)',
+  waiting: 'var(--status-waiting)',
+};
+
 export function AgentCard({
   session,
   isSelected,
   onClick,
+  childAgents,
+  onSubAgentClick,
 }: AgentCardProps): React.ReactElement {
+  const [expanded, setExpanded] = useState(false);
+  const agentCount = childAgents?.length || 0;
+
   return (
     <div
       onClick={onClick}
@@ -80,7 +93,31 @@ export function AgentCard({
         >
           {session.slug}
         </span>
-        <StatusBadge status={session.status} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          {agentCount > 0 && (
+            <span
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded(!expanded);
+              }}
+              style={{
+                fontSize: '10px',
+                padding: '1px 5px',
+                borderRadius: '3px',
+                backgroundColor: isSelected
+                  ? 'rgba(255,255,255,0.2)'
+                  : 'var(--bg-secondary)',
+                color: isSelected ? 'rgba(255,255,255,0.9)' : 'var(--fg-muted)',
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+              title={expanded ? 'Collapse agents' : 'Expand agents'}
+            >
+              {agentCount} agent{agentCount !== 1 ? 's' : ''} {expanded ? '\u25BE' : '\u25B8'}
+            </span>
+          )}
+          <StatusBadge status={session.status} />
+        </div>
       </div>
 
       {session.summary && (
@@ -124,6 +161,68 @@ export function AgentCard({
           {timeAgo(session.lastActivityAt)}
         </span>
       </div>
+
+      {/* Collapsible sub-agent list */}
+      {expanded && childAgents && childAgents.length > 0 && (
+        <div
+          style={{
+            marginTop: 'var(--spacing-sm)',
+            borderTop: `1px solid ${isSelected ? 'rgba(255,255,255,0.2)' : 'var(--border)'}`,
+            paddingTop: 'var(--spacing-sm)',
+          }}
+        >
+          {childAgents.map((agent) => (
+            <div
+              key={agent.sessionId}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSubAgentClick?.(agent.sessionId);
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                padding: '3px 0',
+                fontSize: '11px',
+                color: isSelected ? 'rgba(255,255,255,0.8)' : 'var(--fg-secondary)',
+                cursor: 'pointer',
+              }}
+            >
+              <span
+                style={{
+                  width: '6px',
+                  height: '6px',
+                  borderRadius: '50%',
+                  backgroundColor: STATUS_DOT_COLORS[agent.status] || 'var(--fg-muted)',
+                  flexShrink: 0,
+                }}
+              />
+              <span
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+                title={agent.description}
+              >
+                {agent.description.length > 60
+                  ? agent.description.substring(0, 60) + '...'
+                  : agent.description}
+              </span>
+              <span
+                style={{
+                  flexShrink: 0,
+                  color: isSelected ? 'rgba(255,255,255,0.5)' : 'var(--fg-muted)',
+                  fontSize: '10px',
+                }}
+              >
+                {formatTokens(agent.totalInputTokens + agent.totalOutputTokens)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

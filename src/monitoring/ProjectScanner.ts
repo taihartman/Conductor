@@ -13,6 +13,7 @@ export interface SessionFile {
   projectDir: string;
   isSubAgent: boolean;
   modifiedAt: Date;
+  parentSessionId?: string;
 }
 
 export class ProjectScanner {
@@ -21,6 +22,7 @@ export class ProjectScanner {
   constructor(claudeDir?: string) {
     this.claudeProjectsDir =
       claudeDir || path.join(os.homedir(), '.claude', 'projects');
+    console.log(`[ClaudeDashboard:Scanner] Projects dir: ${this.claudeProjectsDir}`);
   }
 
   getProjectsDir(): string {
@@ -48,6 +50,7 @@ export class ProjectScanner {
     const dirs = projectDir
       ? [{ name: path.basename(projectDir), path: projectDir }]
       : this.scanProjectDirs();
+    console.log(`[ClaudeDashboard:Scanner] Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`);
 
     const files: SessionFile[] = [];
 
@@ -59,34 +62,73 @@ export class ProjectScanner {
       const entries = fs.readdirSync(dir.path, { withFileTypes: true });
 
       for (const entry of entries) {
-        if (!entry.isFile() || !entry.name.endsWith('.jsonl')) {
-          continue;
+        if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          const filePath = path.join(dir.path, entry.name);
+          const baseName = entry.name.replace('.jsonl', '');
+          const isSubAgent = baseName.startsWith('agent-');
+          const sessionId = baseName;
+
+          let modifiedAt: Date;
+          try {
+            const stat = fs.statSync(filePath);
+            modifiedAt = stat.mtime;
+          } catch {
+            modifiedAt = new Date(0);
+          }
+
+          if (maxAgeMs !== undefined && Date.now() - modifiedAt.getTime() > maxAgeMs) {
+            continue;
+          }
+
+          files.push({
+            sessionId,
+            filePath,
+            projectDir: dir.name,
+            isSubAgent,
+            modifiedAt,
+          });
         }
 
-        const filePath = path.join(dir.path, entry.name);
-        const baseName = entry.name.replace('.jsonl', '');
-        const isSubAgent = baseName.startsWith('agent-');
-        const sessionId = baseName;
+        // Scan subdirectories for sub-agent files: [UUID]/subagents/*.jsonl
+        if (entry.isDirectory()) {
+          const subagentsDir = path.join(dir.path, entry.name, 'subagents');
+          try {
+            if (!fs.existsSync(subagentsDir)) {
+              continue;
+            }
+            const subEntries = fs.readdirSync(subagentsDir, { withFileTypes: true });
+            for (const subEntry of subEntries) {
+              if (!subEntry.isFile() || !subEntry.name.endsWith('.jsonl')) {
+                continue;
+              }
+              const subFilePath = path.join(subagentsDir, subEntry.name);
+              const subBaseName = subEntry.name.replace('.jsonl', '');
 
-        let modifiedAt: Date;
-        try {
-          const stat = fs.statSync(filePath);
-          modifiedAt = stat.mtime;
-        } catch {
-          modifiedAt = new Date(0);
+              let subModifiedAt: Date;
+              try {
+                const stat = fs.statSync(subFilePath);
+                subModifiedAt = stat.mtime;
+              } catch {
+                subModifiedAt = new Date(0);
+              }
+
+              if (maxAgeMs !== undefined && Date.now() - subModifiedAt.getTime() > maxAgeMs) {
+                continue;
+              }
+
+              files.push({
+                sessionId: subBaseName,
+                filePath: subFilePath,
+                projectDir: dir.name,
+                isSubAgent: true,
+                modifiedAt: subModifiedAt,
+                parentSessionId: entry.name,
+              });
+            }
+          } catch {
+            // Permission errors, symlinks, disappearing dirs — skip gracefully
+          }
         }
-
-        if (maxAgeMs !== undefined && Date.now() - modifiedAt.getTime() > maxAgeMs) {
-          continue;
-        }
-
-        files.push({
-          sessionId,
-          filePath,
-          projectDir: dir.name,
-          isSubAgent,
-          modifiedAt,
-        });
       }
     }
 

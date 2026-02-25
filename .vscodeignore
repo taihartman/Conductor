@@ -13,3 +13,13 @@ src/__tests__/**
 vitest.config.ts
 esbuild.js
 tsconfig.json
+docs/**
+.github/**
+CONTRIBUTING.md
+.prettierrc.json
+.prettierignore
+eslint.config.mjs
+typedoc.json
+.claude/**
+CLAUDE.md
+firebase-debug.log

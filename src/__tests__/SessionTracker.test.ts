@@ -149,14 +149,16 @@ describe('SessionTracker replay detection', () => {
   function feedRecords(
     tracker: SessionTracker,
     sessionId: string,
-    records: any[]
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
   ): void {
     const sessionFile = {
       sessionId,
       filePath: `/tmp/test/${sessionId}.jsonl`,
       projectDir: 'test-project',
-      isSubAgent: false,
+      isSubAgent: options?.isSubAgent || false,
       modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
     };
     // Access private handleNewFile and handleRecords via any
     const t = tracker as any;
@@ -224,5 +226,171 @@ describe('SessionTracker replay detection', () => {
     session = state.sessions.find((s) => s.sessionId === 'mr1');
     // User text input sets status to 'active'
     expect(session!.status).toBe('active');
+  });
+});
+
+describe('SessionTracker parent-child grouping', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  function feedRecords(
+    tracker: SessionTracker,
+    sessionId: string,
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
+  ): void {
+    const sessionFile = {
+      sessionId,
+      filePath: `/tmp/test/${sessionId}.jsonl`,
+      projectDir: 'test-project',
+      isSubAgent: options?.isSubAgent || false,
+      modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({ sessionFile, records });
+  }
+
+  it('links sub-agent to parent via directory-based parentSessionId', () => {
+    const now = new Date().toISOString();
+
+    // Create parent session
+    feedRecords(tracker, 'parent-1', JsonlParser.parseString(
+      `{"type":"assistant","slug":"parent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+    ));
+
+    // Create sub-agent linked via directory structure
+    feedRecords(tracker, 'agent-abc', JsonlParser.parseString(
+      `{"type":"assistant","slug":"explore-agent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Exploring"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true, parentSessionId: 'parent-1' });
+
+    const state = tracker.getState();
+
+    // Parent session should have child agents
+    const parent = state.sessions.find((s) => s.sessionId === 'parent-1');
+    expect(parent).toBeDefined();
+    expect(parent!.childAgents).toBeDefined();
+    expect(parent!.childAgents).toHaveLength(1);
+    expect(parent!.childAgents![0].sessionId).toBe('agent-abc');
+  });
+
+  it('links sub-agent to parent via JSONL sessionId field', () => {
+    const now = new Date().toISOString();
+
+    // Create parent session
+    feedRecords(tracker, 'parent-2', JsonlParser.parseString(
+      `{"type":"assistant","slug":"parent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+    ));
+
+    // Create root-level sub-agent (no parentSessionId from directory) — the JSONL record has sessionId=parent-2
+    feedRecords(tracker, 'agent-root', JsonlParser.parseString(
+      `{"type":"assistant","slug":"root-agent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Working"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true });
+
+    const state = tracker.getState();
+    const parent = state.sessions.find((s) => s.sessionId === 'parent-2');
+    expect(parent).toBeDefined();
+    expect(parent!.childAgents).toHaveLength(1);
+    expect(parent!.childAgents![0].sessionId).toBe('agent-root');
+  });
+
+  it('orphaned sub-agents appear at top level', () => {
+    const now = new Date().toISOString();
+
+    // Create sub-agent with no matching parent
+    feedRecords(tracker, 'agent-orphan', JsonlParser.parseString(
+      `{"type":"assistant","slug":"orphan-agent","sessionId":"nonexistent-parent","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Lost"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true });
+
+    const state = tracker.getState();
+
+    // Orphan should appear at top level
+    const orphan = state.sessions.find((s) => s.sessionId === 'agent-orphan');
+    expect(orphan).toBeDefined();
+    expect(orphan!.isSubAgent).toBe(true);
+    // Should not have childAgents (it's an orphaned sub-agent, not a parent)
+    expect(orphan!.childAgents).toBeUndefined();
+  });
+
+  it('focusing a parent session includes child agent activities', () => {
+    const now = new Date().toISOString();
+
+    // Create parent session with activity
+    feedRecords(tracker, 'parent-3', JsonlParser.parseString(
+      `{"type":"assistant","slug":"parent","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+    ));
+
+    // Create child agent with activity
+    feedRecords(tracker, 'agent-child', JsonlParser.parseString(
+      `{"type":"assistant","slug":"child","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true, parentSessionId: 'parent-3' });
+
+    // Focus on parent
+    tracker.focusSession('parent-3');
+    const state = tracker.getState();
+
+    // Activities should include both parent and child
+    const activitySessionIds = state.activities.map((a) => a.sessionId);
+    expect(activitySessionIds).toContain('parent-3');
+    expect(activitySessionIds).toContain('agent-child');
+  });
+
+  it('focusing a sub-agent shows only that agent activities', () => {
+    const now = new Date().toISOString();
+
+    // Create parent
+    feedRecords(tracker, 'parent-4', JsonlParser.parseString(
+      `{"type":"assistant","slug":"parent","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+    ));
+
+    // Create child
+    feedRecords(tracker, 'agent-child2', JsonlParser.parseString(
+      `{"type":"assistant","slug":"child","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true, parentSessionId: 'parent-4' });
+
+    // Focus on sub-agent
+    tracker.focusSession('agent-child2');
+    const state = tracker.getState();
+
+    // Activities should only be from the sub-agent
+    const activitySessionIds = state.activities.map((a) => a.sessionId);
+    expect(activitySessionIds.every((id) => id === 'agent-child2')).toBe(true);
+  });
+
+  it('cleanup removes stale sessions and their children', () => {
+    const oldTimestamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(); // 5 hours ago
+
+    // Create parent session (will be idle from replay detection)
+    feedRecords(tracker, 'stale-parent', JsonlParser.parseString(
+      `{"type":"assistant","slug":"stale","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Old"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+    ));
+
+    // Create child of stale parent
+    feedRecords(tracker, 'agent-stale-child', JsonlParser.parseString(
+      `{"type":"assistant","slug":"stale-child","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Old child"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+    ), { isSubAgent: true, parentSessionId: 'stale-parent' });
+
+    // Verify both exist before cleanup
+    let state = tracker.getState();
+    expect(state.sessions.some((s) => s.sessionId === 'stale-parent')).toBe(true);
+
+    // Trigger cleanup via private method
+    const t = tracker as any;
+    t.cleanupStaleSessions();
+
+    // Both parent and child should be removed
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'stale-parent')).toBeUndefined();
+    expect(state.sessions.find((s) => s.sessionId === 'agent-stale-child')).toBeUndefined();
   });
 });
