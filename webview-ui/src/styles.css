@@ -1,0 +1,76 @@
+:root {
+  --bg-primary: var(--vscode-editor-background, #1e1e1e);
+  --bg-secondary: var(--vscode-sideBar-background, #252526);
+  --bg-card: var(--vscode-editorWidget-background, #2d2d30);
+  --fg-primary: var(--vscode-editor-foreground, #cccccc);
+  --fg-secondary: var(--vscode-descriptionForeground, #999999);
+  --fg-muted: var(--vscode-disabledForeground, #666666);
+  --border: var(--vscode-panel-border, #404040);
+  --accent: var(--vscode-focusBorder, #007acc);
+  --badge-active: #28a745;
+  --badge-waiting: #f0ad4e;
+  --badge-idle: #6c757d;
+  --font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  --font-mono: var(--vscode-editor-font-family, 'Fira Code', monospace);
+  --font-size: var(--vscode-font-size, 13px);
+  --radius: 6px;
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 12px;
+  --spacing-lg: 16px;
+  --spacing-xl: 24px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--fg-primary);
+  font-family: var(--font-family);
+  font-size: var(--font-size);
+  line-height: 1.5;
+  overflow-x: hidden;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--fg-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-secondary);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+button {
+  outline: none;
+}
+
+button:hover {
+  opacity: 0.85;
+}
+
+button:active {
+  opacity: 0.7;
+}

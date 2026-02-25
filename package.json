@@ -1,0 +1,46 @@
+{
+  "name": "claude-agent-dashboard",
+  "displayName": "Claude Agent Dashboard",
+  "description": "Real-time dashboard visualizing Claude Code AI agent activity, tool usage, and token consumption",
+  "version": "0.1.0",
+  "publisher": "claude-dashboard",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "claudeAgentDashboard.open",
+        "title": "Claude Agent Dashboard: Open"
+      },
+      {
+        "command": "claudeAgentDashboard.refresh",
+        "title": "Claude Agent Dashboard: Refresh"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.js --production && npm run build:webview",
+    "build:extension": "node esbuild.js --production",
+    "build:webview": "cd webview-ui && npm run build",
+    "watch": "node esbuild.js --watch",
+    "dev:webview": "cd webview-ui && npm run dev",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}
