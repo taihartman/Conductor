@@ -1,7 +1,7 @@
 /**
  * @module types
  *
- * Shared domain types for the Claude Agent Dashboard extension.
+ * Shared domain types for the Conductor extension.
  * These types are the single source of truth used by both the extension backend
  * and the webview frontend. Never duplicate these in `webview-ui/`.
  */
@@ -235,11 +235,15 @@ export type JsonlRecord =
  * Possible states for a monitored Claude Code session.
  *
  * @remarks
- * State transitions: `idle` → `active` (on user input or tool call) → `waiting`
- * (on `AskUserQuestion` tool) → `active` (on user response) → `idle` (on turn end
- * or {@link IDLE_TIMEOUT_MS} expiry).
+ * Six-state machine:
+ * - `working` — Actively calling tools, writing code
+ * - `thinking` — Generating text response, no tools yet
+ * - `waiting` — Needs user input (AskUserQuestion)
+ * - `error` — Stuck: 3+ tool errors in 60s window
+ * - `done` — Turn completed (turn_duration received or 5s intermission)
+ * - `idle` — Brief pause between turns, may continue
  */
-export type SessionStatus = 'active' | 'idle' | 'waiting';
+export type SessionStatus = 'working' | 'thinking' | 'waiting' | 'error' | 'done' | 'idle';
 
 /** Summary info for a sub-agent spawned by a parent session. */
 export interface SubAgentInfo {
@@ -291,6 +295,12 @@ export interface SessionInfo {
   filePath: string;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
+  /** Most recent tool name (for overview display). */
+  lastToolName?: string;
+  /** Summarized input of the most recent tool. */
+  lastToolInput?: string;
+  /** Question text when status is 'waiting'. */
+  pendingQuestion?: string;
 }
 
 /**
@@ -323,6 +333,8 @@ export interface ActivityEvent {
   isError?: boolean;
   /** Turn duration in ms (present when `type === 'turn_end'`). */
   durationMs?: number;
+  /** Error content when tool_result is_error (present when `type === 'tool_result'` and `isError`). */
+  errorMessage?: string;
 }
 
 /**

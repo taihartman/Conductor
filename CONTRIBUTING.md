@@ -1,4 +1,4 @@
-# Contributing to Claude Agent Dashboard
+# Contributing to Conductor
 
 Thank you for your interest in contributing! This guide covers development setup, coding standards, and the PR process.
 
@@ -14,8 +14,8 @@ Thank you for your interest in contributing! This guide covers development setup
 
 ```bash
 # Clone the repository
-git clone https://github.com/anthropics/claude-agent-dashboard.git
-cd claude-agent-dashboard
+git clone https://github.com/anthropics/conductor.git
+cd conductor
 
 # Install extension dependencies
 npm install

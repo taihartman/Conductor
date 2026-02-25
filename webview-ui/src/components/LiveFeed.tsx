@@ -1,9 +1,12 @@
 import React, { useRef, useEffect } from 'react';
-import { useDashboardStore } from '../store/dashboardStore';
-import { ActivityFeedItem } from './ActivityFeedItem';
+import type { ActivityEvent } from '@shared/types';
+import { LiveFeedItem } from './LiveFeedItem';
 
-export function ActivityFeed(): React.ReactElement {
-  const activities = useDashboardStore((s) => s.activities);
+interface LiveFeedProps {
+  activities: ActivityEvent[];
+}
+
+export function LiveFeed({ activities }: LiveFeedProps): React.ReactElement {
   const scrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScroll = useRef(true);
 
@@ -17,8 +20,7 @@ export function ActivityFeed(): React.ReactElement {
   function handleScroll(): void {
     const el = scrollRef.current;
     if (el) {
-      const isNearBottom =
-        el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
       shouldAutoScroll.current = isNearBottom;
     }
   }
@@ -29,29 +31,9 @@ export function ActivityFeed(): React.ReactElement {
         display: 'flex',
         flexDirection: 'column',
         height: '100%',
-        backgroundColor: 'var(--bg-secondary)',
-        borderRadius: 'var(--radius)',
-        border: '1px solid var(--border)',
         overflow: 'hidden',
       }}
     >
-      <div
-        style={{
-          padding: 'var(--spacing-sm) var(--spacing-md)',
-          borderBottom: '1px solid var(--border)',
-          fontWeight: 600,
-          fontSize: '13px',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-        }}
-      >
-        <span>Activity Feed</span>
-        <span style={{ fontSize: '11px', color: 'var(--fg-muted)' }}>
-          {activities.length} events
-        </span>
-      </div>
-
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -74,7 +56,7 @@ export function ActivityFeed(): React.ReactElement {
           </div>
         ) : (
           activities.map((event) => (
-            <ActivityFeedItem key={event.id} event={event} />
+            <LiveFeedItem key={event.id} event={event} />
           ))
         )}
       </div>

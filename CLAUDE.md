@@ -69,7 +69,7 @@ To debug: press F5 in VS Code to launch the extension host (runs build first).
 
 ### Extension Backend (`src/`)
 
-- **`extension.ts`** — Activation, commands (`claudeAgentDashboard.open`, `.refresh`), status bar
+- **`extension.ts`** — Activation, commands (`conductor.open`, `.refresh`), status bar
 - **`DashboardPanel.ts`** — Webview lifecycle, CSP-secured HTML, IPC bridge
 - **`monitoring/SessionTracker.ts`** — Core orchestrator. Maps sessionId → state, processes JSONL records, emits debounced updates (100ms). Idle timeout: 30s. Max activities: 500. Replay detection: skips data >5min old on first read
 - **`monitoring/ProjectScanner.ts`** — Scans `~/.claude/projects/` for `.jsonl` files
@@ -140,8 +140,8 @@ Tests live in `src/__tests__/`. Vitest with Node.js environment. VS Code is mock
 
 All extension code uses **two logging channels**:
 
-- **`console.log`** — Shows in the **Debug Console** of the host VS Code window (the one where you press F5). Use the `[ClaudeDashboard:<Component>]` prefix for all console logs.
-- **`outputChannel.appendLine`** — Shows in the **Output panel** of the Extension Development Host window (select "Claude Agent Dashboard" from the dropdown).
+- **`console.log`** — Shows in the **Debug Console** of the host VS Code window (the one where you press F5). Use the `[Conductor:<Component>]` prefix for all console logs.
+- **`outputChannel.appendLine`** — Shows in the **Output panel** of the Extension Development Host window (select "Conductor" from the dropdown).
 
 When adding new code, include `console.log` at key lifecycle points (start, new data, state changes, errors). This makes the Debug Console the primary place to monitor the extension during development.
 

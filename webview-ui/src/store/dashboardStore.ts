@@ -1,71 +1,17 @@
 import { create } from 'zustand';
+import type {
+  SessionInfo,
+  SubAgentInfo,
+  SessionStatus,
+  ActivityEvent,
+  ToolStatEntry,
+  TokenSummary,
+} from '@shared/types';
 
-export type SessionStatus = 'active' | 'idle' | 'waiting';
-
-export interface SubAgentInfo {
-  sessionId: string;
-  slug: string;
-  status: SessionStatus;
-  description: string;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  lastActivityAt: string;
-}
-
-export interface SessionInfo {
-  sessionId: string;
-  slug: string;
-  summary: string;
-  status: SessionStatus;
-  model: string;
-  gitBranch: string;
-  cwd: string;
-  startedAt: string;
-  lastActivityAt: string;
-  turnCount: number;
-  totalInputTokens: number;
-  totalOutputTokens: number;
-  totalCacheReadTokens: number;
-  totalCacheCreationTokens: number;
-  isSubAgent: boolean;
-  parentSessionId?: string;
-  filePath: string;
-  childAgents?: SubAgentInfo[];
-}
-
-export interface ActivityEvent {
-  id: string;
-  sessionId: string;
-  sessionSlug: string;
-  timestamp: string;
-  type: 'tool_call' | 'tool_result' | 'text' | 'turn_end' | 'user_input';
-  toolName?: string;
-  toolInput?: string;
-  text?: string;
-  isError?: boolean;
-  durationMs?: number;
-}
-
-export interface ToolStatEntry {
-  toolName: string;
-  callCount: number;
-  errorCount: number;
-  totalDurationMs: number;
-  avgDurationMs: number;
-}
-
-export interface TokenSummary {
-  sessionId: string;
-  sessionSlug: string;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  estimatedCostUsd: number;
-}
+export type { SessionInfo, SubAgentInfo, SessionStatus, ActivityEvent, ToolStatEntry, TokenSummary };
 
 export type FilterMode = 'recent' | 'active' | 'all';
+export type DetailViewMode = 'overview-only' | 'split' | 'expanded';
 
 interface DashboardState {
   sessions: SessionInfo[];
@@ -74,6 +20,8 @@ interface DashboardState {
   tokenSummaries: TokenSummary[];
   focusedSessionId: string | null;
   filterMode: FilterMode;
+  detailViewMode: DetailViewMode;
+  filteredSubAgentId: string | null;
 
   setSessions: (sessions: SessionInfo[]) => void;
   setActivities: (activities: ActivityEvent[]) => void;
@@ -81,6 +29,11 @@ interface DashboardState {
   setTokenSummaries: (summaries: TokenSummary[]) => void;
   setFocusedSession: (sessionId: string | null) => void;
   setFilterMode: (mode: FilterMode) => void;
+  setDetailViewMode: (mode: DetailViewMode) => void;
+  setFilteredSubAgentId: (id: string | null) => void;
+  expandFocusedSession: () => void;
+  collapseFocusedSession: () => void;
+  clearFocus: () => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -90,11 +43,40 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   tokenSummaries: [],
   focusedSessionId: null,
   filterMode: 'recent',
+  detailViewMode: 'overview-only',
+  filteredSubAgentId: null,
 
   setSessions: (sessions) => set({ sessions }),
   setActivities: (activities) => set({ activities }),
   setToolStats: (stats) => set({ toolStats: stats }),
   setTokenSummaries: (summaries) => set({ tokenSummaries: summaries }),
-  setFocusedSession: (sessionId) => set({ focusedSessionId: sessionId }),
+  setFocusedSession: (sessionId) =>
+    set({
+      focusedSessionId: sessionId,
+      detailViewMode: sessionId ? 'split' : 'overview-only',
+      filteredSubAgentId: null,
+    }),
   setFilterMode: (mode) => set({ filterMode: mode }),
+  setDetailViewMode: (mode) => set({ detailViewMode: mode }),
+  setFilteredSubAgentId: (id) => set((state) => ({
+    filteredSubAgentId: state.filteredSubAgentId === id ? null : id,
+  })),
+  expandFocusedSession: () => set({ detailViewMode: 'expanded' }),
+  collapseFocusedSession: () =>
+    set((state) => ({
+      detailViewMode:
+        state.detailViewMode === 'expanded'
+          ? 'split'
+          : 'overview-only',
+      focusedSessionId:
+        state.detailViewMode === 'split' ? null : state.focusedSessionId,
+      filteredSubAgentId:
+        state.detailViewMode === 'split' ? null : state.filteredSubAgentId,
+    })),
+  clearFocus: () =>
+    set({
+      focusedSessionId: null,
+      detailViewMode: 'overview-only',
+      filteredSubAgentId: null,
+    }),
 }));

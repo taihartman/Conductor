@@ -12,12 +12,11 @@
  */
 
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/protocol';
 
 /**
- * Singleton webview panel for the Claude Agent Dashboard.
+ * Singleton webview panel for the Conductor.
  *
  * @remarks
  * Created via {@link createOrShow} and automatically disposed when the user
@@ -26,7 +25,7 @@ import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/p
  */
 export class DashboardPanel implements vscode.Disposable {
   public static currentPanel: DashboardPanel | undefined;
-  private static readonly viewType = 'claudeAgentDashboard';
+  private static readonly viewType = 'conductor';
 
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
@@ -52,14 +51,14 @@ export class DashboardPanel implements vscode.Disposable {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
     if (DashboardPanel.currentPanel) {
-      console.log('[ClaudeDashboard:Panel] Revealing existing panel');
+      console.log('[Conductor:Panel] Revealing existing panel');
       DashboardPanel.currentPanel.panel.reveal(column);
       return DashboardPanel.currentPanel;
     }
 
     const panel = vscode.window.createWebviewPanel(
       DashboardPanel.viewType,
-      'Claude Agent Dashboard',
+      'Conductor',
       column || vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -68,7 +67,7 @@ export class DashboardPanel implements vscode.Disposable {
       }
     );
 
-    console.log('[ClaudeDashboard:Panel] Creating new dashboard panel');
+    console.log('[Conductor:Panel] Creating new dashboard panel');
     DashboardPanel.currentPanel = new DashboardPanel(panel, context.extensionUri, sessionTracker);
 
     return DashboardPanel.currentPanel;
@@ -107,7 +106,7 @@ export class DashboardPanel implements vscode.Disposable {
   public postFullState(): void {
     const state = this.sessionTracker.getState();
     console.log(
-      `[ClaudeDashboard:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
+      `[Conductor:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
 
     this.postMessage({ type: 'sessions:update', sessions: state.sessions });
@@ -121,7 +120,7 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   private handleMessage(message: WebviewToExtensionMessage): void {
-    console.log(`[ClaudeDashboard:Panel] Webview message received: ${message.type}`);
+    console.log(`[Conductor:Panel] Webview message received: ${message.type}`);
     switch (message.type) {
       case 'ready':
         this.postFullState();
@@ -151,7 +150,7 @@ export class DashboardPanel implements vscode.Disposable {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}'; font-src ${webview.cspSource};">
   <link rel="stylesheet" href="${styleUri}">
-  <title>Claude Agent Dashboard</title>
+  <title>Conductor</title>
 </head>
 <body>
   <div id="root"></div>

@@ -1,39 +1,8 @@
 import React from 'react';
-import type { ActivityEvent } from '../store/dashboardStore';
+import type { ActivityEvent } from '@shared/types';
 
-interface ActivityFeedItemProps {
+interface LiveFeedItemProps {
   event: ActivityEvent;
-}
-
-const TOOL_ICONS: Record<string, string> = {
-  Read: 'file',
-  Write: 'new-file',
-  Edit: 'edit',
-  Bash: 'terminal',
-  Glob: 'search',
-  Grep: 'search',
-  Task: 'rocket',
-  WebSearch: 'globe',
-  WebFetch: 'globe',
-  AskUserQuestion: 'question',
-};
-
-function getIcon(event: ActivityEvent): string {
-  if (event.type === 'tool_call' && event.toolName) {
-    return TOOL_ICONS[event.toolName] || 'symbol-method';
-  }
-  switch (event.type) {
-    case 'tool_result':
-      return event.isError ? 'error' : 'check';
-    case 'text':
-      return 'comment';
-    case 'turn_end':
-      return 'debug-stop';
-    case 'user_input':
-      return 'account';
-    default:
-      return 'circle';
-  }
 }
 
 function getDescription(event: ActivityEvent): string {
@@ -43,7 +12,10 @@ function getDescription(event: ActivityEvent): string {
         ? `${event.toolName} - ${event.toolInput}`
         : event.toolName || 'Tool call';
     case 'tool_result':
-      return event.isError ? 'Error' : 'Completed';
+      if (event.isError) {
+        return event.errorMessage ? `Error: ${event.errorMessage}` : 'Error';
+      }
+      return 'Completed';
     case 'text':
       return event.text || '';
     case 'turn_end':
@@ -62,9 +34,15 @@ function formatTime(timestamp: string): string {
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
-export function ActivityFeedItem({
-  event,
-}: ActivityFeedItemProps): React.ReactElement {
+function getIcon(event: ActivityEvent): string {
+  if (event.type === 'tool_call') return '\u25B6';
+  if (event.type === 'tool_result') return event.isError ? '\u2718' : '\u2714';
+  if (event.type === 'turn_end') return '\u25A0';
+  if (event.type === 'user_input') return '\u25CF';
+  return '\u25CB';
+}
+
+export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
   const isError = event.type === 'tool_result' && event.isError;
   const isTurnEnd = event.type === 'turn_end';
   const isUserInput = event.type === 'user_input';
@@ -74,7 +52,7 @@ export function ActivityFeedItem({
       style={{
         display: 'flex',
         gap: 'var(--spacing-sm)',
-        padding: '4px var(--spacing-sm)',
+        padding: '3px var(--spacing-sm)',
         fontSize: '12px',
         borderBottom: '1px solid var(--border)',
         opacity: isTurnEnd ? 0.6 : 1,
@@ -101,22 +79,11 @@ export function ActivityFeedItem({
         style={{
           width: '16px',
           textAlign: 'center',
-          color: isError ? '#dc3545' : 'var(--fg-secondary)',
+          color: isError ? 'var(--status-error)' : 'var(--fg-secondary)',
         }}
-        className={`codicon codicon-${getIcon(event)}`}
         title={event.type}
       >
-        {event.type === 'tool_call'
-          ? '\u25B6'
-          : event.type === 'tool_result'
-            ? event.isError
-              ? '\u2718'
-              : '\u2714'
-            : event.type === 'turn_end'
-              ? '\u25A0'
-              : event.type === 'user_input'
-                ? '\u25CF'
-                : '\u25CB'}
+        {getIcon(event)}
       </span>
 
       <span
@@ -158,7 +125,7 @@ export function ActivityFeedItem({
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          color: isError ? '#dc3545' : 'var(--fg-secondary)',
+          color: isError ? 'var(--status-error)' : 'var(--fg-secondary)',
         }}
         title={getDescription(event)}
       >

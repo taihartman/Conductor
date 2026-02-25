@@ -73,7 +73,7 @@ describe('SessionTracker record processing', () => {
           totalOutput += msg.usage?.output_tokens || 0;
           const hasToolUse = msg.content.some((c) => c.type === 'tool_use');
           if (hasToolUse) {
-            statusTransitions.push('active');
+            statusTransitions.push('working');
           }
           if (msg.stop_reason === 'end_turn' && !hasToolUse) {
             turnCount++;
@@ -84,14 +84,14 @@ describe('SessionTracker record processing', () => {
           const userMsg = (record as UserRecord).message;
           const hasToolResult = userMsg.content.some((c) => c.type === 'tool_result');
           if (hasToolResult) {
-            statusTransitions.push('active');
+            statusTransitions.push('working');
           }
           break;
         }
         case 'system': {
           const sys = record as SystemRecord;
           if (sys.subtype === 'turn_duration') {
-            statusTransitions.push('idle');
+            statusTransitions.push('done');
             turnCount++;
           }
           break;
@@ -101,7 +101,7 @@ describe('SessionTracker record processing', () => {
 
     // Verify state machine transitions make sense
     expect(statusTransitions.length).toBeGreaterThan(0);
-    expect(statusTransitions[statusTransitions.length - 1]).toBe('idle');
+    expect(statusTransitions[statusTransitions.length - 1]).toBe('done');
     expect(totalInput).toBeGreaterThan(0);
     expect(totalOutput).toBeGreaterThan(0);
     expect(turnCount).toBeGreaterThanOrEqual(1);
@@ -164,7 +164,7 @@ describe('SessionTracker replay detection', () => {
     const state = tracker.getState();
     const session = state.sessions.find((s) => s.sessionId === 'old1');
     expect(session).toBeDefined();
-    expect(session!.status).toBe('idle');
+    expect(session!.status).toBe('done');
   });
 
   it('preserves active status for session with recent timestamps', () => {
@@ -178,7 +178,7 @@ describe('SessionTracker replay detection', () => {
     const state = tracker.getState();
     const session = state.sessions.find((s) => s.sessionId === 'live1');
     expect(session).toBeDefined();
-    expect(session!.status).toBe('active');
+    expect(session!.status).toBe('working');
   });
 
   it('does not override status on subsequent reads after initial replay', () => {
@@ -197,13 +197,13 @@ describe('SessionTracker replay detection', () => {
     const t = tracker as any;
     t.handleNewFile(sessionFile);
 
-    // First read: marks as idle (old timestamp)
+    // First read: marks as done (old timestamp, replay detection)
     t.handleRecords({ sessionFile, records: records1 });
     let state = tracker.getState();
     let session = state.sessions.find((s) => s.sessionId === 'mr1');
-    expect(session!.status).toBe('idle');
+    expect(session!.status).toBe('done');
 
-    // Second read: new live records should NOT be forced idle
+    // Second read: new live records should NOT be forced done
     const liveTimestamp = new Date().toISOString();
     const records2 = JsonlParser.parseString(
       `{"type":"user","slug":"multi-read","sessionId":"mr1","timestamp":"${liveTimestamp}","message":{"role":"user","content":[{"type":"text","text":"Do something"}]}}`
@@ -211,8 +211,8 @@ describe('SessionTracker replay detection', () => {
     t.handleRecords({ sessionFile, records: records2 });
     state = tracker.getState();
     session = state.sessions.find((s) => s.sessionId === 'mr1');
-    // User text input sets status to 'active'
-    expect(session!.status).toBe('active');
+    // User text input sets status to 'working'
+    expect(session!.status).toBe('working');
   });
 });
 

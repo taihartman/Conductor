@@ -9,7 +9,7 @@
  * Calls without a matching result remain in the pending map indefinitely.
  */
 
-import { ToolStatEntry, ActivityEvent } from '../models/types';
+import { ToolStatEntry } from '../models/types';
 
 /** Internal tracking state for a tool call awaiting its result. */
 interface ToolCallTracking {

@@ -22,14 +22,12 @@ import { SessionInfo, ActivityEvent, ToolStatEntry, TokenSummary } from './types
  * - `activity:full` — Complete activity feed snapshot (last 200 events).
  * - `toolStats:update` — Aggregated tool usage statistics across all sessions.
  * - `tokens:update` — Per-session token summaries with cost estimates.
- * - `config:theme` — Theme preference (currently unused — see known tech debt).
  */
 export type ExtensionToWebviewMessage =
   | { type: 'sessions:update'; sessions: SessionInfo[] }
   | { type: 'activity:full'; events: ActivityEvent[] }
   | { type: 'toolStats:update'; stats: ToolStatEntry[] }
-  | { type: 'tokens:update'; tokenSummaries: TokenSummary[] }
-  | { type: 'config:theme'; theme: 'dark' | 'light' };
+  | { type: 'tokens:update'; tokenSummaries: TokenSummary[] };
 
 /**
  * Messages sent from the webview to the extension backend.

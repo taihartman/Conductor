@@ -8,6 +8,7 @@ export default tseslint.config(
       'node_modules/**',
       'webview-ui/**',
       'docs/**',
+      'src/__tests__/**',
       'esbuild.js',
       'vitest.config.ts',
       '*.mjs',

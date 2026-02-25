@@ -76,13 +76,13 @@ export class TranscriptWatcher implements vscode.Disposable {
    * both the scan timer ({@link SCAN_INTERVAL_MS}) and poll timer ({@link POLL_INTERVAL_MS}).
    */
   start(): void {
-    console.log('[ClaudeDashboard:Watcher] Starting transcript watcher...');
+    console.log('[Conductor:Watcher] Starting transcript watcher...');
     this.setupFileWatcher();
     this.scanForFiles();
     this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
     this.pollTimer = setInterval(() => this.pollTracked(), POLL_INTERVAL_MS);
     console.log(
-      `[ClaudeDashboard:Watcher] Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`
+      `[Conductor:Watcher] Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`
     );
   }
 
@@ -90,12 +90,12 @@ export class TranscriptWatcher implements vscode.Disposable {
     const files = this.scanner.scanSessionFiles(undefined, MAX_AGE_MS);
     const newCount = files.filter((f) => !this.trackedFiles.has(f.filePath)).length;
     console.log(
-      `[ClaudeDashboard:Watcher] Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
+      `[Conductor:Watcher] Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
     );
     for (const file of files) {
       if (!this.trackedFiles.has(file.filePath)) {
         console.log(
-          `[ClaudeDashboard:Watcher] Tracking new file: ${file.sessionId} (${file.projectDir})`
+          `[Conductor:Watcher] Tracking new file: ${file.sessionId} (${file.projectDir})`
         );
         this.trackedFiles.set(file.filePath, file);
         this.onNewFileCallback(file);
@@ -114,7 +114,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
   private setupFileWatcher(): void {
     const projectsDir = this.scanner.getProjectsDir();
-    console.log(`[ClaudeDashboard:Watcher] Setting up FileSystemWatcher on: ${projectsDir}`);
+    console.log(`[Conductor:Watcher] Setting up FileSystemWatcher on: ${projectsDir}`);
 
     try {
       const pattern = new vscode.RelativePattern(vscode.Uri.file(projectsDir), '**/*.jsonl');
@@ -201,7 +201,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
     if (result.records.length > 0) {
       console.log(
-        `[ClaudeDashboard:Watcher] Read ${result.records.length} new record(s) from ${file.sessionId} (offset ${currentOffset} → ${result.newOffset})`
+        `[Conductor:Watcher] Read ${result.records.length} new record(s) from ${file.sessionId} (offset ${currentOffset} → ${result.newOffset})`
       );
       this.offsets.set(file.filePath, result.newOffset);
       this.onRecordsCallback({ sessionFile: file, records: result.records });

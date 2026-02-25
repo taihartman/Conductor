@@ -26,11 +26,11 @@ export function EmptyState(): React.ReactElement {
           marginBottom: 'var(--spacing-sm)',
         }}
       >
-        No Active Sessions
+        No Sessions Detected
       </h2>
       <p style={{ maxWidth: '400px', lineHeight: 1.6 }}>
-        Start a Claude Code session in your terminal and the dashboard will
-        automatically detect and display agent activity.
+        Start one or more Claude Code sessions in your terminal. The dashboard
+        will automatically discover sessions and display their activity in real time.
       </p>
       <p
         style={{

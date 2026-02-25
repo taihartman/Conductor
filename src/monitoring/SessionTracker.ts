@@ -5,13 +5,9 @@
  * and emits debounced state updates to the dashboard.
  *
  * @remarks
- * **State machine per session:**
- * ```
- * idle → active (user input / tool call)
- *      → waiting (AskUserQuestion tool)
- *      → active (user response / tool result)
- *      → idle (turn_duration system record / IDLE_TIMEOUT_MS expiry)
- * ```
+ * Status transitions are delegated to {@link SessionStateMachine} instances
+ * (one per session). This class owns record routing, metadata extraction,
+ * activity creation, analytics delegation, and hierarchy building.
  *
  * **Key behaviors:**
  * - Debounced updates: state changes are batched and emitted after 100ms of quiet
@@ -19,15 +15,13 @@
  * - Stale cleanup: idle sessions older than {@link STALE_SESSION_MS} (4h) are removed
  *   every {@link CLEANUP_INTERVAL_MS} (5min)
  * - Activity buffer: capped at {@link MAX_ACTIVITIES} (500) entries with FIFO eviction
- *
- * **Note:** This class is identified as a god class (~590 lines) and is slated for
- * decomposition in Phase 2 of the extensibility roadmap. See CLAUDE.md.
  */
 
 import * as vscode from 'vscode';
 import { ProjectScanner } from './ProjectScanner';
 import { TranscriptWatcher, WatcherEvent } from './TranscriptWatcher';
 import { SessionFile } from './ProjectScanner';
+import { SessionStateMachine, ISessionStateMachine } from './SessionStateMachine';
 import { ToolStats } from '../analytics/ToolStats';
 import { TokenCounter } from '../analytics/TokenCounter';
 import {
@@ -38,7 +32,6 @@ import {
   SummaryRecord,
   ProgressRecord,
   SessionInfo,
-  SessionStatus,
   SubAgentInfo,
   ActivityEvent,
   ToolStatEntry,
@@ -52,12 +45,8 @@ import {
 interface InternalSessionState {
   /** Public session metadata sent to the dashboard. */
   info: SessionInfo;
-  /** Timestamp (ms since epoch) of the last assistant message — used for idle detection. */
-  lastAssistantTime: number;
-  /** Stop reason from the last assistant message (`'end_turn'` triggers idle timer). */
-  lastStopReason: string | null;
-  /** Timer handle for the idle timeout fallback. */
-  idleTimer?: ReturnType<typeof setTimeout>;
+  /** State machine owning status transitions and timers. */
+  stateMachine: ISessionStateMachine;
   /** Whether the initial file replay has completed (for stale detection). */
   isInitialReplayDone: boolean;
   /** Parent session ID for sub-agent relationship tracking. */
@@ -79,8 +68,6 @@ export interface DashboardState {
   tokenSummaries: TokenSummary[];
 }
 
-/** Time (ms) after `end_turn` with no new data before a session transitions to idle. */
-const IDLE_TIMEOUT_MS = 30_000;
 /** Maximum number of activity events kept in the buffer (FIFO eviction). */
 const MAX_ACTIVITIES = 500;
 /** Sessions idle longer than this (4 hours) are eligible for cleanup. */
@@ -93,8 +80,9 @@ const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
  *
  * @remarks
  * Owns a {@link ProjectScanner}, {@link TranscriptWatcher}, {@link ToolStats},
- * and {@link TokenCounter}. Implements `vscode.Disposable` for cleanup of all
- * timers, watchers, and event emitters.
+ * and {@link TokenCounter}. Delegates status transitions to per-session
+ * {@link SessionStateMachine} instances. Implements `vscode.Disposable` for
+ * cleanup of all timers, watchers, and event emitters.
  *
  * Emits {@link onStateChanged} (debounced 100ms) whenever session state, activities,
  * tool stats, or token counts change.
@@ -129,7 +117,7 @@ export class SessionTracker implements vscode.Disposable {
    * stale session cleanup. Call once after construction.
    */
   start(): void {
-    console.log('[ClaudeDashboard:SessionTracker] Starting session tracking...');
+    console.log('[Conductor:SessionTracker] Starting session tracking...');
     this.watcher = new TranscriptWatcher(
       this.scanner,
       this.outputChannel,
@@ -139,19 +127,18 @@ export class SessionTracker implements vscode.Disposable {
     this.watcher.start();
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
     this.outputChannel.appendLine('Session tracking started');
-    console.log('[ClaudeDashboard:SessionTracker] Session tracking started');
+    console.log('[Conductor:SessionTracker] Session tracking started');
   }
 
   /**
    * Manually re-scan for session files (last 24 hours) and register new ones.
    *
    * @remarks
-   * Triggered by the `claudeAgentDashboard.refresh` command or the webview
+   * Triggered by the `conductor.refresh` command or the webview
    * `refresh` IPC message. Does not re-read existing tracked files.
    */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
-    // Re-scan for recent files only (last 24 hours)
     const files = this.scanner.scanSessionFiles(undefined, 24 * 60 * 60 * 1000);
     for (const file of files) {
       if (!this.sessions.has(file.sessionId)) {
@@ -184,6 +171,11 @@ export class SessionTracker implements vscode.Disposable {
    * @returns Complete {@link DashboardState} for the webview
    */
   getState(): DashboardState {
+    // Sync status from state machines to SessionInfo
+    for (const session of this.sessions.values()) {
+      session.info.status = session.stateMachine.status;
+    }
+
     // Build parent → children mapping
     const childrenByParent = new Map<string, SubAgentInfo[]>();
     const orphanedAgents: SessionInfo[] = [];
@@ -226,7 +218,6 @@ export class SessionTracker implements vscode.Disposable {
     if (this.focusedSessionId) {
       const childIds = childrenByParent.get(this.focusedSessionId)?.map((c) => c.sessionId) || [];
       const focusSet = new Set([this.focusedSessionId, ...childIds]);
-      // If focused on a sub-agent directly, just show that agent's activities
       const isSubAgent = this.sessions.get(this.focusedSessionId)?.info.isSubAgent;
       if (isSubAgent) {
         activities = this.activities.filter((a) => a.sessionId === this.focusedSessionId);
@@ -247,9 +238,10 @@ export class SessionTracker implements vscode.Disposable {
 
   private handleNewFile(file: SessionFile): void {
     console.log(
-      `[ClaudeDashboard:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`
+      `[Conductor:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`
     );
     if (!this.sessions.has(file.sessionId)) {
+      const stateMachine = new SessionStateMachine(() => this.emitStateChanged());
       this.sessions.set(file.sessionId, {
         info: {
           sessionId: file.sessionId,
@@ -270,8 +262,7 @@ export class SessionTracker implements vscode.Disposable {
           parentSessionId: file.parentSessionId,
           filePath: file.filePath,
         },
-        lastAssistantTime: 0,
-        lastStopReason: null,
+        stateMachine,
         isInitialReplayDone: false,
         parentSessionId: file.parentSessionId,
         description: '',
@@ -282,7 +273,7 @@ export class SessionTracker implements vscode.Disposable {
   private handleRecords(event: WatcherEvent): void {
     const { sessionFile, records } = event;
     console.log(
-      `[ClaudeDashboard:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`
+      `[Conductor:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`
     );
 
     for (const record of records) {
@@ -297,8 +288,8 @@ export class SessionTracker implements vscode.Disposable {
       const lastRecordTime = lastRecord?.timestamp ? new Date(lastRecord.timestamp).getTime() : 0;
       const STALE_THRESHOLD_MS = 5 * 60 * 1000;
       if (lastRecordTime > 0 && Date.now() - lastRecordTime > STALE_THRESHOLD_MS) {
-        session.info.status = 'idle';
-        this.clearIdleTimer(session);
+        session.stateMachine.setStatus('done');
+        session.info.status = 'done';
       }
     }
 
@@ -307,7 +298,7 @@ export class SessionTracker implements vscode.Disposable {
 
   private processRecord(file: SessionFile, record: JsonlRecord): void {
     console.log(
-      `[ClaudeDashboard:SessionTracker] Record type=${record.type} session=${file.sessionId}`
+      `[Conductor:SessionTracker] Record type=${record.type} session=${file.sessionId}`
     );
     // Ensure session exists
     if (!this.sessions.has(file.sessionId)) {
@@ -318,7 +309,6 @@ export class SessionTracker implements vscode.Disposable {
     // Update common metadata from any record
     if (record.slug) {
       session.info.slug = record.slug;
-      // Use slug as default description for sub-agents
       if (session.info.isSubAgent && !session.description) {
         session.description = record.slug;
       }
@@ -358,6 +348,9 @@ export class SessionTracker implements vscode.Disposable {
         // Silently consumed - no UI impact
         break;
     }
+
+    // Sync status from state machine
+    session.info.status = session.stateMachine.status;
   }
 
   private processAssistant(session: InternalSessionState, record: AssistantRecord): void {
@@ -383,18 +376,15 @@ export class SessionTracker implements vscode.Disposable {
       session.info.totalCacheCreationTokens += msg.usage.cache_creation_input_tokens || 0;
     }
 
-    // Process content blocks
-    let hasToolUse = false;
-    let hasAskUser = false;
-
+    // Process content blocks for activity events
     for (const block of msg.content || []) {
       if (block.type === 'tool_use') {
-        hasToolUse = true;
         const toolBlock = block as ToolUseContentBlock;
+        const summarized = this.summarizeToolInput(toolBlock.name, toolBlock.input);
 
-        if (toolBlock.name === 'AskUserQuestion') {
-          hasAskUser = true;
-        }
+        // Track last tool for overview display
+        session.info.lastToolName = toolBlock.name;
+        session.info.lastToolInput = summarized;
 
         this.toolStats.recordToolCall(
           toolBlock.id,
@@ -409,7 +399,7 @@ export class SessionTracker implements vscode.Disposable {
           timestamp: record.timestamp || new Date().toISOString(),
           type: 'tool_call',
           toolName: toolBlock.name,
-          toolInput: this.summarizeToolInput(toolBlock.name, toolBlock.input),
+          toolInput: summarized,
         });
       } else if (block.type === 'text') {
         const textBlock = block as TextContentBlock;
@@ -429,20 +419,16 @@ export class SessionTracker implements vscode.Disposable {
       }
     }
 
-    // Update status
-    if (hasAskUser) {
-      session.info.status = 'waiting';
-    } else if (hasToolUse) {
-      session.info.status = 'active';
-    }
+    // Delegate status transition to state machine
+    session.stateMachine.handleAssistantRecord(record);
 
-    // Track for fallback idle detection
-    session.lastAssistantTime = Date.now();
-    session.lastStopReason = msg.stop_reason;
+    // Sync pendingQuestion from state machine
+    session.info.pendingQuestion = session.stateMachine.pendingQuestion;
 
+    // Track turn count on end_turn with no tool_use
+    const hasToolUse = (msg.content || []).some((b) => b.type === 'tool_use');
     if (msg.stop_reason === 'end_turn' && !hasToolUse) {
       session.info.turnCount++;
-      this.startIdleTimer(session);
     }
   }
 
@@ -466,13 +452,26 @@ export class SessionTracker implements vscode.Disposable {
     for (const block of msg.content || []) {
       if (block.type === 'tool_result') {
         const resultBlock = block as ToolResultContentBlock;
-        session.info.status = 'active';
 
         this.toolStats.recordToolResult(
           resultBlock.tool_use_id,
           resultBlock.is_error || false,
           record.timestamp || new Date().toISOString()
         );
+
+        // Extract error message for display
+        let errorMessage: string | undefined;
+        if (resultBlock.is_error && resultBlock.content) {
+          if (typeof resultBlock.content === 'string') {
+            errorMessage = resultBlock.content.substring(0, 200);
+          } else if (Array.isArray(resultBlock.content)) {
+            const text = resultBlock.content
+              .filter((c) => c.type === 'text' && c.text)
+              .map((c) => c.text)
+              .join(' ');
+            errorMessage = text.substring(0, 200) || undefined;
+          }
+        }
 
         this.addActivity({
           id: `evt-${++this.eventCounter}`,
@@ -481,6 +480,7 @@ export class SessionTracker implements vscode.Disposable {
           timestamp: record.timestamp || new Date().toISOString(),
           type: 'tool_result',
           isError: resultBlock.is_error,
+          errorMessage,
         });
       } else if (block.type === 'text') {
         const textBlock = block as TextContentBlock;
@@ -496,20 +496,17 @@ export class SessionTracker implements vscode.Disposable {
                 ? textBlock.text.substring(0, 200) + '...'
                 : textBlock.text,
           });
-
-          // User input means a new turn is starting
-          session.info.status = 'active';
-          this.clearIdleTimer(session);
         }
       }
     }
+
+    // Delegate status transition to state machine
+    session.stateMachine.handleUserRecord(record);
   }
 
   private processSystem(session: InternalSessionState, record: SystemRecord): void {
     if (record.subtype === 'turn_duration') {
-      session.info.status = 'idle';
       session.info.turnCount++;
-      this.clearIdleTimer(session);
 
       this.addActivity({
         id: `evt-${++this.eventCounter}`,
@@ -520,6 +517,9 @@ export class SessionTracker implements vscode.Disposable {
         durationMs: record.durationMs,
       });
     }
+
+    // Delegate status transition to state machine
+    session.stateMachine.handleSystemRecord(record);
   }
 
   private processSummary(session: InternalSessionState, record: SummaryRecord): void {
@@ -538,30 +538,8 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processProgress(_session: InternalSessionState, _record: ProgressRecord): void {
-    // Progress records are informational; we just keep the session marked active
-    _session.info.status = 'active';
-  }
-
-  private startIdleTimer(session: InternalSessionState): void {
-    this.clearIdleTimer(session);
-    session.idleTimer = setTimeout(() => {
-      // Fallback idle detection: no new data for 30s after end_turn
-      if (
-        session.lastStopReason === 'end_turn' &&
-        Date.now() - session.lastAssistantTime >= IDLE_TIMEOUT_MS
-      ) {
-        session.info.status = 'idle';
-        this.emitStateChanged();
-      }
-    }, IDLE_TIMEOUT_MS);
-  }
-
-  private clearIdleTimer(session: InternalSessionState): void {
-    if (session.idleTimer) {
-      clearTimeout(session.idleTimer);
-      session.idleTimer = undefined;
-    }
+  private processProgress(session: InternalSessionState, record: ProgressRecord): void {
+    session.stateMachine.handleProgressRecord(record);
   }
 
   private addActivity(event: ActivityEvent): void {
@@ -602,7 +580,7 @@ export class SessionTracker implements vscode.Disposable {
     }
     this.debounceTimer = setTimeout(() => {
       console.log(
-        `[ClaudeDashboard:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
+        `[Conductor:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
       );
       this._onStateChanged.fire();
     }, 100);
@@ -610,14 +588,15 @@ export class SessionTracker implements vscode.Disposable {
 
   private cleanupStaleSessions(): void {
     console.log(
-      `[ClaudeDashboard:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`
+      `[Conductor:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`
     );
     const now = Date.now();
     const toRemove: string[] = [];
 
     for (const [id, session] of this.sessions) {
+      const status = session.stateMachine.status;
       if (
-        session.info.status === 'idle' &&
+        (status === 'idle' || status === 'done' || status === 'error') &&
         now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
       ) {
         toRemove.push(id);
@@ -638,7 +617,7 @@ export class SessionTracker implements vscode.Disposable {
     for (const id of removeSet) {
       const session = this.sessions.get(id);
       if (session) {
-        this.clearIdleTimer(session);
+        session.stateMachine.dispose();
         this.watcher?.removeTracked(session.info.filePath);
         this.sessions.delete(id);
       }
@@ -660,7 +639,7 @@ export class SessionTracker implements vscode.Disposable {
       clearInterval(this.cleanupTimer);
     }
     for (const session of this.sessions.values()) {
-      this.clearIdleTimer(session);
+      session.stateMachine.dispose();
     }
     this._onStateChanged.dispose();
     this.sessions.clear();

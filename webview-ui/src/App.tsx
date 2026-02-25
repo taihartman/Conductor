@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { Dashboard } from './components/Dashboard';
+import { ConductorDashboard } from './components/ConductorDashboard';
 import { useVsCodeMessage } from './hooks/useVsCodeMessage';
 import { vscode } from './vscode';
 
@@ -10,5 +10,5 @@ export function App(): React.ReactElement {
     vscode.postMessage({ type: 'ready' });
   }, []);
 
-  return <Dashboard />;
+  return <ConductorDashboard />;
 }

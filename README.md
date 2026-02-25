@@ -1,7 +1,7 @@
-# Claude Agent Dashboard
+# Conductor
 
-[![CI](https://github.com/anthropics/claude-agent-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/claude-agent-dashboard/actions/workflows/ci.yml)
-[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/claude-dashboard.claude-agent-dashboard)](https://marketplace.visualstudio.com/items?itemName=claude-dashboard.claude-agent-dashboard)
+[![CI](https://github.com/anthropics/conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/conductor/actions/workflows/ci.yml)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/conductor.conductor)](https://marketplace.visualstudio.com/items?itemName=conductor.conductor)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-F16061?style=flat&logo=kofi&logoColor=white)](https://ko-fi.com/taitopia)
 
 Real-time VS Code dashboard for monitoring [Claude Code](https://claude.ai/code) AI agent activity, tool usage, and token consumption.
@@ -28,17 +28,17 @@ Real-time VS Code dashboard for monitoring [Claude Code](https://claude.ai/code)
 
 1. Install the extension from the VS Code Marketplace (or build from source)
 2. Open the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`)
-3. Run **"Claude Agent Dashboard: Open"**
+3. Run **"Conductor: Open"**
 4. Start a Claude Code session — the dashboard updates automatically
 
-You can also click the **$(pulse) Claude Agents** status bar item to open the dashboard.
+You can also click the **$(pulse) Conductor** status bar item to open the dashboard.
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `Claude Agent Dashboard: Open` | Open the monitoring dashboard |
-| `Claude Agent Dashboard: Refresh` | Force refresh all session data |
+| `Conductor: Open` | Open the monitoring dashboard |
+| `Conductor: Refresh` | Force refresh all session data |
 
 ## Token Pricing
 

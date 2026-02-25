@@ -64,7 +64,7 @@ export class ProjectScanner {
    */
   constructor(claudeDir?: string) {
     this.claudeProjectsDir = claudeDir || path.join(os.homedir(), '.claude', 'projects');
-    console.log(`[ClaudeDashboard:Scanner] Projects dir: ${this.claudeProjectsDir}`);
+    console.log(`[Conductor:Scanner] Projects dir: ${this.claudeProjectsDir}`);
   }
 
   /** Returns the absolute path to the Claude projects directory. */
@@ -110,7 +110,7 @@ export class ProjectScanner {
       ? [{ name: path.basename(projectDir), path: projectDir }]
       : this.scanProjectDirs();
     console.log(
-      `[ClaudeDashboard:Scanner] Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
+      `[Conductor:Scanner] Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
     );
 
     const files: SessionFile[] = [];

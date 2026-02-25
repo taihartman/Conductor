@@ -5,20 +5,20 @@ import { SessionTracker } from './monitoring/SessionTracker';
 let sessionTracker: SessionTracker | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
-  console.log('[ClaudeDashboard] Activating extension...');
-  const outputChannel = vscode.window.createOutputChannel('Claude Agent Dashboard');
+  console.log('[Conductor] Activating extension...');
+  const outputChannel = vscode.window.createOutputChannel('Conductor');
   context.subscriptions.push(outputChannel);
 
   sessionTracker = new SessionTracker(outputChannel);
   context.subscriptions.push(sessionTracker);
 
-  const openCommand = vscode.commands.registerCommand('claudeAgentDashboard.open', () => {
-    console.log('[ClaudeDashboard] Open command invoked');
+  const openCommand = vscode.commands.registerCommand('conductor.open', () => {
+    console.log('[Conductor] Open command invoked');
     DashboardPanel.createOrShow(context, sessionTracker!);
   });
 
-  const refreshCommand = vscode.commands.registerCommand('claudeAgentDashboard.refresh', () => {
-    console.log('[ClaudeDashboard] Refresh command invoked');
+  const refreshCommand = vscode.commands.registerCommand('conductor.refresh', () => {
+    console.log('[Conductor] Refresh command invoked');
     sessionTracker?.refresh();
     DashboardPanel.currentPanel?.postFullState();
   });
@@ -26,18 +26,18 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(openCommand, refreshCommand);
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-  statusBarItem.text = '$(pulse) Claude Agents';
-  statusBarItem.tooltip = 'Open Claude Agent Dashboard';
-  statusBarItem.command = 'claudeAgentDashboard.open';
+  statusBarItem.text = '$(pulse) Conductor';
+  statusBarItem.tooltip = 'Open Conductor';
+  statusBarItem.command = 'conductor.open';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
 
   sessionTracker.start();
-  outputChannel.appendLine('Claude Agent Dashboard activated');
-  console.log('[ClaudeDashboard] Extension activated successfully');
+  outputChannel.appendLine('Conductor activated');
+  console.log('[Conductor] Extension activated successfully');
 }
 
 export function deactivate(): void {
-  console.log('[ClaudeDashboard] Deactivating extension');
+  console.log('[Conductor] Deactivating extension');
   sessionTracker = undefined;
 }

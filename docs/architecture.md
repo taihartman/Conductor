@@ -1,6 +1,6 @@
 # Architecture
 
-Detailed technical documentation for the Claude Agent Dashboard extension internals.
+Detailed technical documentation for the Conductor extension internals.
 
 ## System Overview
 
@@ -22,7 +22,7 @@ The extension reads JSONL transcript files produced by Claude Code sessions, pro
 
 | File | Responsibility |
 |------|---------------|
-| `extension.ts` | Activation, commands (`claudeAgentDashboard.open`, `.refresh`), status bar |
+| `extension.ts` | Activation, commands (`conductor.open`, `.refresh`), status bar |
 | `DashboardPanel.ts` | Webview lifecycle, CSP-secured HTML, IPC bridge (singleton) |
 | `monitoring/SessionTracker.ts` | Core orchestrator — maps sessionId → state, processes records, emits updates |
 | `monitoring/ProjectScanner.ts` | Scans `~/.claude/projects/` for `.jsonl` files |

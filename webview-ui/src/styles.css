@@ -7,9 +7,6 @@
   --fg-muted: var(--vscode-disabledForeground, #666666);
   --border: var(--vscode-panel-border, #404040);
   --accent: var(--vscode-focusBorder, #007acc);
-  --badge-active: #28a745;
-  --badge-waiting: #f0ad4e;
-  --badge-idle: #6c757d;
   --font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
   --font-mono: var(--vscode-editor-font-family, 'Fira Code', monospace);
   --font-size: var(--vscode-font-size, 13px);
@@ -19,6 +16,28 @@
   --spacing-md: 12px;
   --spacing-lg: 16px;
   --spacing-xl: 24px;
+
+  /* Status colors (dark theme) */
+  --status-working: #28a745;
+  --status-thinking: #007acc;
+  --status-waiting: #f0ad4e;
+  --status-error: #dc3545;
+  --status-idle: #6c757d;
+  --status-done: #495057;
+
+  /* Legacy aliases for backward compat */
+  --badge-active: var(--status-working);
+  --badge-waiting: var(--status-waiting);
+  --badge-idle: var(--status-idle);
+}
+
+body[data-vscode-theme-kind="vscode-light"] {
+  --status-working: #1a7f37;
+  --status-thinking: #0969da;
+  --status-waiting: #bf8700;
+  --status-error: #cf222e;
+  --status-idle: #656d76;
+  --status-done: #8c959f;
 }
 
 * {
@@ -54,12 +73,31 @@ body {
   background: var(--fg-secondary);
 }
 
+/* Status dot animations */
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.3;
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes pulse-slow {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+  50% { box-shadow: 0 0 0 4px rgba(220, 53, 69, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
   }
 }
 
