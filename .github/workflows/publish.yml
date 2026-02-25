@@ -1,0 +1,50 @@
+name: Publish to Marketplace
+
+# DRAFT: This workflow requires:
+# 1. Publisher "claude-dashboard" registered at marketplace.visualstudio.com
+# 2. VSCE_PAT secret configured in GitHub repo settings
+# Do NOT enable until both prerequisites are met.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish Extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install extension dependencies
+        run: npm ci
+
+      - name: Install webview dependencies
+        run: cd webview-ui && npm ci
+
+      - name: Build extension and webview
+        run: npm run build
+
+      - name: Package VSIX
+        run: npx @vscode/vsce package --no-dependencies
+
+      - name: Publish to VS Code Marketplace
+        run: npx @vscode/vsce publish -p ${{ secrets.VSCE_PAT }}
+
+      - name: Upload VSIX as release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix-release
+          path: "*.vsix"
+          retention-days: 90

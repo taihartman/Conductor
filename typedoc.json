@@ -1,0 +1,21 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/extension.ts",
+    "src/DashboardPanel.ts",
+    "src/models/types.ts",
+    "src/models/protocol.ts",
+    "src/analytics/TokenCounter.ts",
+    "src/analytics/ToolStats.ts",
+    "src/monitoring/JsonlParser.ts",
+    "src/monitoring/ProjectScanner.ts",
+    "src/monitoring/TranscriptWatcher.ts",
+    "src/monitoring/SessionTracker.ts"
+  ],
+  "out": "docs/api",
+  "plugin": ["typedoc-plugin-markdown"],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "readme": "none",
+  "tsconfig": "tsconfig.json"
+}

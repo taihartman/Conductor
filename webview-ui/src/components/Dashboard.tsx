@@ -56,8 +56,44 @@ export function Dashboard(): React.ReactElement {
     vscode.postMessage({ type: 'refresh' });
   }
 
+  const footer = (
+    <footer
+      style={{
+        flexShrink: 0,
+        textAlign: 'center',
+        padding: 'var(--spacing-sm) 0',
+        fontSize: '11px',
+        color: 'var(--fg-muted)',
+      }}
+    >
+      If you find this useful,{' '}
+      <a
+        href="https://ko-fi.com/taitopia"
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ color: 'var(--accent)', textDecoration: 'none' }}
+      >
+        support this project on Ko-fi
+      </a>
+    </footer>
+  );
+
   if (sessions.length === 0) {
-    return <EmptyState />;
+    return (
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          height: '100vh',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ flex: 1, overflow: 'auto' }}>
+          <EmptyState />
+        </div>
+        {footer}
+      </div>
+    );
   }
 
   return (
@@ -197,6 +233,8 @@ export function Dashboard(): React.ReactElement {
           <ToolStatsPanel />
         </div>
       </div>
+
+      {footer}
     </div>
   );
 }
