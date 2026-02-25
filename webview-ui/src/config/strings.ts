@@ -23,4 +23,8 @@ export const UI_STRINGS = {
   TOOL_CALL_FALLBACK: 'Tool call',
   RESULT_ERROR: 'Error',
   RESULT_COMPLETED: 'Completed',
+  RENAME_HINT: 'Double-click to rename',
+  ZEN_MASCOT_TOOLTIP: 'Zen mode',
+  ZEN_MASCOT_LABEL: 'Enter zen mode',
+  ZEN_EXIT_LABEL: 'Exit zen mode — click anywhere',
 } as const;

@@ -8,12 +8,18 @@ interface ConductorHeaderProps {
   sessions: SessionInfo[];
   tokenSummaries: TokenSummary[];
   onRefresh: () => void;
+  nudgeActive: boolean;
+  onMascotClick: () => void;
+  mascotButtonRef?: React.Ref<HTMLButtonElement>;
 }
 
 export function ConductorHeader({
   sessions,
   tokenSummaries,
   onRefresh,
+  nudgeActive,
+  onMascotClick,
+  mascotButtonRef,
 }: ConductorHeaderProps): React.ReactElement {
   const parentSessions = sessions.filter((s) => !s.isSubAgent);
   const workingCount = parentSessions.filter(
@@ -35,7 +41,23 @@ export function ConductorHeader({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
-        <OwlblobMascot size={40} />
+        <button
+          ref={mascotButtonRef}
+          onClick={onMascotClick}
+          aria-label={UI_STRINGS.ZEN_MASCOT_LABEL}
+          title={nudgeActive ? UI_STRINGS.ZEN_MASCOT_TOOLTIP : undefined}
+          className={nudgeActive ? 'zen-nudge-active' : undefined}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            padding: 0,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <OwlblobMascot size={40} />
+        </button>
         <h1
           style={{
             fontSize: '14px',

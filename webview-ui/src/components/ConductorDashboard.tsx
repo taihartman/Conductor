@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { useDashboardStore } from '../store/dashboardStore';
 import { ConductorHeader } from './ConductorHeader';
 import { OverviewPanel } from './OverviewPanel';
 import { DetailPanel } from './DetailPanel';
 import { CollapsedBar } from './CollapsedBar';
 import { EmptyState } from './EmptyState';
+import { ZenModeScene } from './ZenModeScene';
+import { useZenNudge } from '../hooks/useZenNudge';
+import { useCompletionDetector } from '../hooks/useCompletionDetector';
 import { vscode } from '../vscode';
 
 const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
@@ -19,6 +22,13 @@ export function ConductorDashboard(): React.ReactElement {
   const expandFocusedSession = useDashboardStore((s) => s.expandFocusedSession);
   const collapseFocusedSession = useDashboardStore((s) => s.collapseFocusedSession);
   const clearFocus = useDashboardStore((s) => s.clearFocus);
+  const zenModeActive = useDashboardStore((s) => s.zenModeActive);
+  const enterZenMode = useDashboardStore((s) => s.enterZenMode);
+  const exitZenMode = useDashboardStore((s) => s.exitZenMode);
+
+  const nudgeActive = useZenNudge(sessions);
+  const completionCount = useCompletionDetector(sessions);
+  const mascotButtonRef = useRef<HTMLButtonElement>(null);
 
   // Filter sessions
   const filteredSessions = (() => {
@@ -58,18 +68,31 @@ export function ConductorDashboard(): React.ReactElement {
     vscode.postMessage({ type: 'session:focus', sessionId });
   }
 
+  function handleRename(sessionId: string, name: string): void {
+    vscode.postMessage({ type: 'session:rename', sessionId, name });
+  }
+
   function handleRefresh(): void {
     vscode.postMessage({ type: 'refresh' });
   }
 
-  // Escape key handler
+  const handleZenExit = useCallback(() => {
+    exitZenMode();
+    mascotButtonRef.current?.focus();
+  }, [exitZenMode]);
+
+  // Escape key handler — zen mode takes priority
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        collapseFocusedSession();
+        if (zenModeActive) {
+          handleZenExit();
+        } else {
+          collapseFocusedSession();
+        }
       }
     },
-    [collapseFocusedSession]
+    [zenModeActive, handleZenExit, collapseFocusedSession]
   );
 
   useEffect(() => {
@@ -91,6 +114,9 @@ export function ConductorDashboard(): React.ReactElement {
           sessions={sessions}
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
+          nudgeActive={false}
+          onMascotClick={enterZenMode}
+          mascotButtonRef={mascotButtonRef}
         />
         <div style={{ flex: 1, overflow: 'auto' }}>
           <EmptyState />
@@ -116,72 +142,80 @@ export function ConductorDashboard(): React.ReactElement {
         sessions={sessions}
         tokenSummaries={tokenSummaries}
         onRefresh={handleRefresh}
+        nudgeActive={nudgeActive}
+        onMascotClick={enterZenMode}
+        mascotButtonRef={mascotButtonRef}
       />
 
-      <div
-        style={{
-          flex: 1,
-          display: 'flex',
-          flexDirection: 'column',
-          overflow: 'hidden',
-          minHeight: 0,
-        }}
-      >
-        {/* Collapsed bar (expanded mode) */}
-        {showCollapsedBar && focusedSession && (
-          <CollapsedBar
-            session={focusedSession}
-            onExpand={() => collapseFocusedSession()}
-          />
-        )}
-
-        {/* Overview panel */}
-        {showOverview && (
-          <div
-            style={{
-              flex: showDetail ? '0 0 40%' : 1,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: 0,
-              borderBottom: showDetail ? '1px solid var(--border)' : undefined,
-            }}
-          >
-            <OverviewPanel
-              sessions={filteredSessions}
-              tokenSummaries={tokenSummaries}
-              focusedSessionId={focusedSessionId}
-              onSessionClick={handleSessionClick}
-              onSessionDoubleClick={handleSessionDoubleClick}
-            />
-          </div>
-        )}
-
-        {/* Detail panel */}
-        {showDetail && focusedSession && (
-          <div
-            style={{
-              flex: detailViewMode === 'expanded' ? 1 : '0 0 60%',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              minHeight: 0,
-            }}
-          >
-            <DetailPanel
+      {zenModeActive ? (
+        <ZenModeScene completionCount={completionCount} onExit={handleZenExit} />
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden',
+            minHeight: 0,
+          }}
+        >
+          {/* Collapsed bar (expanded mode) */}
+          {showCollapsedBar && focusedSession && (
+            <CollapsedBar
               session={focusedSession}
-              isExpanded={detailViewMode === 'expanded'}
-              onToggleExpand={() => {
-                if (detailViewMode === 'expanded') {
-                  collapseFocusedSession();
-                } else {
-                  expandFocusedSession();
-                }
-              }}
+              onExpand={() => collapseFocusedSession()}
             />
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* Overview panel */}
+          {showOverview && (
+            <div
+              style={{
+                flex: showDetail ? '0 0 40%' : 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+                borderBottom: showDetail ? '1px solid var(--border)' : undefined,
+              }}
+            >
+              <OverviewPanel
+                sessions={filteredSessions}
+                tokenSummaries={tokenSummaries}
+                focusedSessionId={focusedSessionId}
+                onSessionClick={handleSessionClick}
+                onSessionDoubleClick={handleSessionDoubleClick}
+                onRename={handleRename}
+              />
+            </div>
+          )}
+
+          {/* Detail panel */}
+          {showDetail && focusedSession && (
+            <div
+              style={{
+                flex: detailViewMode === 'expanded' ? 1 : '0 0 60%',
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              }}
+            >
+              <DetailPanel
+                session={focusedSession}
+                isExpanded={detailViewMode === 'expanded'}
+                onToggleExpand={() => {
+                  if (detailViewMode === 'expanded') {
+                    collapseFocusedSession();
+                  } else {
+                    expandFocusedSession();
+                  }
+                }}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

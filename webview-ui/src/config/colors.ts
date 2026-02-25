@@ -7,4 +7,5 @@ export const COLORS = {
   ERROR_BAR: 'rgba(220, 53, 69, 0.6)',
   NORMAL_BAR: 'rgba(0, 122, 204, 0.5)',
   HIGH_COST_WARNING: '#f0ad4e',
+  ZEN_NOTE_BRIGHT: 'rgba(220, 200, 255, 0.8)',
 } as const;

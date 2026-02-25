@@ -8,7 +8,14 @@ import type {
   TokenSummary,
 } from '@shared/types';
 
-export type { SessionInfo, SubAgentInfo, SessionStatus, ActivityEvent, ToolStatEntry, TokenSummary };
+export type {
+  SessionInfo,
+  SubAgentInfo,
+  SessionStatus,
+  ActivityEvent,
+  ToolStatEntry,
+  TokenSummary,
+};
 
 export type FilterMode = 'recent' | 'active' | 'all';
 export type DetailViewMode = 'overview-only' | 'split' | 'expanded';
@@ -34,6 +41,9 @@ interface DashboardState {
   expandFocusedSession: () => void;
   collapseFocusedSession: () => void;
   clearFocus: () => void;
+  zenModeActive: boolean;
+  enterZenMode: () => void;
+  exitZenMode: () => void;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -58,20 +68,16 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     }),
   setFilterMode: (mode) => set({ filterMode: mode }),
   setDetailViewMode: (mode) => set({ detailViewMode: mode }),
-  setFilteredSubAgentId: (id) => set((state) => ({
-    filteredSubAgentId: state.filteredSubAgentId === id ? null : id,
-  })),
+  setFilteredSubAgentId: (id) =>
+    set((state) => ({
+      filteredSubAgentId: state.filteredSubAgentId === id ? null : id,
+    })),
   expandFocusedSession: () => set({ detailViewMode: 'expanded' }),
   collapseFocusedSession: () =>
     set((state) => ({
-      detailViewMode:
-        state.detailViewMode === 'expanded'
-          ? 'split'
-          : 'overview-only',
-      focusedSessionId:
-        state.detailViewMode === 'split' ? null : state.focusedSessionId,
-      filteredSubAgentId:
-        state.detailViewMode === 'split' ? null : state.filteredSubAgentId,
+      detailViewMode: state.detailViewMode === 'expanded' ? 'split' : 'overview-only',
+      focusedSessionId: state.detailViewMode === 'split' ? null : state.focusedSessionId,
+      filteredSubAgentId: state.detailViewMode === 'split' ? null : state.filteredSubAgentId,
     })),
   clearFocus: () =>
     set({
@@ -79,4 +85,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       detailViewMode: 'overview-only',
       filteredSubAgentId: null,
     }),
+  zenModeActive: false,
+  enterZenMode: () =>
+    set((state) => ({
+      zenModeActive: state.sessions.length > 0,
+    })),
+  exitZenMode: () => set({ zenModeActive: false }),
 }));
