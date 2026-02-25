@@ -12,8 +12,10 @@
  * **Key behaviors:**
  * - Debounced updates: state changes are batched and emitted after 100ms of quiet
  * - Replay detection: records older than 5 minutes on first file read are marked historical
- * - Stale cleanup: idle sessions older than {@link STALE_SESSION_MS} (4h) are removed
- *   every {@link CLEANUP_INTERVAL_MS} (5min)
+ * - Inactivity timeout: active sessions (working/thinking/waiting) with no new records
+ *   for {@link INACTIVITY_TIMEOUT_MS} (10 min) are transitioned to 'done'
+ * - Stale cleanup: terminal-state sessions (idle/done/error) older than
+ *   {@link STALE_SESSION_MS} (30 min) are removed every {@link CLEANUP_INTERVAL_MS} (5 min)
  * - Activity buffer: capped at {@link MAX_ACTIVITIES} (500) entries with FIFO eviction
  */
 
@@ -73,8 +75,14 @@ export interface DashboardState {
 
 /** Maximum number of activity events kept in the buffer (FIFO eviction). */
 const MAX_ACTIVITIES = 500;
-/** Sessions idle longer than this (4 hours) are eligible for cleanup. */
-const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
+/**
+ * Active sessions (working/thinking/waiting) with no new records for this
+ * duration are transitioned to 'done'. 10 minutes covers virtually all tool
+ * executions; the rare edge case self-heals when a late record arrives.
+ */
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+/** Terminal-state sessions (idle/done/error) older than this are removed from memory. */
+const STALE_SESSION_MS = 30 * 60 * 1000;
 /** Interval for the stale session cleanup sweep (5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 /** Records older than this on first file read are considered historical replay. */
@@ -83,8 +91,8 @@ const REPLAY_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 const DEBOUNCE_MS = 100;
 /** Maximum activity events sent to the webview in a single state snapshot. */
 const MAX_ACTIVITIES_FOR_WEBVIEW = 200;
-/** Maximum age of session files considered during manual refresh (24 hours). */
-const REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000;
+/** Maximum age of session files considered during manual refresh (4 hours). */
+const REFRESH_WINDOW_MS = 4 * 60 * 60 * 1000;
 
 /**
  * Core session orchestrator that processes JSONL records into dashboard state.
@@ -153,7 +161,7 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
-   * Manually re-scan for session files (last 24 hours) and register new ones.
+   * Manually re-scan for session files (last 4 hours) and register new ones.
    *
    * @remarks
    * Triggered by the `conductor.refresh` command or the webview
@@ -587,30 +595,47 @@ export class SessionTracker implements vscode.Disposable {
       `${LOG_PREFIX.SESSION_TRACKER} Running stale session cleanup (${this.sessions.size} sessions)`
     );
     const now = Date.now();
-    const toRemove: string[] = [];
+    let changed = false;
 
+    // Pass 1: Inactivity timeout — transition stale active sessions to 'done'.
+    // Sessions in 'error' are excluded: they go straight to 30-min removal in Pass 2
+    // so the error state remains visible in the dashboard until then.
     for (const [id, session] of this.sessions) {
       const status = session.stateMachine.status;
       if (
-        (status === 'idle' || status === 'done' || status === 'error' || status === 'waiting') &&
+        (status === 'working' || status === 'thinking' || status === 'waiting') &&
+        now - new Date(session.info.lastActivityAt).getTime() > INACTIVITY_TIMEOUT_MS
+      ) {
+        session.stateMachine.setStatus('done');
+        session.info.status = 'done';
+        console.log(`${LOG_PREFIX.SESSION_TRACKER} Inactivity timeout: ${id} → done`);
+        this.outputChannel.appendLine(
+          `Session ${session.info.slug} marked done (inactive for >10 min)`
+        );
+        changed = true;
+      }
+    }
+
+    // Pass 2: Stale removal — remove terminal-state sessions from memory
+    const toRemove = new Set<string>();
+    for (const [id, session] of this.sessions) {
+      const status = session.stateMachine.status;
+      if (
+        (status === 'idle' || status === 'done' || status === 'error') &&
         now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
       ) {
-        toRemove.push(id);
+        toRemove.add(id);
       }
     }
 
-    if (toRemove.length === 0) return;
-
-    const removeSet = new Set(toRemove);
-
-    // When removing a parent, also remove all its children
+    // Cascade: remove children of removed parents
     for (const session of this.sessions.values()) {
-      if (session.parentSessionId && removeSet.has(session.parentSessionId)) {
-        removeSet.add(session.info.sessionId);
+      if (session.parentSessionId && toRemove.has(session.parentSessionId)) {
+        toRemove.add(session.info.sessionId);
       }
     }
 
-    for (const id of removeSet) {
+    for (const id of toRemove) {
       const session = this.sessions.get(id);
       if (session) {
         session.stateMachine.dispose();
@@ -619,8 +644,14 @@ export class SessionTracker implements vscode.Disposable {
       }
     }
 
-    this.outputChannel.appendLine(`Cleaned up ${removeSet.size} stale session(s)`);
-    this.emitStateChanged();
+    if (toRemove.size > 0) {
+      this.outputChannel.appendLine(`Cleaned up ${toRemove.size} stale session(s)`);
+      changed = true;
+    }
+
+    if (changed) {
+      this.emitStateChanged();
+    }
   }
 
   /**

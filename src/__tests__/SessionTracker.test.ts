@@ -431,3 +431,185 @@ describe('SessionTracker parent-child grouping', () => {
     expect(state.sessions.find((s) => s.sessionId === 'agent-stale-child')).toBeUndefined();
   });
 });
+
+describe('SessionTracker inactivity timeout', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  /**
+   * Helper: feed records into the tracker, then manually set lastActivityAt to
+   * simulate time passing without waiting for real time.
+   */
+  function feedRecords(
+    sessionId: string,
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
+  ): void {
+    const sessionFile = {
+      sessionId,
+      filePath: `/tmp/test/${sessionId}.jsonl`,
+      projectDir: 'test-project',
+      isSubAgent: options?.isSubAgent || false,
+      modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({ sessionFile, records });
+  }
+
+  /** Helper: directly set a session's lastActivityAt to simulate staleness. */
+  function setLastActivity(sessionId: string, timestamp: string): void {
+    const t = tracker as any;
+    const session = t.sessions.get(sessionId);
+    if (session) {
+      session.info.lastActivityAt = timestamp;
+    }
+  }
+
+  function makeToolUseRecord(sessionId: string, timestamp: string): string {
+    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+  }
+
+  function makeWaitingRecord(sessionId: string, timestamp: string): string {
+    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{"question":"Which approach?"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+  }
+
+  function makeThinkingRecord(sessionId: string, timestamp: string): string {
+    // Progress record puts the state machine into 'thinking'
+    return `{"type":"progress","sessionId":"${sessionId}","timestamp":"${timestamp}"}`;
+  }
+
+  it('transitions working session to done after inactivity timeout', () => {
+    const now = new Date().toISOString();
+    feedRecords('work-1', JsonlParser.parseString(makeToolUseRecord('work-1', now)));
+
+    // Verify it's working
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'work-1')!.status).toBe('working');
+
+    // Simulate 11 minutes of inactivity
+    setLastActivity('work-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'work-1')!.status).toBe('done');
+  });
+
+  it('transitions thinking session to done after inactivity timeout', () => {
+    const now = new Date().toISOString();
+    // First make working, then feed a progress record to get thinking
+    feedRecords('think-1', JsonlParser.parseString(makeThinkingRecord('think-1', now)));
+
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'think-1')!.status).toBe('thinking');
+
+    setLastActivity('think-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'think-1')!.status).toBe('done');
+  });
+
+  it('transitions waiting session to done after inactivity timeout', () => {
+    const now = new Date().toISOString();
+    feedRecords('wait-1', JsonlParser.parseString(makeWaitingRecord('wait-1', now)));
+
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('waiting');
+
+    setLastActivity('wait-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('done');
+  });
+
+  it('does NOT transition working session that is still recent', () => {
+    const now = new Date().toISOString();
+    feedRecords('work-2', JsonlParser.parseString(makeToolUseRecord('work-2', now)));
+
+    // Only 5 minutes of inactivity — below the 10-min threshold
+    setLastActivity('work-2', new Date(Date.now() - 5 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+
+    const state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'work-2')!.status).toBe('working');
+  });
+
+  it('removes session done by inactivity after stale threshold', () => {
+    const now = new Date().toISOString();
+    feedRecords('stale-done-1', JsonlParser.parseString(makeToolUseRecord('stale-done-1', now)));
+
+    // First: inactivity timeout (11 min) → done
+    setLastActivity('stale-done-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'stale-done-1')!.status).toBe('done');
+
+    // Second: stale removal (31 min) → removed from memory
+    setLastActivity('stale-done-1', new Date(Date.now() - 31 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'stale-done-1')).toBeUndefined();
+  });
+
+  it('emits state change when Pass 1 transitions but Pass 2 removes nothing', () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const now = new Date().toISOString();
+      feedRecords('emit-1', JsonlParser.parseString(makeToolUseRecord('emit-1', now)));
+
+      const stateChangedSpy = vi.fn();
+      tracker.onStateChanged(stateChangedSpy);
+
+      // 11 min inactivity → Pass 1 transitions to done, Pass 2 has nothing to remove
+      setLastActivity('emit-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+      (tracker as any).cleanupStaleSessions();
+
+      // emitStateChanged is debounced — flush it
+      vi.runAllTimers();
+
+      expect(stateChangedSpy).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('self-heals: session marked done by inactivity revives on new record', () => {
+    const now = new Date().toISOString();
+    feedRecords('heal-1', JsonlParser.parseString(makeToolUseRecord('heal-1', now)));
+
+    // Inactivity timeout → done
+    setLastActivity('heal-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'heal-1')!.status).toBe('done');
+
+    // New record arrives → state machine transitions back to working
+    const liveTimestamp = new Date().toISOString();
+    const sessionFile = {
+      sessionId: 'heal-1',
+      filePath: '/tmp/test/heal-1.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    };
+    (tracker as any).handleRecords({
+      sessionFile,
+      records: JsonlParser.parseString(makeToolUseRecord('heal-1', liveTimestamp)),
+    });
+
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'heal-1')!.status).toBe('working');
+  });
+});

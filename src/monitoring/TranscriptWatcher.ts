@@ -11,7 +11,7 @@
  *
  * The polling fallback ensures data is captured even when filesystem events are
  * unreliable (e.g., on network drives or certain Linux inotify configurations).
- * Files older than {@link MAX_AGE_MS} (4 hours) are excluded from scans.
+ * Files older than {@link MAX_AGE_MS} (1 hour) are excluded from scans.
  */
 
 import * as vscode from 'vscode';
@@ -33,8 +33,8 @@ export interface WatcherEvent {
 const SCAN_INTERVAL_MS = 30_000;
 /** Interval for polling tracked files for new data. */
 const POLL_INTERVAL_MS = 1_000;
-/** Maximum age of session files to include in scans (4 hours). */
-const MAX_AGE_MS = 4 * 60 * 60 * 1000;
+/** Maximum age of session files to include in scans (1 hour). */
+const MAX_AGE_MS = 1 * 60 * 60 * 1000;
 
 /**
  * Watches Claude Code transcript files for new records using a hybrid strategy.
