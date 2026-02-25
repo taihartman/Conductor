@@ -66,6 +66,45 @@ describe('ProjectScanner.scanSessionFiles maxAgeMs', () => {
   });
 });
 
+describe('ProjectScanner.getProjectDirForWorkspace', () => {
+  let tmpDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanner-workspace-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('encodes a Unix workspace path by replacing / with -', () => {
+    const encoded = '-Users-foo-project';
+    fs.mkdirSync(path.join(tmpDir, encoded), { recursive: true });
+
+    const scanner = new ProjectScanner(tmpDir);
+    const result = scanner.getProjectDirForWorkspace('/Users/foo/project');
+
+    expect(result).toBe(path.join(tmpDir, encoded));
+  });
+
+  it('normalizes Windows backslashes before encoding', () => {
+    const encoded = 'C:-Users-foo';
+    fs.mkdirSync(path.join(tmpDir, encoded), { recursive: true });
+
+    const scanner = new ProjectScanner(tmpDir);
+    const result = scanner.getProjectDirForWorkspace('C:\\Users\\foo');
+
+    expect(result).toBe(path.join(tmpDir, encoded));
+  });
+
+  it('returns undefined when the project directory does not exist', () => {
+    const scanner = new ProjectScanner(tmpDir);
+    const result = scanner.getProjectDirForWorkspace('/nonexistent/path');
+
+    expect(result).toBeUndefined();
+  });
+});
+
 describe('ProjectScanner subdirectory scanning', () => {
   let tmpDir: string;
   let projectDir: string;

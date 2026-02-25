@@ -56,17 +56,20 @@ export class TranscriptWatcher implements vscode.Disposable {
   private readonly onRecordsCallback: (event: WatcherEvent) => void;
   private readonly onNewFileCallback: (file: SessionFile) => void;
   private readonly outputChannel: vscode.OutputChannel;
+  private readonly projectDir?: string;
 
   constructor(
     scanner: ProjectScanner,
     outputChannel: vscode.OutputChannel,
     onRecords: (event: WatcherEvent) => void,
-    onNewFile: (file: SessionFile) => void
+    onNewFile: (file: SessionFile) => void,
+    projectDir?: string
   ) {
     this.scanner = scanner;
     this.outputChannel = outputChannel;
     this.onRecordsCallback = onRecords;
     this.onNewFileCallback = onNewFile;
+    this.projectDir = projectDir;
   }
 
   /**
@@ -77,7 +80,8 @@ export class TranscriptWatcher implements vscode.Disposable {
    * both the scan timer ({@link SCAN_INTERVAL_MS}) and poll timer ({@link POLL_INTERVAL_MS}).
    */
   start(): void {
-    console.log(`${LOG_PREFIX.WATCHER} Starting transcript watcher...`);
+    const scope = this.projectDir ? path.basename(this.projectDir) : 'all projects';
+    console.log(`${LOG_PREFIX.WATCHER} Starting transcript watcher (scope: ${scope})...`);
     this.setupFileWatcher();
     this.scanForFiles();
     this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
@@ -88,7 +92,7 @@ export class TranscriptWatcher implements vscode.Disposable {
   }
 
   private scanForFiles(): void {
-    const files = this.scanner.scanSessionFiles(undefined, MAX_AGE_MS);
+    const files = this.scanner.scanSessionFiles(this.projectDir, MAX_AGE_MS);
     const newCount = files.filter((f) => !this.trackedFiles.has(f.filePath)).length;
     console.log(
       `${LOG_PREFIX.WATCHER} Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
@@ -114,11 +118,11 @@ export class TranscriptWatcher implements vscode.Disposable {
   }
 
   private setupFileWatcher(): void {
-    const projectsDir = this.scanner.getProjectsDir();
-    console.log(`${LOG_PREFIX.WATCHER} Setting up FileSystemWatcher on: ${projectsDir}`);
+    const watchDir = this.projectDir ?? this.scanner.getProjectsDir();
+    console.log(`${LOG_PREFIX.WATCHER} Setting up FileSystemWatcher on: ${watchDir}`);
 
     try {
-      const pattern = new vscode.RelativePattern(vscode.Uri.file(projectsDir), '**/*.jsonl');
+      const pattern = new vscode.RelativePattern(vscode.Uri.file(watchDir), '**/*.jsonl');
 
       const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 

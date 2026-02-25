@@ -21,7 +21,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const outputChannel = vscode.window.createOutputChannel(OUTPUT_CHANNEL_NAME);
   context.subscriptions.push(outputChannel);
 
-  sessionTracker = new SessionTracker(outputChannel);
+  // Multi-root workspaces: only the first folder is used for scoping
+  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  sessionTracker = new SessionTracker(outputChannel, workspacePath);
   context.subscriptions.push(sessionTracker);
 
   const openCommand = vscode.commands.registerCommand(COMMANDS.OPEN, () => {

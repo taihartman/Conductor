@@ -18,6 +18,7 @@
  */
 
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { ProjectScanner } from './ProjectScanner';
 import { TranscriptWatcher, WatcherEvent } from './TranscriptWatcher';
 import { SessionFile } from './ProjectScanner';
@@ -113,10 +114,15 @@ export class SessionTracker implements vscode.Disposable {
   private cleanupTimer?: ReturnType<typeof setInterval>;
   private focusedSessionId?: string;
   private eventCounter = 0;
+  private readonly scopedProjectDir?: string;
 
-  constructor(outputChannel: vscode.OutputChannel) {
+  constructor(outputChannel: vscode.OutputChannel, workspacePath?: string) {
     this.outputChannel = outputChannel;
     this.scanner = new ProjectScanner();
+
+    if (workspacePath) {
+      this.scopedProjectDir = this.scanner.getProjectDirForWorkspace(workspacePath);
+    }
   }
 
   /**
@@ -127,12 +133,18 @@ export class SessionTracker implements vscode.Disposable {
    * stale session cleanup. Call once after construction.
    */
   start(): void {
-    console.log(`${LOG_PREFIX.SESSION_TRACKER} Starting session tracking...`);
+    const scope = this.scopedProjectDir
+      ? `scoped to ${path.basename(this.scopedProjectDir)}`
+      : 'all projects (no workspace)';
+    console.log(`${LOG_PREFIX.SESSION_TRACKER} Starting session tracking (${scope})...`);
+    this.outputChannel.appendLine(`Session tracking scope: ${scope}`);
+
     this.watcher = new TranscriptWatcher(
       this.scanner,
       this.outputChannel,
       (event) => this.handleRecords(event),
-      (file) => this.handleNewFile(file)
+      (file) => this.handleNewFile(file),
+      this.scopedProjectDir
     );
     this.watcher.start();
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
@@ -149,7 +161,7 @@ export class SessionTracker implements vscode.Disposable {
    */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
-    const files = this.scanner.scanSessionFiles(undefined, REFRESH_WINDOW_MS);
+    const files = this.scanner.scanSessionFiles(this.scopedProjectDir, REFRESH_WINDOW_MS);
     for (const file of files) {
       if (!this.sessions.has(file.sessionId)) {
         this.handleNewFile(file);

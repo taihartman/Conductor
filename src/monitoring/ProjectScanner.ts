@@ -79,6 +79,34 @@ export class ProjectScanner {
   }
 
   /**
+   * Resolve the Claude projects subdirectory for a given workspace path.
+   *
+   * @remarks
+   * Claude Code stores sessions in `~/.claude/projects/<encoded-path>/` where
+   * the encoded path is the absolute workspace path with `/` replaced by `-`
+   * (e.g., `/Users/foo/my-project` becomes `-Users-foo-my-project`).
+   *
+   * @param workspacePath - Absolute filesystem path to the VS Code workspace
+   * @returns Absolute path to the project directory, or `undefined` if it doesn't exist
+   */
+  getProjectDirForWorkspace(workspacePath: string): string | undefined {
+    // Normalize Windows backslashes to forward slashes, then encode
+    const normalized = workspacePath.replace(/\\/g, '/');
+    const encoded = normalized.replace(/\//g, '-');
+    const fullPath = path.join(this.claudeProjectsDir, encoded);
+
+    if (fs.existsSync(fullPath)) {
+      console.log(`${LOG_PREFIX.SCANNER} Workspace "${workspacePath}" → project dir: ${encoded}`);
+      return fullPath;
+    }
+
+    console.log(
+      `${LOG_PREFIX.SCANNER} No project dir for workspace "${workspacePath}" (expected: ${encoded})`
+    );
+    return undefined;
+  }
+
+  /**
    * List all project directories under the Claude projects root.
    *
    * @returns Array of {@link ProjectDir} entries, or empty array if the root doesn't exist
