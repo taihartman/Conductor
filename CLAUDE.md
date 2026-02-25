@@ -41,6 +41,12 @@ npm run format
 # Check formatting
 npm run format:check
 
+# Lint with ESLint
+npm run lint:eslint
+
+# Type check + ESLint combined
+npm run lint:all
+
 # Run a single test file
 npx vitest run src/__tests__/JsonlParser.test.ts
 ```

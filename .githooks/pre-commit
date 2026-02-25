@@ -1,0 +1,31 @@
+#!/bin/sh
+# Pre-commit hook: auto-format and lint staged .ts files
+
+# Guard: ensure node_modules exists
+if [ ! -d node_modules ]; then
+  echo "[pre-commit] node_modules not found. Run 'npm install' first."
+  exit 1
+fi
+
+STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts')
+
+if [ -z "$STAGED_TS" ]; then
+  exit 0
+fi
+
+echo "[pre-commit] Formatting staged .ts files..."
+echo "$STAGED_TS" | xargs npx prettier --write
+
+# Re-stage files that Prettier modified
+echo "$STAGED_TS" | xargs git add
+
+echo "[pre-commit] Linting staged .ts files..."
+echo "$STAGED_TS" | xargs npx eslint --max-warnings=0
+LINT_EXIT=$?
+
+if [ $LINT_EXIT -ne 0 ]; then
+  echo "[pre-commit] ESLint errors/warnings found. Fix them before committing."
+  exit 1
+fi
+
+exit 0

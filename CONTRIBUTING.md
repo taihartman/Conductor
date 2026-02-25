@@ -39,6 +39,19 @@ npm run lint
 2. **Webview UI** — Run `cd webview-ui && npm run dev` in a separate terminal for HMR
 3. **Debug** — Press F5 in VS Code to launch the Extension Development Host
 
+## Pre-Commit Hooks
+
+Quality checks run automatically on every commit via a git hook:
+
+- **Prettier** auto-formats staged `.ts` files (writes back + re-stages)
+- **ESLint** lints staged `.ts` files (blocks commit on any warning or error)
+- Runs only on staged files — fast even in large repos
+- Activated automatically by `npm install` (via the `prepare` script)
+
+**Caveat**: If you use `git add -p` (partial staging), the hook will reformat and re-stage the entire file.
+
+To bypass in emergencies: `git commit --no-verify` (discouraged — CI will still catch issues).
+
 ## Coding Standards
 
 ### TypeScript

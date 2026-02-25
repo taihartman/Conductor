@@ -32,6 +32,9 @@ jobs:
       - name: Type check extension
         run: npm run lint
 
+      - name: Lint with ESLint
+        run: npm run lint:eslint -- --max-warnings=0
+
       - name: Type check webview
         run: cd webview-ui && npx tsc --noEmit
 

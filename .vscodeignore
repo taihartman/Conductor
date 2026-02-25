@@ -19,6 +19,7 @@ CONTRIBUTING.md
 .prettierrc.json
 .prettierignore
 eslint.config.mjs
+.githooks/**
 typedoc.json
 .claude/**
 CLAUDE.md
