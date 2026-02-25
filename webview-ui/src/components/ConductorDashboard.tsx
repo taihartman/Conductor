@@ -45,6 +45,7 @@ export function ConductorDashboard(): React.ReactElement {
   function handleSessionClick(sessionId: string): void {
     if (focusedSessionId === sessionId) {
       clearFocus();
+      vscode.postMessage({ type: 'session:focus', sessionId: null });
     } else {
       setFocusedSession(sessionId);
       vscode.postMessage({ type: 'session:focus', sessionId });

@@ -28,7 +28,7 @@ import { SessionStateMachine, ISessionStateMachine } from './SessionStateMachine
 import { ToolStats } from '../analytics/ToolStats';
 import { TokenCounter } from '../analytics/TokenCounter';
 import { summarizeToolInput } from '../config/toolSummarizers';
-import { LOG_PREFIX, TRUNCATION, SPECIAL_NAMES } from '../constants';
+import { LOG_PREFIX, TRUNCATION, SPECIAL_NAMES, SETTINGS } from '../constants';
 import {
   JsonlRecord,
   AssistantRecord,
@@ -120,17 +120,47 @@ export class SessionTracker implements vscode.Disposable {
 
   private debounceTimer?: ReturnType<typeof setTimeout>;
   private cleanupTimer?: ReturnType<typeof setInterval>;
-  private focusedSessionId?: string;
   private eventCounter = 0;
-  private readonly scopedProjectDir?: string;
+  private scopedProjectDirs: string[];
 
   constructor(outputChannel: vscode.OutputChannel, workspacePath?: string) {
     this.outputChannel = outputChannel;
     this.scanner = new ProjectScanner();
+    this.scopedProjectDirs = this.resolveProjectDirs(workspacePath);
+  }
+
+  /**
+   * Combine the current workspace with `conductor.additionalWorkspaces` setting,
+   * resolve each to its Claude Code project directory, and deduplicate.
+   *
+   * @param workspacePath - Current VS Code workspace path (first folder)
+   * @returns Deduplicated array of Claude Code project directory paths
+   */
+  private resolveProjectDirs(workspacePath?: string): string[] {
+    const paths: string[] = [];
 
     if (workspacePath) {
-      this.scopedProjectDir = this.scanner.getProjectDirForWorkspace(workspacePath);
+      const dir = this.scanner.getProjectDirForWorkspace(workspacePath);
+      if (dir) {
+        paths.push(dir);
+      }
     }
+
+    const additionalPaths =
+      vscode.workspace.getConfiguration().get<string[]>(SETTINGS.ADDITIONAL_WORKSPACES, []) ?? [];
+
+    for (const p of additionalPaths) {
+      const dir = this.scanner.getProjectDirForWorkspace(p);
+      if (dir) {
+        paths.push(dir);
+      } else {
+        const msg = `Additional workspace path "${p}" has no matching Claude Code project directory — skipping`;
+        console.log(`${LOG_PREFIX.SESSION_TRACKER} ${msg}`);
+        this.outputChannel.appendLine(msg);
+      }
+    }
+
+    return [...new Set(paths)];
   }
 
   /**
@@ -141,19 +171,14 @@ export class SessionTracker implements vscode.Disposable {
    * stale session cleanup. Call once after construction.
    */
   start(): void {
-    const scope = this.scopedProjectDir
-      ? `scoped to ${path.basename(this.scopedProjectDir)}`
-      : 'all projects (no workspace)';
+    const scope =
+      this.scopedProjectDirs.length > 0
+        ? `scoped to ${this.scopedProjectDirs.map((d) => path.basename(d)).join(', ')}`
+        : 'all projects (no workspace)';
     console.log(`${LOG_PREFIX.SESSION_TRACKER} Starting session tracking (${scope})...`);
     this.outputChannel.appendLine(`Session tracking scope: ${scope}`);
 
-    this.watcher = new TranscriptWatcher(
-      this.scanner,
-      this.outputChannel,
-      (event) => this.handleRecords(event),
-      (file) => this.handleNewFile(file),
-      this.scopedProjectDir
-    );
+    this.watcher = this.createWatcher();
     this.watcher.start();
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
     this.outputChannel.appendLine('Session tracking started');
@@ -169,7 +194,7 @@ export class SessionTracker implements vscode.Disposable {
    */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
-    const files = this.scanner.scanSessionFiles(this.scopedProjectDir, REFRESH_WINDOW_MS);
+    const files = this.scanner.scanSessionFiles(this.scopedProjectDirs, REFRESH_WINDOW_MS);
     for (const file of files) {
       if (!this.sessions.has(file.sessionId)) {
         this.handleNewFile(file);
@@ -178,16 +203,40 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
-   * Set the focused session for activity filtering.
+   * Return filtered activity events for the webview.
    *
    * @remarks
-   * When a session is focused, {@link getState} filters the activity feed to
-   * show only events from that session (and its children, if it's a parent).
+   * When a parent session is focused, includes activities from its children.
+   * When a sub-agent is focused, includes only that agent's activities.
+   * Pass `null` or omit to return all activities (unfiltered).
+   * Capped at the last {@link MAX_ACTIVITIES_FOR_WEBVIEW} events.
    *
-   * @param sessionId - Session to focus, or pass to filter activities
+   * @param focusedSessionId - Session to filter by, or `null` for all
+   * @returns Filtered activity events for the webview
    */
-  focusSession(sessionId: string): void {
-    this.focusedSessionId = sessionId;
+  getFilteredActivities(focusedSessionId?: string | null): ActivityEvent[] {
+    if (!focusedSessionId) {
+      return this.activities.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
+    }
+
+    const focused = this.sessions.get(focusedSessionId);
+    if (focused?.info.isSubAgent) {
+      return this.activities
+        .filter((a) => a.sessionId === focusedSessionId)
+        .slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
+    }
+
+    // Parent session: include child agent activities
+    const childIds: string[] = [];
+    for (const session of this.sessions.values()) {
+      if (session.info.isSubAgent && session.parentSessionId === focusedSessionId) {
+        childIds.push(session.info.sessionId);
+      }
+    }
+    const focusSet = new Set([focusedSessionId, ...childIds]);
+    return this.activities
+      .filter((a) => focusSet.has(a.sessionId))
+      .slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
   }
 
   /**
@@ -198,9 +247,10 @@ export class SessionTracker implements vscode.Disposable {
    * sub-agents), filters activities by focused session, and collects tool stats
    * and token summaries. Activities are capped at the last 200 events.
    *
+   * @param focusedSessionId - Session to filter activities by, or `null` for all
    * @returns Complete {@link DashboardState} for the webview
    */
-  getState(): DashboardState {
+  getState(focusedSessionId?: string | null): DashboardState {
     // Sync status from state machines to SessionInfo
     for (const session of this.sessions.values()) {
       session.info.status = session.stateMachine.status;
@@ -243,27 +293,59 @@ export class SessionTracker implements vscode.Disposable {
       (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
     );
 
-    // Filter activities: when focused on parent, include child activities
-    let activities: ActivityEvent[];
-    if (this.focusedSessionId) {
-      const childIds = childrenByParent.get(this.focusedSessionId)?.map((c) => c.sessionId) || [];
-      const focusSet = new Set([this.focusedSessionId, ...childIds]);
-      const isSubAgent = this.sessions.get(this.focusedSessionId)?.info.isSubAgent;
-      if (isSubAgent) {
-        activities = this.activities.filter((a) => a.sessionId === this.focusedSessionId);
-      } else {
-        activities = this.activities.filter((a) => focusSet.has(a.sessionId));
-      }
-    } else {
-      activities = this.activities;
-    }
-
     return {
       sessions,
-      activities: activities.slice(-MAX_ACTIVITIES_FOR_WEBVIEW),
+      activities: this.getFilteredActivities(focusedSessionId),
       toolStats: this.toolStats.getStats(),
       tokenSummaries: this.tokenCounter.getSummaries(),
     };
+  }
+
+  /**
+   * Re-resolve scoped project directories and restart the file watcher if the
+   * set changed.
+   *
+   * @remarks
+   * Called when `conductor.additionalWorkspaces` changes at runtime. Sessions
+   * already tracked from removed directories are left to expire naturally via
+   * inactivity timeout and stale cleanup — no jarring disappearances.
+   *
+   * @param workspacePath - Current VS Code workspace path (first folder)
+   */
+  updateScope(workspacePath?: string): void {
+    const newDirs = this.resolveProjectDirs(workspacePath);
+    const oldSet = new Set(this.scopedProjectDirs);
+    const newSet = new Set(newDirs);
+
+    if (oldSet.size === newSet.size && [...oldSet].every((d) => newSet.has(d))) {
+      console.log(`${LOG_PREFIX.SESSION_TRACKER} updateScope: no change, skipping restart`);
+      return;
+    }
+
+    console.log(`${LOG_PREFIX.SESSION_TRACKER} updateScope: dirs changed, restarting watcher`);
+    this.outputChannel.appendLine(
+      `Scope updated: ${newDirs.map((d) => path.basename(d)).join(', ') || 'all projects'}`
+    );
+
+    this.scopedProjectDirs = newDirs;
+
+    // Dispose old watcher — synchronous, safe to immediately create a new one
+    this.watcher?.dispose();
+    this.watcher = this.createWatcher();
+    this.watcher.start();
+
+    // Immediately scan expanded dirs so existing sessions appear without waiting
+    this.refresh();
+  }
+
+  private createWatcher(): TranscriptWatcher {
+    return new TranscriptWatcher(
+      this.scanner,
+      this.outputChannel,
+      (event) => this.handleRecords(event),
+      (file) => this.handleNewFile(file),
+      this.scopedProjectDirs
+    );
   }
 
   private handleNewFile(file: SessionFile): void {

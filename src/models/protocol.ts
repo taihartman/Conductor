@@ -39,5 +39,5 @@ export type ExtensionToWebviewMessage =
  */
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
-  | { type: 'session:focus'; sessionId: string }
+  | { type: 'session:focus'; sessionId: string | null }
   | { type: 'refresh' };

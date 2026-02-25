@@ -354,14 +354,44 @@ describe('SessionTracker parent-child grouping', () => {
       { isSubAgent: true, parentSessionId: 'parent-3' }
     );
 
-    // Focus on parent
-    tracker.focusSession('parent-3');
-    const state = tracker.getState();
+    // Focus on parent — pass focusedSessionId to getState
+    const state = tracker.getState('parent-3');
 
     // Activities should include both parent and child
     const activitySessionIds = state.activities.map((a) => a.sessionId);
     expect(activitySessionIds).toContain('parent-3');
     expect(activitySessionIds).toContain('agent-child');
+  });
+
+  it('getState(null) returns unfiltered activities from all sessions', () => {
+    const now = new Date().toISOString();
+
+    // Create two sessions with activities
+    feedRecords(
+      tracker,
+      'session-a',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"sess-a","sessionId":"session-a","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
+
+    feedRecords(
+      tracker,
+      'session-b',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"sess-b","sessionId":"session-b","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      )
+    );
+
+    // Focus on session-a — only session-a activities
+    let state = tracker.getState('session-a');
+    expect(state.activities.every((a) => a.sessionId === 'session-a')).toBe(true);
+
+    // No focus — both sessions' activities should appear
+    state = tracker.getState(null);
+    const sessionIds = new Set(state.activities.map((a) => a.sessionId));
+    expect(sessionIds.has('session-a')).toBe(true);
+    expect(sessionIds.has('session-b')).toBe(true);
   });
 
   it('focusing a sub-agent shows only that agent activities', () => {
@@ -386,9 +416,8 @@ describe('SessionTracker parent-child grouping', () => {
       { isSubAgent: true, parentSessionId: 'parent-4' }
     );
 
-    // Focus on sub-agent
-    tracker.focusSession('agent-child2');
-    const state = tracker.getState();
+    // Focus on sub-agent — pass focusedSessionId to getState
+    const state = tracker.getState('agent-child2');
 
     // Activities should only be from the sub-agent
     const activitySessionIds = state.activities.map((a) => a.sessionId);
@@ -611,5 +640,81 @@ describe('SessionTracker inactivity timeout', () => {
 
     state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'heal-1')!.status).toBe('working');
+  });
+});
+
+describe('SessionTracker.updateScope', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    // Default: no additional workspaces
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+    mockGetConfiguration.mockReset();
+  });
+
+  it('updateScope is a no-op when dirs have not changed', () => {
+    // Start the tracker so there's a watcher to potentially dispose
+    tracker.start();
+
+    const t = tracker as any;
+    const oldWatcher = t.watcher;
+    const disposeSpy = vi.spyOn(oldWatcher, 'dispose');
+
+    // Call updateScope with same (empty) config — should skip restart
+    tracker.updateScope(undefined);
+
+    expect(disposeSpy).not.toHaveBeenCalled();
+    expect(t.watcher).toBe(oldWatcher);
+  });
+
+  it('updateScope restarts watcher when additional workspaces change', () => {
+    tracker.start();
+
+    const t = tracker as any;
+    const oldWatcher = t.watcher;
+    const disposeSpy = vi.spyOn(oldWatcher, 'dispose');
+
+    // Simulate a new workspace being added that resolves to a real project dir
+    // We need to mock getProjectDirForWorkspace on the scanner
+    const scannerSpy = vi.spyOn(t.scanner, 'getProjectDirForWorkspace');
+    scannerSpy.mockReturnValue('/fake/project/dir');
+
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, _defaultValue?: unknown) => ['/some/workspace']),
+    });
+
+    tracker.updateScope(undefined);
+
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(t.watcher).not.toBe(oldWatcher);
+
+    scannerSpy.mockRestore();
+  });
+
+  it('updateScope handles invalid paths gracefully', () => {
+    tracker.start();
+
+    const t = tracker as any;
+
+    // Mock the config to return paths that won't resolve
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, _defaultValue?: unknown) => ['/nonexistent/path']),
+    });
+
+    // Should not throw
+    expect(() => tracker.updateScope(undefined)).not.toThrow();
+
+    // scopedProjectDirs should still be empty (no valid paths resolved)
+    expect(t.scopedProjectDirs).toEqual([]);
   });
 });

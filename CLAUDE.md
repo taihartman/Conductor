@@ -314,7 +314,7 @@ Track these when contributing. PRs that address debt items are welcome.
 - [ ] **Dead `config:theme` protocol message** — Defined in `protocol.ts` but never sent or handled. Remove it.
 - [ ] **Loose typing at IPC boundary** — `useVsCodeMessage.ts` uses a local `ExtensionMessage` interface instead of the typed `ExtensionToWebviewMessage` union. Fix to use shared protocol types.
 - [ ] **No webview dev stub** — Running `npm run dev` in `webview-ui/` crashes because `acquireVsCodeApi` is undefined in browser. Add a dev-mode mock.
-- [ ] **Session focus state duplication** — `focusedSessionId` lives in both `SessionTracker` and `dashboardStore`. Can drift. Single-source it.
+- [x] **Session focus state duplication** — Resolved: `SessionTracker` no longer stores `focusedSessionId`. `DashboardPanel` owns focus state and passes it as a parameter to `getState(focusedSessionId)` and `getFilteredActivities(focusedSessionId)`. The webview `dashboardStore` remains the UI-side source of truth.
 - [ ] **Missing tests** — `TranscriptWatcher`, `ToolStats`, `DashboardPanel`, all React components, and the IPC boundary lack tests.
 - [ ] **Hardcoded asset paths** — `DashboardPanel.getHtml()` hardcodes `assets/index.js` / `assets/index.css`. These must match Vite output config exactly. Consider reading a manifest file.
 

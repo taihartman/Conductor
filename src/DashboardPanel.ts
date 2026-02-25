@@ -32,6 +32,7 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly sessionTracker: SessionTracker;
   private readonly disposables: vscode.Disposable[] = [];
+  private focusedSessionId: string | null = null;
 
   /**
    * Create a new dashboard panel or reveal an existing one.
@@ -105,7 +106,7 @@ export class DashboardPanel implements vscode.Disposable {
    * and on every {@link SessionTracker.onStateChanged} event.
    */
   public postFullState(): void {
-    const state = this.sessionTracker.getState();
+    const state = this.sessionTracker.getState(this.focusedSessionId);
     console.log(
       `${LOG_PREFIX.PANEL} Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
@@ -120,6 +121,18 @@ export class DashboardPanel implements vscode.Disposable {
     this.panel.webview.postMessage(message);
   }
 
+  /**
+   * Send only the activity feed to the webview.
+   *
+   * @remarks
+   * Uses {@link SessionTracker.getFilteredActivities} to avoid assembling
+   * the full dashboard state (sessions, tool stats, tokens are unaffected).
+   */
+  private postActivities(): void {
+    const activities = this.sessionTracker.getFilteredActivities(this.focusedSessionId);
+    this.postMessage({ type: 'activity:full', events: activities });
+  }
+
   private handleMessage(message: WebviewToExtensionMessage): void {
     console.log(`${LOG_PREFIX.PANEL} Webview message received: ${message.type}`);
     switch (message.type) {
@@ -127,7 +140,8 @@ export class DashboardPanel implements vscode.Disposable {
         this.postFullState();
         break;
       case 'session:focus':
-        this.sessionTracker.focusSession(message.sessionId);
+        this.focusedSessionId = message.sessionId;
+        this.postActivities();
         break;
       case 'refresh':
         this.sessionTracker.refresh();
