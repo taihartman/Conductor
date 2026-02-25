@@ -16,7 +16,7 @@
  *   for {@link INACTIVITY_TIMEOUT_MS} (10 min) are transitioned to 'done'
  * - Stale cleanup: terminal-state sessions (idle/done/error) older than
  *   {@link STALE_SESSION_MS} (30 min) are removed every {@link CLEANUP_INTERVAL_MS} (5 min)
- * - Activity buffer: capped at {@link MAX_ACTIVITIES} (500) entries with FIFO eviction
+ * - Activity buffer: per-session storage capped at {@link MAX_ACTIVITIES_PER_SESSION} (200) entries with FIFO eviction
  */
 
 import * as vscode from 'vscode';
@@ -73,8 +73,8 @@ export interface DashboardState {
   tokenSummaries: TokenSummary[];
 }
 
-/** Maximum number of activity events kept in the buffer (FIFO eviction). */
-const MAX_ACTIVITIES = 500;
+/** Maximum activity events stored per session (FIFO eviction). */
+const MAX_ACTIVITIES_PER_SESSION = 200;
 /**
  * Active sessions (working/thinking/waiting) with no new records for this
  * duration are transitioned to 'done'. 10 minutes covers virtually all tool
@@ -110,7 +110,7 @@ export class SessionTracker implements vscode.Disposable {
   private readonly scanner: ProjectScanner;
   private watcher: TranscriptWatcher | undefined;
   private readonly sessions: Map<string, InternalSessionState> = new Map();
-  private readonly activities: ActivityEvent[] = [];
+  private readonly activitiesBySession: Map<string, ActivityEvent[]> = new Map();
   private readonly toolStats: ToolStats = new ToolStats();
   private readonly tokenCounter: TokenCounter = new TokenCounter();
   private readonly outputChannel: vscode.OutputChannel;
@@ -194,12 +194,28 @@ export class SessionTracker implements vscode.Disposable {
    */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
+    console.log(
+      `DEBUG-TRACE refresh() - scopedProjectDirs: [${this.scopedProjectDirs.join(', ')}] (length=${this.scopedProjectDirs.length})`
+    ); // DEBUG-TRACE
+    console.log(
+      `DEBUG-TRACE refresh() - current sessions tracked: ${this.sessions.size}, ids: [${[...this.sessions.keys()].map((id) => id.substring(0, 8)).join(', ')}]`
+    ); // DEBUG-TRACE
     const files = this.scanner.scanSessionFiles(this.scopedProjectDirs, REFRESH_WINDOW_MS);
+    console.log(`DEBUG-TRACE refresh() - scanner returned ${files.length} files`); // DEBUG-TRACE
+    let newCount = 0; // DEBUG-TRACE
+    let skippedCount = 0; // DEBUG-TRACE
     for (const file of files) {
       if (!this.sessions.has(file.sessionId)) {
+        console.log(
+          `DEBUG-TRACE refresh() - NEW session: ${file.sessionId.substring(0, 8)} (modified=${file.modifiedAt.toISOString()}, subAgent=${file.isSubAgent})`
+        ); // DEBUG-TRACE
+        newCount++; // DEBUG-TRACE
         this.handleNewFile(file);
+      } else {
+        skippedCount++; // DEBUG-TRACE
       }
     }
+    console.log(`DEBUG-TRACE refresh() - added ${newCount} new, skipped ${skippedCount} existing`); // DEBUG-TRACE
   }
 
   /**
@@ -216,27 +232,37 @@ export class SessionTracker implements vscode.Disposable {
    */
   getFilteredActivities(focusedSessionId?: string | null): ActivityEvent[] {
     if (!focusedSessionId) {
-      return this.activities.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
+      // No focus: merge all sessions, sort by timestamp, cap for webview
+      const all: ActivityEvent[] = [];
+      for (const events of this.activitiesBySession.values()) {
+        all.push(...events);
+      }
+      all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+      return all.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
     }
 
     const focused = this.sessions.get(focusedSessionId);
     if (focused?.info.isSubAgent) {
-      return this.activities
-        .filter((a) => a.sessionId === focusedSessionId)
-        .slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
+      // Sub-agent: return only that agent's activities
+      return (this.activitiesBySession.get(focusedSessionId) ?? []).slice(
+        -MAX_ACTIVITIES_FOR_WEBVIEW
+      );
     }
 
-    // Parent session: include child agent activities
+    // Parent session: merge parent + child activities
     const childIds: string[] = [];
     for (const session of this.sessions.values()) {
       if (session.info.isSubAgent && session.parentSessionId === focusedSessionId) {
         childIds.push(session.info.sessionId);
       }
     }
-    const focusSet = new Set([focusedSessionId, ...childIds]);
-    return this.activities
-      .filter((a) => focusSet.has(a.sessionId))
-      .slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
+
+    const merged: ActivityEvent[] = [...(this.activitiesBySession.get(focusedSessionId) ?? [])];
+    for (const childId of childIds) {
+      merged.push(...(this.activitiesBySession.get(childId) ?? []));
+    }
+    merged.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return merged.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
   }
 
   /**
@@ -654,9 +680,14 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private addActivity(event: ActivityEvent): void {
-    this.activities.push(event);
-    if (this.activities.length > MAX_ACTIVITIES) {
-      this.activities.splice(0, this.activities.length - MAX_ACTIVITIES);
+    let sessionActivities = this.activitiesBySession.get(event.sessionId);
+    if (!sessionActivities) {
+      sessionActivities = [];
+      this.activitiesBySession.set(event.sessionId, sessionActivities);
+    }
+    sessionActivities.push(event);
+    if (sessionActivities.length > MAX_ACTIVITIES_PER_SESSION) {
+      sessionActivities.splice(0, sessionActivities.length - MAX_ACTIVITIES_PER_SESSION);
     }
   }
 
@@ -665,8 +696,12 @@ export class SessionTracker implements vscode.Disposable {
       clearTimeout(this.debounceTimer);
     }
     this.debounceTimer = setTimeout(() => {
+      let totalActivities = 0;
+      for (const events of this.activitiesBySession.values()) {
+        totalActivities += events.length;
+      }
       console.log(
-        `${LOG_PREFIX.SESSION_TRACKER} State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
+        `${LOG_PREFIX.SESSION_TRACKER} State changed — ${this.sessions.size} sessions, ${totalActivities} activities`
       );
       this._onStateChanged.fire();
     }, DEBOUNCE_MS);
@@ -723,6 +758,7 @@ export class SessionTracker implements vscode.Disposable {
         session.stateMachine.dispose();
         this.watcher?.removeTracked(session.info.filePath);
         this.sessions.delete(id);
+        this.activitiesBySession.delete(id);
       }
     }
 
@@ -752,6 +788,6 @@ export class SessionTracker implements vscode.Disposable {
     }
     this._onStateChanged.dispose();
     this.sessions.clear();
-    this.activities.length = 0;
+    this.activitiesBySession.clear();
   }
 }

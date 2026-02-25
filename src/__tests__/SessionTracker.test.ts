@@ -718,3 +718,133 @@ describe('SessionTracker.updateScope', () => {
     expect(t.scopedProjectDirs).toEqual([]);
   });
 });
+
+describe('SessionTracker per-session activity storage', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  function feedRecords(
+    sessionId: string,
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
+  ): void {
+    const sessionFile = {
+      sessionId,
+      filePath: `/tmp/test/${sessionId}.jsonl`,
+      projectDir: 'test-project',
+      isSubAgent: options?.isSubAgent || false,
+      modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({ sessionFile, records });
+  }
+
+  function makeToolUseRecord(sessionId: string, timestamp: string, toolId: string): string {
+    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg-${toolId}","type":"message","role":"assistant","content":[{"type":"tool_use","id":"${toolId}","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+  }
+
+  it('per-session activity storage prevents cross-session eviction', () => {
+    const now = Date.now();
+
+    // Create session A with 1 activity
+    feedRecords(
+      'session-a',
+      JsonlParser.parseString(makeToolUseRecord('session-a', new Date(now).toISOString(), 'tu-a1'))
+    );
+
+    // Verify session A has an activity
+    let state = tracker.getState('session-a');
+    expect(state.activities.length).toBeGreaterThanOrEqual(1);
+    expect(state.activities.some((a) => a.sessionId === 'session-a')).toBe(true);
+
+    // Create session B with 300 activities (would have evicted A under old global 500-item buffer)
+    const bRecords: string[] = [];
+    for (let i = 0; i < 300; i++) {
+      bRecords.push(
+        makeToolUseRecord('session-b', new Date(now + i + 1).toISOString(), `tu-b${i}`)
+      );
+    }
+    feedRecords('session-b', JsonlParser.parseString(bRecords.join('\n')));
+
+    // Focus session A — its activity must still be present
+    state = tracker.getState('session-a');
+    expect(state.activities.length).toBeGreaterThanOrEqual(1);
+    expect(state.activities.every((a) => a.sessionId === 'session-a')).toBe(true);
+  });
+
+  it('no-focus returns activities from all sessions in chronological order', () => {
+    // Create session A with activities at T1, T3
+    feedRecords(
+      'session-x',
+      JsonlParser.parseString(
+        [
+          makeToolUseRecord('session-x', '2026-02-25T10:00:01Z', 'tu-x1'),
+          makeToolUseRecord('session-x', '2026-02-25T10:00:03Z', 'tu-x2'),
+        ].join('\n')
+      )
+    );
+
+    // Create session B with activities at T2, T4
+    feedRecords(
+      'session-y',
+      JsonlParser.parseString(
+        [
+          makeToolUseRecord('session-y', '2026-02-25T10:00:02Z', 'tu-y1'),
+          makeToolUseRecord('session-y', '2026-02-25T10:00:04Z', 'tu-y2'),
+        ].join('\n')
+      )
+    );
+
+    // getState(null) → activities should be in chronological order
+    const state = tracker.getState(null);
+    const timestamps = state.activities.map((a) => a.timestamp);
+
+    // Verify chronological ordering
+    for (let i = 1; i < timestamps.length; i++) {
+      expect(timestamps[i] >= timestamps[i - 1]).toBe(true);
+    }
+
+    // Verify both sessions are represented
+    const sessionIds = new Set(state.activities.map((a) => a.sessionId));
+    expect(sessionIds.has('session-x')).toBe(true);
+    expect(sessionIds.has('session-y')).toBe(true);
+
+    // Verify interleaved ordering: x, y, x, y
+    const sessionOrder = state.activities.map((a) => a.sessionId);
+    expect(sessionOrder).toEqual(['session-x', 'session-y', 'session-x', 'session-y']);
+  });
+
+  it('cleanup removes activity buffer for stale sessions', () => {
+    const oldTimestamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+
+    feedRecords(
+      'stale-act',
+      JsonlParser.parseString(makeToolUseRecord('stale-act', oldTimestamp, 'tu-stale'))
+    );
+
+    // Verify the activity buffer exists
+    const t = tracker as any;
+    expect(t.activitiesBySession.has('stale-act')).toBe(true);
+
+    // Trigger cleanup — session is done (replay detection) + stale (>30 min)
+    t.cleanupStaleSessions();
+
+    // Activity buffer should be cleaned up too
+    expect(t.activitiesBySession.has('stale-act')).toBe(false);
+  });
+});

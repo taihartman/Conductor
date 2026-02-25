@@ -32,17 +32,11 @@ export function DetailPanel({
   const tokenSummary = tokenSummaries.find((t) => t.sessionId === session.sessionId);
   const cost = tokenSummary?.estimatedCostUsd ?? 0;
 
-  // Filter activities for focused session (and optionally sub-agent)
-  const sessionActivities = activities.filter((a) => {
-    if (a.sessionId !== session.sessionId) return false;
-    if (filteredSubAgentId && a.sessionSlug) {
-      const subAgent = (session.childAgents ?? []).find((c) => c.sessionId === filteredSubAgentId);
-      if (subAgent) {
-        return a.sessionSlug === subAgent.slug;
-      }
-    }
-    return true;
-  });
+  // Backend already filters activities to the focused session + its children.
+  // If a specific sub-agent is selected in the EnsembleList, narrow further.
+  const sessionActivities = filteredSubAgentId
+    ? activities.filter((a) => a.sessionId === filteredSubAgentId)
+    : activities;
 
   // Filter token summaries for this session
   const sessionTokenSummaries = tokenSummaries.filter(
