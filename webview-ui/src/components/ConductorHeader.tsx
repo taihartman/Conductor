@@ -2,6 +2,7 @@ import React from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
 import { formatCost } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
+import { OwlblobMascot } from './OwlblobMascot';
 
 interface ConductorHeaderProps {
   sessions: SessionInfo[];
@@ -14,7 +15,7 @@ export function ConductorHeader({
   tokenSummaries,
   onRefresh,
 }: ConductorHeaderProps): React.ReactElement {
-  const parentSessions = sessions.filter((s) => !s.isSubAgent || !s.parentSessionId);
+  const parentSessions = sessions.filter((s) => !s.isSubAgent);
   const workingCount = parentSessions.filter(
     (s) => s.status === 'working' || s.status === 'thinking'
   ).length;
@@ -34,6 +35,7 @@ export function ConductorHeader({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
+        <OwlblobMascot size={40} />
         <h1
           style={{
             fontSize: '14px',

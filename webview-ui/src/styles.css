@@ -112,3 +112,113 @@ button:hover {
 button:active {
   opacity: 0.7;
 }
+
+/* ── Owlblob Mascot Animations ──────────────────────────────── */
+
+/* Continuous float (vertical bob) */
+@keyframes ob-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.ob-float-layer {
+  animation: ob-float 6s ease-in-out infinite;
+}
+
+/* Musical note drift */
+@keyframes ob-note-float {
+  0% { opacity: 0.7; transform: translateY(0) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(-50px) rotate(12deg); }
+}
+
+.ob-note-float {
+  animation: ob-note-float 8s ease-in-out infinite;
+}
+
+.ob-note-float--delayed {
+  animation-delay: 3s;
+}
+
+/* Transform-box setup for SVG group transforms */
+[data-ob-head],
+[data-ob-ear-left],
+[data-ob-ear-right],
+[data-ob-eyelid-left],
+[data-ob-eyelid-right],
+[data-ob-wing-left],
+[data-ob-wing-right],
+[data-ob-root] {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* ── Idle behavior keyframes ──────────────────────────────────── */
+
+@keyframes ob-blink {
+  0%, 100% { transform: scaleY(1); }
+  40%, 60% { transform: scaleY(0.1); }
+}
+
+@keyframes ob-tilt-left {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(-8deg); }
+}
+
+@keyframes ob-tilt-right {
+  0%, 100% { transform: rotate(0deg); }
+  30%, 70% { transform: rotate(8deg); }
+}
+
+@keyframes ob-ear-twitch {
+  0%, 100% { transform: scaleX(1) translateY(0); }
+  30% { transform: scaleX(1.3) translateY(-3px); }
+  60% { transform: scaleX(0.85) translateY(1px); }
+}
+
+@keyframes ob-settle {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+@keyframes ob-wing-ruffle {
+  0%, 100% { transform: scale(1, 1); }
+  30% { transform: scale(1.25, 1.1); }
+  60% { transform: scale(0.9, 0.95); }
+}
+
+@keyframes ob-head-bob {
+  0%, 100% { transform: translateY(0); }
+  35% { transform: translateY(4px); }
+  65% { transform: translateY(-1px); }
+}
+
+/* ── Idle behavior trigger classes ────────────────────────────── */
+
+.ob-anim--blink {
+  animation: ob-blink 550ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ob-anim--tilt-left {
+  animation: ob-tilt-left 800ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ob-anim--tilt-right {
+  animation: ob-tilt-right 800ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ob-anim--ear-twitch {
+  animation: ob-ear-twitch 450ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ob-anim--settle {
+  animation: ob-settle 1200ms ease-in-out both;
+}
+
+.ob-anim--wing-ruffle {
+  animation: ob-wing-ruffle 650ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.ob-anim--head-bob {
+  animation: ob-head-bob 550ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
