@@ -32,6 +32,15 @@ npm run test:watch
 # Type checking
 npm run lint
 
+# Generate API docs (output: docs/api/, gitignored)
+npm run docs
+
+# Format code
+npm run format
+
+# Check formatting
+npm run format:check
+
 # Run a single test file
 npx vitest run src/__tests__/JsonlParser.test.ts
 ```
@@ -39,6 +48,10 @@ npx vitest run src/__tests__/JsonlParser.test.ts
 To debug: press F5 in VS Code to launch the extension host (runs build first).
 
 ## Architecture
+
+> **Full architecture docs**: See [`docs/architecture.md`](docs/architecture.md) for state machine diagrams, constants table, IPC protocol reference, and file naming conventions.
+>
+> **Keep docs in sync**: Run `/sync-architecture-docs` after structural changes to detect divergences between code and documentation.
 
 **Dual-build system**: esbuild bundles the Node.js extension (`src/` → `dist/extension.js`), Vite bundles the React webview (`webview-ui/src/` → `webview-ui/dist/`). Separate `package.json` files isolate dependencies.
 

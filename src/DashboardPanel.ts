@@ -1,8 +1,29 @@
+/**
+ * @module DashboardPanel
+ *
+ * Manages the webview panel lifecycle and IPC bridge between the extension
+ * backend and the React dashboard UI.
+ *
+ * @remarks
+ * Uses a singleton pattern — only one dashboard panel exists at a time.
+ * The webview HTML is CSP-secured with a nonce-based script policy.
+ * Asset paths (`assets/index.js`, `assets/index.css`) must match the Vite
+ * output configuration in `webview-ui/vite.config.ts`.
+ */
+
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/protocol';
 
+/**
+ * Singleton webview panel for the Claude Agent Dashboard.
+ *
+ * @remarks
+ * Created via {@link createOrShow} and automatically disposed when the user
+ * closes the panel. Subscribes to {@link SessionTracker.onStateChanged} to
+ * push live updates to the webview.
+ */
 export class DashboardPanel implements vscode.Disposable {
   public static currentPanel: DashboardPanel | undefined;
   private static readonly viewType = 'claudeAgentDashboard';
@@ -12,6 +33,18 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly sessionTracker: SessionTracker;
   private readonly disposables: vscode.Disposable[] = [];
 
+  /**
+   * Create a new dashboard panel or reveal an existing one.
+   *
+   * @remarks
+   * If a panel already exists, it is revealed in its current column.
+   * Otherwise, a new panel is created with scripts enabled and
+   * `retainContextWhenHidden: true` to preserve React state.
+   *
+   * @param context - Extension context (provides the extension URI for asset paths)
+   * @param sessionTracker - The session tracker instance to read state from
+   * @returns The singleton DashboardPanel instance
+   */
   public static createOrShow(
     context: vscode.ExtensionContext,
     sessionTracker: SessionTracker
@@ -31,18 +64,12 @@ export class DashboardPanel implements vscode.Disposable {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(context.extensionUri, 'webview-ui', 'dist'),
-        ],
+        localResourceRoots: [vscode.Uri.joinPath(context.extensionUri, 'webview-ui', 'dist')],
       }
     );
 
     console.log('[ClaudeDashboard:Panel] Creating new dashboard panel');
-    DashboardPanel.currentPanel = new DashboardPanel(
-      panel,
-      context.extensionUri,
-      sessionTracker
-    );
+    DashboardPanel.currentPanel = new DashboardPanel(panel, context.extensionUri, sessionTracker);
 
     return DashboardPanel.currentPanel;
   }
@@ -69,9 +96,19 @@ export class DashboardPanel implements vscode.Disposable {
     this.sessionTracker.onStateChanged(() => this.postFullState());
   }
 
+  /**
+   * Send the complete dashboard state to the webview.
+   *
+   * @remarks
+   * Posts four separate IPC messages: sessions, activities, tool stats,
+   * and token summaries. Called on initial webview mount (`ready` message)
+   * and on every {@link SessionTracker.onStateChanged} event.
+   */
   public postFullState(): void {
     const state = this.sessionTracker.getState();
-    console.log(`[ClaudeDashboard:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`);
+    console.log(
+      `[ClaudeDashboard:Panel] Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
+    );
 
     this.postMessage({ type: 'sessions:update', sessions: state.sessions });
     this.postMessage({ type: 'activity:full', events: state.activities });
@@ -104,12 +141,8 @@ export class DashboardPanel implements vscode.Disposable {
     const nonce = getNonce();
 
     const distUri = vscode.Uri.joinPath(this.extensionUri, 'webview-ui', 'dist');
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distUri, 'assets', 'index.js')
-    );
-    const styleUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(distUri, 'assets', 'index.css')
-    );
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', 'index.js'));
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(distUri, 'assets', 'index.css'));
 
     return `<!DOCTYPE html>
 <html lang="en">

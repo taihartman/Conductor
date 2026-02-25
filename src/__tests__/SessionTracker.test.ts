@@ -1,12 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JsonlParser } from '../monitoring/JsonlParser';
 import { SessionTracker } from '../monitoring/SessionTracker';
-import {
-  AssistantRecord,
-  UserRecord,
-  SystemRecord,
-  SummaryRecord,
-} from '../models/types';
+import { AssistantRecord, UserRecord, SystemRecord, SummaryRecord } from '../models/types';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -56,17 +51,11 @@ describe('SessionTracker record processing', () => {
 
     expect(records).toHaveLength(1);
     const record = records[0] as SummaryRecord;
-    expect(record.summary).toBe(
-      'Fixed login bug by correcting comparison operator'
-    );
+    expect(record.summary).toBe('Fixed login bug by correcting comparison operator');
   });
 
   it('processes complete session from fixture', () => {
-    const fixturePath = path.join(
-      __dirname,
-      'fixtures',
-      'sample-session.jsonl'
-    );
+    const fixturePath = path.join(__dirname, 'fixtures', 'sample-session.jsonl');
     const content = fs.readFileSync(fixturePath, 'utf-8');
     const records = JsonlParser.parseString(content);
 
@@ -93,9 +82,7 @@ describe('SessionTracker record processing', () => {
         }
         case 'user': {
           const userMsg = (record as UserRecord).message;
-          const hasToolResult = userMsg.content.some(
-            (c) => c.type === 'tool_result'
-          );
+          const hasToolResult = userMsg.content.some((c) => c.type === 'tool_result');
           if (hasToolResult) {
             statusTransitions.push('active');
           }
@@ -265,14 +252,23 @@ describe('SessionTracker parent-child grouping', () => {
     const now = new Date().toISOString();
 
     // Create parent session
-    feedRecords(tracker, 'parent-1', JsonlParser.parseString(
-      `{"type":"assistant","slug":"parent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
-    ));
+    feedRecords(
+      tracker,
+      'parent-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"parent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
 
     // Create sub-agent linked via directory structure
-    feedRecords(tracker, 'agent-abc', JsonlParser.parseString(
-      `{"type":"assistant","slug":"explore-agent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Exploring"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true, parentSessionId: 'parent-1' });
+    feedRecords(
+      tracker,
+      'agent-abc',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"explore-agent","sessionId":"parent-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Exploring"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'parent-1' }
+    );
 
     const state = tracker.getState();
 
@@ -288,14 +284,23 @@ describe('SessionTracker parent-child grouping', () => {
     const now = new Date().toISOString();
 
     // Create parent session
-    feedRecords(tracker, 'parent-2', JsonlParser.parseString(
-      `{"type":"assistant","slug":"parent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
-    ));
+    feedRecords(
+      tracker,
+      'parent-2',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"parent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Hello"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
 
     // Create root-level sub-agent (no parentSessionId from directory) — the JSONL record has sessionId=parent-2
-    feedRecords(tracker, 'agent-root', JsonlParser.parseString(
-      `{"type":"assistant","slug":"root-agent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Working"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true });
+    feedRecords(
+      tracker,
+      'agent-root',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"root-agent","sessionId":"parent-2","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Working"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true }
+    );
 
     const state = tracker.getState();
     const parent = state.sessions.find((s) => s.sessionId === 'parent-2');
@@ -308,9 +313,14 @@ describe('SessionTracker parent-child grouping', () => {
     const now = new Date().toISOString();
 
     // Create sub-agent with no matching parent
-    feedRecords(tracker, 'agent-orphan', JsonlParser.parseString(
-      `{"type":"assistant","slug":"orphan-agent","sessionId":"nonexistent-parent","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Lost"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true });
+    feedRecords(
+      tracker,
+      'agent-orphan',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"orphan-agent","sessionId":"nonexistent-parent","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Lost"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true }
+    );
 
     const state = tracker.getState();
 
@@ -326,14 +336,23 @@ describe('SessionTracker parent-child grouping', () => {
     const now = new Date().toISOString();
 
     // Create parent session with activity
-    feedRecords(tracker, 'parent-3', JsonlParser.parseString(
-      `{"type":"assistant","slug":"parent","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
-    ));
+    feedRecords(
+      tracker,
+      'parent-3',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"parent","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
 
     // Create child agent with activity
-    feedRecords(tracker, 'agent-child', JsonlParser.parseString(
-      `{"type":"assistant","slug":"child","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true, parentSessionId: 'parent-3' });
+    feedRecords(
+      tracker,
+      'agent-child',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"child","sessionId":"parent-3","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'parent-3' }
+    );
 
     // Focus on parent
     tracker.focusSession('parent-3');
@@ -349,14 +368,23 @@ describe('SessionTracker parent-child grouping', () => {
     const now = new Date().toISOString();
 
     // Create parent
-    feedRecords(tracker, 'parent-4', JsonlParser.parseString(
-      `{"type":"assistant","slug":"parent","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
-    ));
+    feedRecords(
+      tracker,
+      'parent-4',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"parent","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/a.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
 
     // Create child
-    feedRecords(tracker, 'agent-child2', JsonlParser.parseString(
-      `{"type":"assistant","slug":"child","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true, parentSessionId: 'parent-4' });
+    feedRecords(
+      tracker,
+      'agent-child2',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"child","sessionId":"parent-4","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu2","name":"Grep","input":{"pattern":"foo"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'parent-4' }
+    );
 
     // Focus on sub-agent
     tracker.focusSession('agent-child2');
@@ -371,14 +399,23 @@ describe('SessionTracker parent-child grouping', () => {
     const oldTimestamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(); // 5 hours ago
 
     // Create parent session (will be idle from replay detection)
-    feedRecords(tracker, 'stale-parent', JsonlParser.parseString(
-      `{"type":"assistant","slug":"stale","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Old"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
-    ));
+    feedRecords(
+      tracker,
+      'stale-parent',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"stale","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Old"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
 
     // Create child of stale parent
-    feedRecords(tracker, 'agent-stale-child', JsonlParser.parseString(
-      `{"type":"assistant","slug":"stale-child","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Old child"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
-    ), { isSubAgent: true, parentSessionId: 'stale-parent' });
+    feedRecords(
+      tracker,
+      'agent-stale-child',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"stale-child","sessionId":"stale-parent","timestamp":"${oldTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg2","type":"message","role":"assistant","content":[{"type":"text","text":"Old child"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":25}}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'stale-parent' }
+    );
 
     // Verify both exist before cleanup
     let state = tracker.getState();

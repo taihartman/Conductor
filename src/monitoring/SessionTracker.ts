@@ -1,3 +1,29 @@
+/**
+ * @module SessionTracker
+ *
+ * Core orchestrator that maps session IDs to state, processes JSONL records,
+ * and emits debounced state updates to the dashboard.
+ *
+ * @remarks
+ * **State machine per session:**
+ * ```
+ * idle → active (user input / tool call)
+ *      → waiting (AskUserQuestion tool)
+ *      → active (user response / tool result)
+ *      → idle (turn_duration system record / IDLE_TIMEOUT_MS expiry)
+ * ```
+ *
+ * **Key behaviors:**
+ * - Debounced updates: state changes are batched and emitted after 100ms of quiet
+ * - Replay detection: records older than 5 minutes on first file read are marked historical
+ * - Stale cleanup: idle sessions older than {@link STALE_SESSION_MS} (4h) are removed
+ *   every {@link CLEANUP_INTERVAL_MS} (5min)
+ * - Activity buffer: capped at {@link MAX_ACTIVITIES} (500) entries with FIFO eviction
+ *
+ * **Note:** This class is identified as a god class (~590 lines) and is slated for
+ * decomposition in Phase 2 of the extensibility roadmap. See CLAUDE.md.
+ */
+
 import * as vscode from 'vscode';
 import { ProjectScanner } from './ProjectScanner';
 import { TranscriptWatcher, WatcherEvent } from './TranscriptWatcher';
@@ -22,16 +48,30 @@ import {
   TextContentBlock,
 } from '../models/types';
 
+/** Internal tracking state for a session, not exposed to the webview. */
 interface InternalSessionState {
+  /** Public session metadata sent to the dashboard. */
   info: SessionInfo;
+  /** Timestamp (ms since epoch) of the last assistant message — used for idle detection. */
   lastAssistantTime: number;
+  /** Stop reason from the last assistant message (`'end_turn'` triggers idle timer). */
   lastStopReason: string | null;
+  /** Timer handle for the idle timeout fallback. */
   idleTimer?: ReturnType<typeof setTimeout>;
+  /** Whether the initial file replay has completed (for stale detection). */
   isInitialReplayDone: boolean;
+  /** Parent session ID for sub-agent relationship tracking. */
   parentSessionId?: string;
+  /** Human-readable description extracted from the first user prompt. */
   description: string;
 }
 
+/**
+ * Complete dashboard state snapshot sent to the webview.
+ *
+ * @remarks
+ * Assembled by {@link SessionTracker.getState} and posted via IPC by {@link DashboardPanel}.
+ */
 export interface DashboardState {
   sessions: SessionInfo[];
   activities: ActivityEvent[];
@@ -39,11 +79,26 @@ export interface DashboardState {
   tokenSummaries: TokenSummary[];
 }
 
+/** Time (ms) after `end_turn` with no new data before a session transitions to idle. */
 const IDLE_TIMEOUT_MS = 30_000;
+/** Maximum number of activity events kept in the buffer (FIFO eviction). */
 const MAX_ACTIVITIES = 500;
+/** Sessions idle longer than this (4 hours) are eligible for cleanup. */
 const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
+/** Interval for the stale session cleanup sweep (5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * Core session orchestrator that processes JSONL records into dashboard state.
+ *
+ * @remarks
+ * Owns a {@link ProjectScanner}, {@link TranscriptWatcher}, {@link ToolStats},
+ * and {@link TokenCounter}. Implements `vscode.Disposable` for cleanup of all
+ * timers, watchers, and event emitters.
+ *
+ * Emits {@link onStateChanged} (debounced 100ms) whenever session state, activities,
+ * tool stats, or token counts change.
+ */
 export class SessionTracker implements vscode.Disposable {
   private readonly scanner: ProjectScanner;
   private watcher: TranscriptWatcher | undefined;
@@ -66,6 +121,13 @@ export class SessionTracker implements vscode.Disposable {
     this.scanner = new ProjectScanner();
   }
 
+  /**
+   * Initialize file watching and start processing transcript records.
+   *
+   * @remarks
+   * Creates the {@link TranscriptWatcher}, starts it, and begins periodic
+   * stale session cleanup. Call once after construction.
+   */
   start(): void {
     console.log('[ClaudeDashboard:SessionTracker] Starting session tracking...');
     this.watcher = new TranscriptWatcher(
@@ -80,6 +142,13 @@ export class SessionTracker implements vscode.Disposable {
     console.log('[ClaudeDashboard:SessionTracker] Session tracking started');
   }
 
+  /**
+   * Manually re-scan for session files (last 24 hours) and register new ones.
+   *
+   * @remarks
+   * Triggered by the `claudeAgentDashboard.refresh` command or the webview
+   * `refresh` IPC message. Does not re-read existing tracked files.
+   */
   refresh(): void {
     this.outputChannel.appendLine('Manual refresh triggered');
     // Re-scan for recent files only (last 24 hours)
@@ -91,10 +160,29 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
+  /**
+   * Set the focused session for activity filtering.
+   *
+   * @remarks
+   * When a session is focused, {@link getState} filters the activity feed to
+   * show only events from that session (and its children, if it's a parent).
+   *
+   * @param sessionId - Session to focus, or pass to filter activities
+   */
   focusSession(sessionId: string): void {
     this.focusedSessionId = sessionId;
   }
 
+  /**
+   * Assemble the complete dashboard state snapshot.
+   *
+   * @remarks
+   * Builds a hierarchical session list (parents with nested children + orphaned
+   * sub-agents), filters activities by focused session, and collects tool stats
+   * and token summaries. Activities are capped at the last 200 events.
+   *
+   * @returns Complete {@link DashboardState} for the webview
+   */
   getState(): DashboardState {
     // Build parent → children mapping
     const childrenByParent = new Map<string, SubAgentInfo[]>();
@@ -130,23 +218,18 @@ export class SessionTracker implements vscode.Disposable {
       }));
 
     const sessions = [...parentSessions, ...orphanedAgents].sort(
-      (a, b) =>
-        new Date(b.lastActivityAt).getTime() -
-        new Date(a.lastActivityAt).getTime()
+      (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
     );
 
     // Filter activities: when focused on parent, include child activities
     let activities: ActivityEvent[];
     if (this.focusedSessionId) {
-      const childIds =
-        childrenByParent.get(this.focusedSessionId)?.map((c) => c.sessionId) || [];
+      const childIds = childrenByParent.get(this.focusedSessionId)?.map((c) => c.sessionId) || [];
       const focusSet = new Set([this.focusedSessionId, ...childIds]);
       // If focused on a sub-agent directly, just show that agent's activities
       const isSubAgent = this.sessions.get(this.focusedSessionId)?.info.isSubAgent;
       if (isSubAgent) {
-        activities = this.activities.filter(
-          (a) => a.sessionId === this.focusedSessionId
-        );
+        activities = this.activities.filter((a) => a.sessionId === this.focusedSessionId);
       } else {
         activities = this.activities.filter((a) => focusSet.has(a.sessionId));
       }
@@ -163,7 +246,9 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private handleNewFile(file: SessionFile): void {
-    console.log(`[ClaudeDashboard:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`);
+    console.log(
+      `[ClaudeDashboard:SessionTracker] New file: ${file.sessionId} (subAgent=${file.isSubAgent})`
+    );
     if (!this.sessions.has(file.sessionId)) {
       this.sessions.set(file.sessionId, {
         info: {
@@ -196,7 +281,9 @@ export class SessionTracker implements vscode.Disposable {
 
   private handleRecords(event: WatcherEvent): void {
     const { sessionFile, records } = event;
-    console.log(`[ClaudeDashboard:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`);
+    console.log(
+      `[ClaudeDashboard:SessionTracker] Processing ${records.length} record(s) for session ${sessionFile.sessionId}`
+    );
 
     for (const record of records) {
       this.processRecord(sessionFile, record);
@@ -207,9 +294,7 @@ export class SessionTracker implements vscode.Disposable {
     if (session && !session.isInitialReplayDone) {
       session.isInitialReplayDone = true;
       const lastRecord = records[records.length - 1];
-      const lastRecordTime = lastRecord?.timestamp
-        ? new Date(lastRecord.timestamp).getTime()
-        : 0;
+      const lastRecordTime = lastRecord?.timestamp ? new Date(lastRecord.timestamp).getTime() : 0;
       const STALE_THRESHOLD_MS = 5 * 60 * 1000;
       if (lastRecordTime > 0 && Date.now() - lastRecordTime > STALE_THRESHOLD_MS) {
         session.info.status = 'idle';
@@ -221,7 +306,9 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   private processRecord(file: SessionFile, record: JsonlRecord): void {
-    console.log(`[ClaudeDashboard:SessionTracker] Record type=${record.type} session=${file.sessionId}`);
+    console.log(
+      `[ClaudeDashboard:SessionTracker] Record type=${record.type} session=${file.sessionId}`
+    );
     // Ensure session exists
     if (!this.sessions.has(file.sessionId)) {
       this.handleNewFile(file);
@@ -273,10 +360,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processAssistant(
-    session: InternalSessionState,
-    record: AssistantRecord
-  ): void {
+  private processAssistant(session: InternalSessionState, record: AssistantRecord): void {
     const msg = record.message;
     if (!msg) return;
 
@@ -295,10 +379,8 @@ export class SessionTracker implements vscode.Disposable {
       );
       session.info.totalInputTokens += msg.usage.input_tokens || 0;
       session.info.totalOutputTokens += msg.usage.output_tokens || 0;
-      session.info.totalCacheReadTokens +=
-        msg.usage.cache_read_input_tokens || 0;
-      session.info.totalCacheCreationTokens +=
-        msg.usage.cache_creation_input_tokens || 0;
+      session.info.totalCacheReadTokens += msg.usage.cache_read_input_tokens || 0;
+      session.info.totalCacheCreationTokens += msg.usage.cache_creation_input_tokens || 0;
     }
 
     // Process content blocks
@@ -364,10 +446,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processUser(
-    session: InternalSessionState,
-    record: UserRecord
-  ): void {
+  private processUser(session: InternalSessionState, record: UserRecord): void {
     const msg = record.message;
     if (!msg) return;
 
@@ -426,10 +505,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processSystem(
-    session: InternalSessionState,
-    record: SystemRecord
-  ): void {
+  private processSystem(session: InternalSessionState, record: SystemRecord): void {
     if (record.subtype === 'turn_duration') {
       session.info.status = 'idle';
       session.info.turnCount++;
@@ -446,10 +522,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processSummary(
-    session: InternalSessionState,
-    record: SummaryRecord
-  ): void {
+  private processSummary(session: InternalSessionState, record: SummaryRecord): void {
     if (record.summary) {
       session.info.summary = record.summary;
     } else if (record.message?.content) {
@@ -457,9 +530,7 @@ export class SessionTracker implements vscode.Disposable {
       if (typeof content === 'string') {
         session.info.summary = content;
       } else if (Array.isArray(content)) {
-        const textBlocks = content.filter(
-          (b): b is TextContentBlock => b.type === 'text'
-        );
+        const textBlocks = content.filter((b): b is TextContentBlock => b.type === 'text');
         if (textBlocks.length > 0) {
           session.info.summary = textBlocks.map((b) => b.text).join(' ');
         }
@@ -467,10 +538,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private processProgress(
-    _session: InternalSessionState,
-    _record: ProgressRecord
-  ): void {
+  private processProgress(_session: InternalSessionState, _record: ProgressRecord): void {
     // Progress records are informational; we just keep the session marked active
     _session.info.status = 'active';
   }
@@ -503,10 +571,7 @@ export class SessionTracker implements vscode.Disposable {
     }
   }
 
-  private summarizeToolInput(
-    toolName: string,
-    input: Record<string, unknown>
-  ): string {
+  private summarizeToolInput(toolName: string, input: Record<string, unknown>): string {
     switch (toolName) {
       case 'Read':
         return String(input.file_path || '');
@@ -536,13 +601,17 @@ export class SessionTracker implements vscode.Disposable {
       clearTimeout(this.debounceTimer);
     }
     this.debounceTimer = setTimeout(() => {
-      console.log(`[ClaudeDashboard:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`);
+      console.log(
+        `[ClaudeDashboard:SessionTracker] State changed — ${this.sessions.size} sessions, ${this.activities.length} activities`
+      );
       this._onStateChanged.fire();
     }, 100);
   }
 
   private cleanupStaleSessions(): void {
-    console.log(`[ClaudeDashboard:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`);
+    console.log(
+      `[ClaudeDashboard:SessionTracker] Running stale session cleanup (${this.sessions.size} sessions)`
+    );
     const now = Date.now();
     const toRemove: string[] = [];
 
@@ -579,6 +648,9 @@ export class SessionTracker implements vscode.Disposable {
     this.emitStateChanged();
   }
 
+  /**
+   * Clean up all resources: watcher, timers, event emitters, and session state.
+   */
   dispose(): void {
     this.watcher?.dispose();
     if (this.debounceTimer) {

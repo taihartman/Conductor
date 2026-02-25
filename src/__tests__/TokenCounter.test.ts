@@ -104,11 +104,7 @@ describe('TokenCounter', () => {
   });
 
   it('static estimateCost works', () => {
-    const cost = TokenCounter.estimateCost(
-      'claude-sonnet-4-6',
-      1_000_000,
-      1_000_000
-    );
+    const cost = TokenCounter.estimateCost('claude-sonnet-4-6', 1_000_000, 1_000_000);
     // input: $3 + output: $15 = $18
     expect(cost).toBeCloseTo(18, 1);
   });
@@ -122,11 +118,7 @@ describe('TokenCounter', () => {
       200_000 // cache creation
     );
 
-    const costWithoutCache = TokenCounter.estimateCost(
-      'claude-sonnet-4-6',
-      100_000,
-      50_000
-    );
+    const costWithoutCache = TokenCounter.estimateCost('claude-sonnet-4-6', 100_000, 50_000);
 
     // Cache should add cost (cache creation at 125% and cache read at 10%)
     expect(costWithCache).toBeGreaterThan(costWithoutCache);

@@ -12,29 +12,20 @@ export function activate(context: vscode.ExtensionContext): void {
   sessionTracker = new SessionTracker(outputChannel);
   context.subscriptions.push(sessionTracker);
 
-  const openCommand = vscode.commands.registerCommand(
-    'claudeAgentDashboard.open',
-    () => {
-      console.log('[ClaudeDashboard] Open command invoked');
-      DashboardPanel.createOrShow(context, sessionTracker!);
-    }
-  );
+  const openCommand = vscode.commands.registerCommand('claudeAgentDashboard.open', () => {
+    console.log('[ClaudeDashboard] Open command invoked');
+    DashboardPanel.createOrShow(context, sessionTracker!);
+  });
 
-  const refreshCommand = vscode.commands.registerCommand(
-    'claudeAgentDashboard.refresh',
-    () => {
-      console.log('[ClaudeDashboard] Refresh command invoked');
-      sessionTracker?.refresh();
-      DashboardPanel.currentPanel?.postFullState();
-    }
-  );
+  const refreshCommand = vscode.commands.registerCommand('claudeAgentDashboard.refresh', () => {
+    console.log('[ClaudeDashboard] Refresh command invoked');
+    sessionTracker?.refresh();
+    DashboardPanel.currentPanel?.postFullState();
+  });
 
   context.subscriptions.push(openCommand, refreshCommand);
 
-  const statusBarItem = vscode.window.createStatusBarItem(
-    vscode.StatusBarAlignment.Right,
-    100
-  );
+  const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = '$(pulse) Claude Agents';
   statusBarItem.tooltip = 'Open Claude Agent Dashboard';
   statusBarItem.command = 'claudeAgentDashboard.open';

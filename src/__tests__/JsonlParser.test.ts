@@ -19,13 +19,15 @@ describe('JsonlParser', () => {
     });
 
     it('skips empty lines', () => {
-      const content = '{"type":"user","message":{"role":"user","content":[]}}\n\n\n{"type":"assistant","message":{"model":"test","id":"1","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}';
+      const content =
+        '{"type":"user","message":{"role":"user","content":[]}}\n\n\n{"type":"assistant","message":{"model":"test","id":"1","type":"message","role":"assistant","content":[],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":0,"output_tokens":0}}}';
       const records = JsonlParser.parseString(content);
       expect(records).toHaveLength(2);
     });
 
     it('skips malformed JSON lines', () => {
-      const content = '{"type":"user","message":{"role":"user","content":[]}}\n{invalid json\n{"type":"system","subtype":"turn_duration"}';
+      const content =
+        '{"type":"user","message":{"role":"user","content":[]}}\n{invalid json\n{"type":"system","subtype":"turn_duration"}';
       const records = JsonlParser.parseString(content);
       expect(records).toHaveLength(2);
     });

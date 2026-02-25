@@ -24,7 +24,10 @@ export const window = {
 };
 
 export class RelativePattern {
-  constructor(public base: any, public pattern: string) {}
+  constructor(
+    public base: any,
+    public pattern: string
+  ) {}
 }
 
 export class EventEmitter {
