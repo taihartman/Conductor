@@ -14,6 +14,8 @@
 import * as vscode from 'vscode';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/protocol';
+import { SessionInfo } from './models/types';
+import { ISessionNameStore } from './persistence/ISessionNameStore';
 import { PANEL_TITLE, LOG_PREFIX } from './constants';
 
 /**
@@ -31,6 +33,7 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly panel: vscode.WebviewPanel;
   private readonly extensionUri: vscode.Uri;
   private readonly sessionTracker: SessionTracker;
+  private readonly nameStore: ISessionNameStore;
   private readonly disposables: vscode.Disposable[] = [];
   private focusedSessionId: string | null = null;
 
@@ -44,11 +47,13 @@ export class DashboardPanel implements vscode.Disposable {
    *
    * @param context - Extension context (provides the extension URI for asset paths)
    * @param sessionTracker - The session tracker instance to read state from
+   * @param nameStore - Persistence layer for user-defined session display names
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
     context: vscode.ExtensionContext,
-    sessionTracker: SessionTracker
+    sessionTracker: SessionTracker,
+    nameStore: ISessionNameStore
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -70,7 +75,12 @@ export class DashboardPanel implements vscode.Disposable {
     );
 
     console.log(`${LOG_PREFIX.PANEL} Creating new dashboard panel`);
-    DashboardPanel.currentPanel = new DashboardPanel(panel, context.extensionUri, sessionTracker);
+    DashboardPanel.currentPanel = new DashboardPanel(
+      panel,
+      context.extensionUri,
+      sessionTracker,
+      nameStore
+    );
 
     return DashboardPanel.currentPanel;
   }
@@ -78,11 +88,13 @@ export class DashboardPanel implements vscode.Disposable {
   private constructor(
     panel: vscode.WebviewPanel,
     extensionUri: vscode.Uri,
-    sessionTracker: SessionTracker
+    sessionTracker: SessionTracker,
+    nameStore: ISessionNameStore
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.sessionTracker = sessionTracker;
+    this.nameStore = nameStore;
 
     this.panel.webview.html = this.getHtml();
 
@@ -107,11 +119,12 @@ export class DashboardPanel implements vscode.Disposable {
    */
   public postFullState(): void {
     const state = this.sessionTracker.getState(this.focusedSessionId);
+    const sessions = this.applyCustomNames(state.sessions);
     console.log(
-      `${LOG_PREFIX.PANEL} Posting state → ${state.sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
+      `${LOG_PREFIX.PANEL} Posting state → ${sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
 
-    this.postMessage({ type: 'sessions:update', sessions: state.sessions });
+    this.postMessage({ type: 'sessions:update', sessions });
     this.postMessage({ type: 'activity:full', events: state.activities });
     this.postMessage({ type: 'toolStats:update', stats: state.toolStats });
     this.postMessage({ type: 'tokens:update', tokenSummaries: state.tokenSummaries });
@@ -147,7 +160,25 @@ export class DashboardPanel implements vscode.Disposable {
         this.sessionTracker.refresh();
         this.postFullState();
         break;
+      case 'session:rename':
+        console.log(
+          `${LOG_PREFIX.PANEL} Renaming session ${message.sessionId} → "${message.name}"`
+        );
+        this.nameStore.setName(message.sessionId, message.name).then(() => {
+          this.postFullState();
+        });
+        break;
     }
+  }
+
+  private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {
+    return sessions.map((session) => {
+      const customName = this.nameStore.getName(session.sessionId);
+      if (customName) {
+        return { ...session, customName };
+      }
+      return session;
+    });
   }
 
   private getHtml(): string {

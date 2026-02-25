@@ -1,12 +1,14 @@
 import * as vscode from 'vscode';
 import { DashboardPanel } from './DashboardPanel';
 import { SessionTracker } from './monitoring/SessionTracker';
+import { SessionNameStore } from './persistence/SessionNameStore';
 import {
   OUTPUT_CHANNEL_NAME,
   STATUS_BAR_TEXT,
   STATUS_BAR_TOOLTIP,
   COMMANDS,
   LOG_PREFIX,
+  SETTINGS,
 } from './constants';
 
 let sessionTracker: SessionTracker | undefined;
@@ -26,9 +28,12 @@ export function activate(context: vscode.ExtensionContext): void {
   sessionTracker = new SessionTracker(outputChannel, workspacePath);
   context.subscriptions.push(sessionTracker);
 
+  const nameStore = new SessionNameStore(context.globalState, outputChannel);
+  context.subscriptions.push(nameStore);
+
   const openCommand = vscode.commands.registerCommand(COMMANDS.OPEN, () => {
     console.log(`${LOG_PREFIX.EXTENSION} Open command invoked`);
-    DashboardPanel.createOrShow(context, sessionTracker!);
+    DashboardPanel.createOrShow(context, sessionTracker!, nameStore);
   });
 
   const refreshCommand = vscode.commands.registerCommand(COMMANDS.REFRESH, () => {
@@ -47,6 +52,14 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(statusBarItem);
 
   sessionTracker.start();
+
+  const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration(SETTINGS.ADDITIONAL_WORKSPACES)) {
+      sessionTracker?.updateScope(workspacePath);
+    }
+  });
+  context.subscriptions.push(configWatcher);
+
   outputChannel.appendLine(`${OUTPUT_CHANNEL_NAME} activated`);
   console.log(`${LOG_PREFIX.EXTENSION} Extension activated successfully`);
 }

@@ -293,6 +293,8 @@ export interface SessionInfo {
   parentSessionId?: string;
   /** Filesystem path of the JSONL transcript file. */
   filePath: string;
+  /** User-defined display name, set via inline rename in the dashboard. */
+  customName?: string;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
   /** Most recent tool name (for overview display). */

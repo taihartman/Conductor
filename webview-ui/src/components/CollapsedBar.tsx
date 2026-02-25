@@ -37,8 +37,9 @@ export function CollapsedBar({ session, onExpand }: CollapsedBarProps): React.Re
           fontWeight: 600,
           color: 'var(--fg-primary)',
         }}
+        title={session.slug}
       >
-        {session.slug}
+        {session.customName ?? session.slug}
       </span>
       <span
         style={{

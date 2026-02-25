@@ -9,6 +9,7 @@ interface OverviewPanelProps {
   focusedSessionId: string | null;
   onSessionClick: (sessionId: string) => void;
   onSessionDoubleClick: (sessionId: string) => void;
+  onRename: (sessionId: string, name: string) => void;
 }
 
 export function OverviewPanel({
@@ -17,6 +18,7 @@ export function OverviewPanel({
   focusedSessionId,
   onSessionClick,
   onSessionDoubleClick,
+  onRename,
 }: OverviewPanelProps): React.ReactElement {
   // Build cost lookup
   const costBySession = new Map<string, number>();
@@ -24,8 +26,8 @@ export function OverviewPanel({
     costBySession.set(ts.sessionId, (costBySession.get(ts.sessionId) || 0) + ts.estimatedCostUsd);
   }
 
-  // Only show parent sessions + orphaned sub-agents
-  const topLevelSessions = sessions.filter((s) => !s.isSubAgent || !s.parentSessionId);
+  // Only show parent sessions (sub-agents visible in DetailPanel's EnsembleList)
+  const topLevelSessions = sessions.filter((s) => !s.isSubAgent);
 
   return (
     <div
@@ -64,6 +66,7 @@ export function OverviewPanel({
               cost={costBySession.get(session.sessionId) || 0}
               onClick={() => onSessionClick(session.sessionId)}
               onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
+              onRename={onRename}
             />
           ))}
         </div>

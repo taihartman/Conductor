@@ -20,6 +20,7 @@ export const LOG_PREFIX = {
   SESSION_TRACKER: '[Conductor:SessionTracker]',
   WATCHER: '[Conductor:Watcher]',
   SCANNER: '[Conductor:Scanner]',
+  NAME_STORE: '[Conductor:NameStore]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -38,6 +39,18 @@ export const TRUNCATION = {
   BASH_COMMAND_MAX: 100,
   URL_MAX: 80,
   ERROR_MESSAGE_MAX: 200,
+  SESSION_NAME_MAX: 100,
+} as const;
+
+/** VS Code setting keys (must match `contributes.configuration` in package.json). */
+export const SETTINGS = {
+  ADDITIONAL_WORKSPACES: 'conductor.additionalWorkspaces',
+} as const;
+
+/** VS Code globalState keys for persistent storage. */
+export const STORAGE_KEYS = {
+  /** sessionId → customName mapping for user-defined session labels. */
+  SESSION_NAMES: 'conductor.sessionNames',
 } as const;
 
 /** Well-known record and tool names used for special-case handling. */

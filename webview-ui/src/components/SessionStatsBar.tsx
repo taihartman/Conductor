@@ -41,8 +41,9 @@ export function SessionStatsBar({
           fontWeight: 700,
           color: 'var(--fg-primary)',
         }}
+        title={session.slug}
       >
-        {session.slug}
+        {session.customName ?? session.slug}
       </span>
 
       <span

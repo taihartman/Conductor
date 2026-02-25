@@ -40,4 +40,6 @@ export type ExtensionToWebviewMessage =
 export type WebviewToExtensionMessage =
   | { type: 'ready' }
   | { type: 'session:focus'; sessionId: string | null }
-  | { type: 'refresh' };
+  | { type: 'refresh' }
+  /** Sent when the user renames a session via inline edit in the overview card. */
+  | { type: 'session:rename'; sessionId: string; name: string };

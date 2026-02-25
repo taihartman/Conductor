@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { EnsembleIndicator } from './EnsembleIndicator';
@@ -13,6 +13,7 @@ interface OverviewCardProps {
   cost: number;
   onClick: () => void;
   onDoubleClick: () => void;
+  onRename: (sessionId: string, name: string) => void;
 }
 
 function getContextText(session: SessionInfo): string {
@@ -48,9 +49,20 @@ export function OverviewCard({
   cost,
   onClick,
   onDoubleClick,
+  onRename,
 }: OverviewCardProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
   const isActive = session.status === 'working' || session.status === 'thinking';
+  const [isEditing, setIsEditing] = useState(false);
+  const [editValue, setEditValue] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
 
   return (
     <div
@@ -94,20 +106,60 @@ export function OverviewCard({
         }}
       >
         <StatusDot status={session.status} size={8} />
-        <span
-          style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '13px',
-            fontWeight: 700,
-            color: 'var(--fg-primary)',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-          }}
-          title={session.slug}
-        >
-          {session.slug}
-        </span>
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.stopPropagation();
+                setIsEditing(false);
+                onRename(session.sessionId, editValue);
+              } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                setIsEditing(false);
+              }
+            }}
+            onBlur={() => setIsEditing(false)}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: 'var(--fg-primary)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--accent)',
+              borderRadius: '3px',
+              padding: '0 4px',
+              outline: 'none',
+              minWidth: 0,
+              flex: 1,
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '13px',
+              fontWeight: 700,
+              color: 'var(--fg-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              cursor: 'text',
+            }}
+            title={session.customName ? session.slug : UI_STRINGS.RENAME_HINT}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              setEditValue(session.customName ?? session.slug);
+              setIsEditing(true);
+            }}
+          >
+            {session.customName ?? session.slug}
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <span
           style={{
