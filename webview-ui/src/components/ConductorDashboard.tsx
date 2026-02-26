@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Group, Panel, Separator } from 'react-resizable-panels';
-import { useDashboardStore } from '../store/dashboardStore';
+import { STATUS_GROUPS } from '@shared/sharedConstants';
+import { useDashboardStore, DETAIL_VIEW_MODES } from '../store/dashboardStore';
 import { ConductorHeader } from './ConductorHeader';
 import { OverviewPanel } from './OverviewPanel';
 import { DetailPanel } from './DetailPanel';
@@ -46,7 +47,7 @@ export function ConductorDashboard(): React.ReactElement {
     switch (filterMode) {
       case 'active':
         return sessions.filter(
-          (s) => s.status === 'working' || s.status === 'thinking' || s.status === 'waiting'
+          (s) => STATUS_GROUPS.ACTIVE_FILTER.has(s.status)
         );
       case 'recent': {
         const cutoff = Date.now() - RECENT_THRESHOLD_MS;
@@ -89,6 +90,10 @@ export function ConductorDashboard(): React.ReactElement {
 
   function handleRefresh(): void {
     vscode.postMessage({ type: 'refresh' });
+  }
+
+  function handleLaunchSession(): void {
+    vscode.postMessage({ type: 'session:launch' });
   }
 
   const handleZenExit = useCallback(() => {
@@ -137,6 +142,7 @@ export function ConductorDashboard(): React.ReactElement {
           sessions={sessions}
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
+          onLaunchSession={handleLaunchSession}
           nudgeActive={false}
           onMascotClick={enterZenMode}
           mascotButtonRef={mascotButtonRef}
@@ -163,6 +169,7 @@ export function ConductorDashboard(): React.ReactElement {
         sessions={sessions}
         tokenSummaries={tokenSummaries}
         onRefresh={handleRefresh}
+        onLaunchSession={handleLaunchSession}
         nudgeActive={nudgeActive}
         onMascotClick={enterZenMode}
         mascotButtonRef={mascotButtonRef}
@@ -170,7 +177,7 @@ export function ConductorDashboard(): React.ReactElement {
         onSearchChange={setSearchQuery}
         layoutOrientation={layoutOrientation}
         onToggleOrientation={toggleLayoutOrientation}
-        showOrientationToggle={detailViewMode === 'split'}
+        showOrientationToggle={detailViewMode === DETAIL_VIEW_MODES.SPLIT}
       />
 
       {zenModeActive ? (
@@ -186,7 +193,7 @@ export function ConductorDashboard(): React.ReactElement {
           }}
         >
           {/* Expanded mode: collapsed bar + full detail */}
-          {detailViewMode === 'expanded' && focusedSession && (
+          {detailViewMode === DETAIL_VIEW_MODES.EXPANDED && focusedSession && (
             <>
               <CollapsedBar
                 session={focusedSession}
@@ -211,7 +218,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Split mode: resizable panels */}
-          {detailViewMode === 'split' && focusedSession && (
+          {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && (
             <Group
               orientation={layoutOrientation}
               style={{ flex: 1, overflow: 'hidden' }}
@@ -264,7 +271,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Overview-only mode: no resize needed */}
-          {detailViewMode === 'overview-only' && (
+          {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && (
             <div
               style={{
                 flex: 1,
