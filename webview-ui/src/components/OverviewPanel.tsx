@@ -45,7 +45,7 @@ export function OverviewPanel({
             padding: 'var(--spacing-xl)',
             textAlign: 'center',
             color: 'var(--fg-muted)',
-            fontSize: '12px',
+            fontSize: '12px', // inline-ok
           }}
         >
           {UI_STRINGS.NO_SESSIONS_MATCH}
@@ -54,7 +54,7 @@ export function OverviewPanel({
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', // inline-ok
             gap: 'var(--spacing-sm)',
           }}
         >

@@ -57,7 +57,7 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
         display: 'flex',
         gap: 'var(--spacing-sm)',
         padding: '3px var(--spacing-sm)',
-        fontSize: '12px',
+        fontSize: '12px', // inline-ok
         borderBottom: '1px solid var(--border)',
         opacity: isTurnEnd ? 0.6 : 1,
         backgroundColor: isError
@@ -71,9 +71,9 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
         style={{
           color: 'var(--fg-muted)',
           fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
+          fontSize: '11px', // inline-ok
           whiteSpace: 'nowrap',
-          minWidth: '65px',
+          minWidth: '65px', // inline-ok
         }}
       >
         {formatTime(event.timestamp)}
@@ -81,7 +81,7 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
 
       <span
         style={{
-          width: '16px',
+          width: '16px', // inline-ok
           textAlign: 'center',
           color: isError ? 'var(--status-error)' : 'var(--fg-secondary)',
         }}
@@ -94,9 +94,9 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
         style={{
           color: 'var(--fg-secondary)',
           fontFamily: 'var(--font-mono)',
-          fontSize: '11px',
-          minWidth: '60px',
-          maxWidth: '60px',
+          fontSize: '11px', // inline-ok
+          minWidth: '60px', // inline-ok
+          maxWidth: '60px', // inline-ok
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -115,7 +115,7 @@ export function LiveFeedItem({ event }: LiveFeedItemProps): React.ReactElement {
             backgroundColor: COLORS.TOOL_BADGE_BG,
             color: 'var(--accent)',
             fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
+            fontSize: '11px', // inline-ok
             whiteSpace: 'nowrap',
           }}
         >

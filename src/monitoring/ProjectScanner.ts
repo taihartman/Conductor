@@ -90,8 +90,8 @@ export class ProjectScanner {
    * @returns Absolute path to the project directory, or `undefined` if it doesn't exist
    */
   getProjectDirForWorkspace(workspacePath: string): string | undefined {
-    // Normalize Windows backslashes to forward slashes, then encode
-    const normalized = workspacePath.replace(/\\/g, '/');
+    // Normalize Windows backslashes to forward slashes, strip trailing slash, then encode
+    const normalized = workspacePath.replace(/\\/g, '/').replace(/\/+$/, '');
     const encoded = normalized.replace(/\//g, '-');
     const fullPath = path.join(this.claudeProjectsDir, encoded);
 
@@ -129,22 +129,24 @@ export class ProjectScanner {
   }
 
   /**
-   * Discover JSONL transcript files across all (or one) project directories.
+   * Discover JSONL transcript files across all (or specific) project directories.
    *
    * @remarks
    * Scans both top-level `.jsonl` files and `subagents/` subdirectories.
    * Results are sorted by modification time (newest first).
    *
-   * @param projectDir - Scan only this directory (default: all project dirs)
+   * @param projectDirs - Scan only these directories (default: all project dirs)
    * @param maxAgeMs - Exclude files older than this many milliseconds
    * @returns Array of {@link SessionFile} entries sorted by modification time
    */
-  scanSessionFiles(projectDir?: string, maxAgeMs?: number): SessionFile[] {
-    const dirs = projectDir
-      ? [{ name: path.basename(projectDir), path: projectDir }]
-      : this.scanProjectDirs();
+  scanSessionFiles(projectDirs?: string[], maxAgeMs?: number): SessionFile[] {
+    const dirs =
+      projectDirs !== undefined
+        ? projectDirs.map((d) => ({ name: path.basename(d), path: d }))
+        : this.scanProjectDirs();
+    const scopeLabel = projectDirs !== undefined ? 'scoped' : 'unscoped';
     console.log(
-      `${LOG_PREFIX.SCANNER} Scanning ${dirs.length} project dir(s), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
+      `${LOG_PREFIX.SCANNER} Scanning ${dirs.length} project dir(s) (${scopeLabel}), maxAge=${maxAgeMs ? Math.round(maxAgeMs / 1000) + 's' : 'none'}`
     );
 
     const files: SessionFile[] = [];

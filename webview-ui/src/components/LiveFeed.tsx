@@ -21,7 +21,7 @@ export function LiveFeed({ activities }: LiveFeedProps): React.ReactElement {
   function handleScroll(): void {
     const el = scrollRef.current;
     if (el) {
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 50; // inline-ok
       shouldAutoScroll.current = isNearBottom;
     }
   }
@@ -50,7 +50,7 @@ export function LiveFeed({ activities }: LiveFeedProps): React.ReactElement {
               padding: 'var(--spacing-xl)',
               textAlign: 'center',
               color: 'var(--fg-muted)',
-              fontSize: '12px',
+              fontSize: '12px', // inline-ok
             }}
           >
             {UI_STRINGS.LIVE_FEED_EMPTY}

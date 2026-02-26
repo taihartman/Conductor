@@ -184,8 +184,8 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('working');
   });
 
-  // --- end_turn without tool_use → waiting ---
-  it('transitions to waiting on end_turn without tool_use', () => {
+  // --- end_turn without tool_use → done ---
+  it('transitions to done on end_turn without tool_use', () => {
     // First make it working via tool call
     sm.handleAssistantRecord(
       makeAssistantRecord({
@@ -196,7 +196,7 @@ describe('SessionStateMachine', () => {
     );
     expect(sm.status).toBe('working');
 
-    // end_turn text-only → waiting (Claude is ready for user input)
+    // end_turn text-only → done (Claude finished its turn)
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
@@ -205,11 +205,11 @@ describe('SessionStateMachine', () => {
         },
       })
     );
-    expect(sm.status).toBe('waiting');
+    expect(sm.status).toBe('done');
   });
 
-  // --- turn_duration → waiting (turn complete, awaiting next user message) ---
-  it('transitions to waiting on turn_duration', () => {
+  // --- turn_duration → done (turn complete) ---
+  it('transitions to done on turn_duration', () => {
     // Make working first
     sm.handleAssistantRecord(
       makeAssistantRecord({
@@ -221,12 +221,36 @@ describe('SessionStateMachine', () => {
 
     const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 5000 });
     const status = sm.handleSystemRecord(record);
-    expect(status).toBe('waiting');
+    expect(status).toBe('done');
   });
 
-  // --- User input on waiting → working ---
-  it('transitions from waiting to working on user text input', () => {
-    // Get to waiting via end_turn
+  // --- turn_duration preserves waiting status from AskUserQuestion ---
+  it('preserves waiting status on turn_duration after AskUserQuestion', () => {
+    sm.handleAssistantRecord(
+      makeAssistantRecord({
+        message: {
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tu-ask',
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'Which option?' }] },
+            },
+          ],
+        },
+      })
+    );
+    expect(sm.status).toBe('waiting');
+
+    const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 3000 });
+    const status = sm.handleSystemRecord(record);
+    expect(status).toBe('waiting');
+    expect(sm.pendingQuestion).toBe('Which option?');
+  });
+
+  // --- User input on done → working ---
+  it('transitions from done to working on user text input', () => {
+    // Get to done via end_turn
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
@@ -235,7 +259,7 @@ describe('SessionStateMachine', () => {
         },
       })
     );
-    expect(sm.status).toBe('waiting');
+    expect(sm.status).toBe('done');
 
     sm.handleUserRecord(
       makeUserRecord({
@@ -245,33 +269,33 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('working');
   });
 
-  // --- User input transitions from waiting back to working ---
-  it('transitions from waiting to working when user provides new input', () => {
-    // Make working, then waiting via end_turn
+  // --- User input on waiting (AskUserQuestion) → working ---
+  it('transitions from waiting to working when user answers AskUserQuestion', () => {
+    // Get to waiting via AskUserQuestion
     sm.handleAssistantRecord(
       makeAssistantRecord({
         message: {
-          content: [{ type: 'tool_use', id: 'tu-1', name: 'Read', input: {} }],
-        },
-      })
-    );
-    sm.handleAssistantRecord(
-      makeAssistantRecord({
-        message: {
-          content: [{ type: 'text', text: 'Done' }],
-          stop_reason: 'end_turn',
+          content: [
+            {
+              type: 'tool_use',
+              id: 'tu-ask',
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'Pick one' }] },
+            },
+          ],
         },
       })
     );
     expect(sm.status).toBe('waiting');
 
-    // New user input
+    // User answers
     sm.handleUserRecord(
       makeUserRecord({
-        message: { content: [{ type: 'text', text: 'More' }] },
+        message: { content: [{ type: 'text', text: 'Option A' }] },
       })
     );
     expect(sm.status).toBe('working');
+    expect(sm.pendingQuestion).toBeUndefined();
   });
 
   // --- Error counter resets on user text input ---

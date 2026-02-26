@@ -51,25 +51,35 @@ export class TranscriptWatcher implements vscode.Disposable {
   private readonly offsets: Map<string, number> = new Map();
   private readonly disposables: vscode.Disposable[] = [];
   private readonly trackedFiles: Map<string, SessionFile> = new Map();
+  /**
+   * Files removed via {@link removeTracked} are tombstoned so periodic scans
+   * don't re-discover them. Maps file path → mtime (ms) at removal time.
+   * A tombstoned file is only re-added if its current mtime is newer than the
+   * stored value, indicating genuinely new data was written.
+   */
+  private readonly tombstones: Map<string, number> = new Map();
   private scanTimer: ReturnType<typeof setInterval> | undefined;
   private pollTimer: ReturnType<typeof setInterval> | undefined;
   private readonly onRecordsCallback: (event: WatcherEvent) => void;
   private readonly onNewFileCallback: (file: SessionFile) => void;
   private readonly outputChannel: vscode.OutputChannel;
-  private readonly projectDir?: string;
+  private readonly projectDirs: string[] | undefined;
+  /** Whether the watcher is scoped to specific directories (vs. watching all projects). */
+  private readonly isScoped: boolean;
 
   constructor(
     scanner: ProjectScanner,
     outputChannel: vscode.OutputChannel,
     onRecords: (event: WatcherEvent) => void,
     onNewFile: (file: SessionFile) => void,
-    projectDir?: string
+    projectDirs?: string[]
   ) {
     this.scanner = scanner;
     this.outputChannel = outputChannel;
     this.onRecordsCallback = onRecords;
     this.onNewFileCallback = onNewFile;
-    this.projectDir = projectDir;
+    this.projectDirs = projectDirs;
+    this.isScoped = projectDirs !== undefined;
   }
 
   /**
@@ -80,32 +90,61 @@ export class TranscriptWatcher implements vscode.Disposable {
    * both the scan timer ({@link SCAN_INTERVAL_MS}) and poll timer ({@link POLL_INTERVAL_MS}).
    */
   start(): void {
-    const scope = this.projectDir ? path.basename(this.projectDir) : 'all projects';
+    const scope = this.isScoped
+      ? this.projectDirs!.length > 0
+        ? this.projectDirs!.map((d) => path.basename(d)).join(', ')
+        : 'scoped but empty (waiting for project dir)'
+      : 'all projects';
     console.log(`${LOG_PREFIX.WATCHER} Starting transcript watcher (scope: ${scope})...`);
-    this.setupFileWatcher();
-    this.scanForFiles();
-    this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
+
+    // Scoped but empty: no dirs to watch or scan — poll timer still runs
+    // so that files added via addTrackedFile() get polled.
+    if (!this.isScoped || this.projectDirs!.length > 0) {
+      this.setupFileWatchers();
+      this.scanForFiles();
+      this.scanTimer = setInterval(() => this.scanForFiles(), SCAN_INTERVAL_MS);
+    }
     this.pollTimer = setInterval(() => this.pollTracked(), POLL_INTERVAL_MS);
     console.log(
-      `${LOG_PREFIX.WATCHER} Watcher started (scan=${SCAN_INTERVAL_MS}ms, poll=${POLL_INTERVAL_MS}ms)`
+      `${LOG_PREFIX.WATCHER} Watcher started (scan=${this.scanTimer ? SCAN_INTERVAL_MS + 'ms' : 'disabled'}, poll=${POLL_INTERVAL_MS}ms)`
     );
   }
 
   private scanForFiles(): void {
-    const files = this.scanner.scanSessionFiles(this.projectDir, MAX_AGE_MS);
-    const newCount = files.filter((f) => !this.trackedFiles.has(f.filePath)).length;
+    const files = this.scanner.scanSessionFiles(this.projectDirs, MAX_AGE_MS);
+    let newCount = 0;
+    for (const file of files) {
+      if (this.trackedFiles.has(file.filePath)) continue;
+
+      // Skip tombstoned files unless they have genuinely new data (newer mtime)
+      const tombstoneTime = this.tombstones.get(file.filePath);
+      if (tombstoneTime !== undefined && file.modifiedAt.getTime() <= tombstoneTime) {
+        continue;
+      }
+
+      // File is either not tombstoned, or has new writes since removal — track it
+      this.tombstones.delete(file.filePath);
+      console.log(
+        `${LOG_PREFIX.WATCHER} Tracking new file: ${file.sessionId} (${file.projectDir})`
+      );
+      this.trackedFiles.set(file.filePath, file);
+      this.onNewFileCallback(file);
+      newCount++;
+    }
+
+    // Evict stale tombstones (file older than MAX_AGE_MS won't be scanned anyway)
+    if (this.tombstones.size > 0) {
+      const cutoff = Date.now() - MAX_AGE_MS;
+      for (const [filePath, mtime] of this.tombstones) {
+        if (mtime < cutoff) {
+          this.tombstones.delete(filePath);
+        }
+      }
+    }
+
     console.log(
       `${LOG_PREFIX.WATCHER} Scan found ${files.length} files, ${newCount} new, ${this.trackedFiles.size} tracked`
     );
-    for (const file of files) {
-      if (!this.trackedFiles.has(file.filePath)) {
-        console.log(
-          `${LOG_PREFIX.WATCHER} Tracking new file: ${file.sessionId} (${file.projectDir})`
-        );
-        this.trackedFiles.set(file.filePath, file);
-        this.onNewFileCallback(file);
-      }
-    }
     this.outputChannel.appendLine(
       `Scan found ${files.length} recent session files (${this.trackedFiles.size} tracked)`
     );
@@ -117,57 +156,66 @@ export class TranscriptWatcher implements vscode.Disposable {
     }
   }
 
-  private setupFileWatcher(): void {
-    const watchDir = this.projectDir ?? this.scanner.getProjectsDir();
-    console.log(`${LOG_PREFIX.WATCHER} Setting up FileSystemWatcher on: ${watchDir}`);
+  private setupFileWatchers(): void {
+    // Watch each scoped directory individually, or the global projects dir when unscoped.
+    // Note: this method is only called when `!isScoped || projectDirs.length > 0`,
+    // so the scoped-but-empty case is unreachable here.
+    const watchDirs = this.isScoped ? this.projectDirs! : [this.scanner.getProjectsDir()];
 
-    try {
-      const pattern = new vscode.RelativePattern(vscode.Uri.file(watchDir), '**/*.jsonl');
+    for (const watchDir of watchDirs) {
+      console.log(`${LOG_PREFIX.WATCHER} Setting up FileSystemWatcher on: ${watchDir}`);
 
-      const watcher = vscode.workspace.createFileSystemWatcher(pattern);
+      try {
+        const pattern = new vscode.RelativePattern(vscode.Uri.file(watchDir), '**/*.jsonl');
 
-      watcher.onDidCreate((uri) => {
-        const filePath = uri.fsPath;
-        if (!this.trackedFiles.has(filePath)) {
-          const baseName = path.basename(filePath, FS_PATHS.JSONL_EXT);
-          const parentDir = path.basename(path.dirname(filePath));
-          const isSubAgent = baseName.startsWith(FS_PATHS.AGENT_PREFIX);
+        const watcher = vscode.workspace.createFileSystemWatcher(pattern);
 
-          let projectDir: string;
-          let parentSessionId: string | undefined;
+        watcher.onDidCreate((uri) => {
+          const filePath = uri.fsPath;
+          // New file creation events bypass tombstones — the OS is telling us
+          // there's genuinely new data, so clear any stale tombstone.
+          this.tombstones.delete(filePath);
+          if (!this.trackedFiles.has(filePath)) {
+            const baseName = path.basename(filePath, FS_PATHS.JSONL_EXT);
+            const parentDir = path.basename(path.dirname(filePath));
+            const isSubAgent = baseName.startsWith(FS_PATHS.AGENT_PREFIX);
 
-          if (parentDir === FS_PATHS.SUBAGENTS_DIR) {
-            // File is in [UUID]/subagents/agent-xyz.jsonl
-            const grandparentDir = path.basename(path.dirname(path.dirname(filePath)));
-            const greatGrandparentDir = path.basename(
-              path.dirname(path.dirname(path.dirname(filePath)))
-            );
-            projectDir = greatGrandparentDir;
-            parentSessionId = grandparentDir;
-          } else {
-            projectDir = parentDir;
-            parentSessionId = undefined;
+            let projectDir: string;
+            let parentSessionId: string | undefined;
+
+            if (parentDir === FS_PATHS.SUBAGENTS_DIR) {
+              // File is in [UUID]/subagents/agent-xyz.jsonl
+              const grandparentDir = path.basename(path.dirname(path.dirname(filePath)));
+              const greatGrandparentDir = path.basename(
+                path.dirname(path.dirname(path.dirname(filePath)))
+              );
+              projectDir = greatGrandparentDir;
+              parentSessionId = grandparentDir;
+            } else {
+              projectDir = parentDir;
+              parentSessionId = undefined;
+            }
+
+            const sessionFile: SessionFile = {
+              sessionId: baseName,
+              filePath,
+              projectDir,
+              isSubAgent,
+              modifiedAt: new Date(),
+              parentSessionId,
+            };
+            this.trackedFiles.set(filePath, sessionFile);
+            this.onNewFileCallback(sessionFile);
+            this.outputChannel.appendLine(`New session file: ${baseName}`);
           }
+        });
 
-          const sessionFile: SessionFile = {
-            sessionId: baseName,
-            filePath,
-            projectDir,
-            isSubAgent,
-            modifiedAt: new Date(),
-            parentSessionId,
-          };
-          this.trackedFiles.set(filePath, sessionFile);
-          this.onNewFileCallback(sessionFile);
-          this.outputChannel.appendLine(`New session file: ${baseName}`);
-        }
-      });
-
-      this.disposables.push(watcher);
-    } catch (e) {
-      this.outputChannel.appendLine(
-        `FileSystemWatcher setup failed: ${e}. Falling back to polling only.`
-      );
+        this.disposables.push(watcher);
+      } catch (e) {
+        this.outputChannel.appendLine(
+          `FileSystemWatcher setup failed for ${watchDir}: ${e}. Falling back to polling only.`
+        );
+      }
     }
   }
 
@@ -177,9 +225,13 @@ export class TranscriptWatcher implements vscode.Disposable {
    * @param filePath - Absolute path of the file to stop watching
    */
   removeTracked(filePath: string): void {
+    const file = this.trackedFiles.get(filePath);
     this.trackedFiles.delete(filePath);
     this.parsers.delete(filePath);
     this.offsets.delete(filePath);
+    // Tombstone the file so periodic scans don't re-discover it.
+    // Use the file's known mtime so it only comes back if genuinely new data is written.
+    this.tombstones.set(filePath, file?.modifiedAt.getTime() ?? Date.now());
   }
 
   /**
@@ -232,5 +284,6 @@ export class TranscriptWatcher implements vscode.Disposable {
     this.parsers.clear();
     this.offsets.clear();
     this.trackedFiles.clear();
+    this.tombstones.clear();
   }
 }

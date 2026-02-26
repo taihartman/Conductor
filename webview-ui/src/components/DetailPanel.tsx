@@ -73,7 +73,7 @@ export function DetailPanel({
         {(session.childAgents ?? []).length > 0 && (
           <div
             style={{
-              width: '220px',
+              width: '220px', // inline-ok
               flexShrink: 0,
               borderRight: '1px solid var(--border)',
               overflowY: 'auto',

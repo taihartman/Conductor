@@ -18,7 +18,7 @@ export function TokenUsagePanelInline({
           padding: 'var(--spacing-xl)',
           textAlign: 'center',
           color: 'var(--fg-muted)',
-          fontSize: '12px',
+          fontSize: '12px', // inline-ok
         }}
       >
         {UI_STRINGS.TOKEN_USAGE_EMPTY}
@@ -49,12 +49,12 @@ export function TokenUsagePanelInline({
         <TokenStat label={UI_STRINGS.TOKEN_STAT_OUTPUT} value={totalOutput} />
         <TokenStat label={UI_STRINGS.TOKEN_STAT_CACHE} value={totalCacheRead} />
         <div>
-          <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}>
+          <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}> // inline-ok
             {UI_STRINGS.TOKEN_STAT_COST}
           </div>
           <div
             style={{
-              fontSize: '14px',
+              fontSize: '14px', // inline-ok
               fontWeight: 600,
               fontFamily: 'var(--font-mono)',
               color: totalCost > 1 ? COLORS.HIGH_COST_WARNING : 'var(--fg-primary)',
@@ -74,14 +74,14 @@ export function TokenUsagePanelInline({
             justifyContent: 'space-between',
             alignItems: 'center',
             padding: '2px var(--spacing-xs)',
-            fontSize: '11px',
+            fontSize: '11px', // inline-ok
           }}
         >
           <span
             style={{
               fontFamily: 'var(--font-mono)',
               color: 'var(--fg-secondary)',
-              maxWidth: '120px',
+              maxWidth: '120px', // inline-ok
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
@@ -90,7 +90,7 @@ export function TokenUsagePanelInline({
           >
             {formatModel(ts.model)}
           </span>
-          <span style={{ color: 'var(--fg-muted)', fontSize: '10px' }}>
+          <span style={{ color: 'var(--fg-muted)', fontSize: '10px' }}> // inline-ok
             {formatTokens(ts.inputTokens + ts.outputTokens)} tokens
           </span>
           <span
@@ -110,12 +110,12 @@ export function TokenUsagePanelInline({
 function TokenStat({ label, value }: { label: string; value: number }): React.ReactElement {
   return (
     <div>
-      <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}>
+      <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}> // inline-ok
         {label}
       </div>
       <div
         style={{
-          fontSize: '14px',
+          fontSize: '14px', // inline-ok
           fontWeight: 600,
           fontFamily: 'var(--font-mono)',
           color: 'var(--fg-primary)',

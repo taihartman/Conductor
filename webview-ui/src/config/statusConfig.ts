@@ -40,9 +40,9 @@ export const STATUS_CONFIG: Record<
     cssVar: '--status-idle',
   },
   done: {
-    label: 'Done',
+    label: 'Completed',
     dotAnimation: 'none',
-    dotOpacity: 0.4,
+    dotOpacity: 0.8,
     cssVar: '--status-done',
   },
 };

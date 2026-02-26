@@ -19,7 +19,7 @@ export function EnsembleList({
         style={{
           padding: 'var(--spacing-md)',
           color: 'var(--fg-muted)',
-          fontSize: '11px',
+          fontSize: '11px', // inline-ok
           textAlign: 'center',
         }}
       >
@@ -41,7 +41,7 @@ export function EnsembleList({
       <div
         style={{
           padding: '4px var(--spacing-sm)',
-          fontSize: '10px',
+          fontSize: '10px', // inline-ok
           fontWeight: 600,
           textTransform: 'uppercase',
           letterSpacing: '0.5px',

@@ -23,7 +23,7 @@
   --status-waiting: #f0ad4e;
   --status-error: #dc3545;
   --status-idle: #6c757d;
-  --status-done: #495057;
+  --status-done: #17a2b8;
 
   /* Legacy aliases for backward compat */
   --badge-active: var(--status-working);
@@ -37,7 +37,7 @@ body[data-vscode-theme-kind="vscode-light"] {
   --status-waiting: #bf8700;
   --status-error: #cf222e;
   --status-idle: #656d76;
-  --status-done: #8c959f;
+  --status-done: #0d8a9e;
 }
 
 * {
@@ -293,6 +293,21 @@ body[data-vscode-theme-kind="vscode-light"] {
 .zen-completion-note--right {
   animation: zen-completion-enter-right 8s ease-out forwards;
   pointer-events: none;
+}
+
+.zen-mascot-btn {
+  background: transparent;
+  border: none;
+  padding: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius);
+  transition: background 0.15s ease;
+}
+
+.zen-mascot-btn:hover {
+  background: rgba(184, 160, 216, 0.12);
 }
 
 .zen-nudge-active {

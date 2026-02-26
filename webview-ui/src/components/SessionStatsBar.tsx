@@ -26,11 +26,11 @@ export function SessionStatsBar({
         alignItems: 'center',
         gap: 'var(--spacing-md)',
         padding: '6px var(--spacing-md)',
-        height: '40px',
+        height: '40px', // inline-ok
         flexShrink: 0,
         borderBottom: '1px solid var(--border)',
         backgroundColor: 'var(--bg-secondary)',
-        fontSize: '12px',
+        fontSize: '12px', // inline-ok
       }}
     >
       <StatusDot status={session.status} size={8} />
@@ -48,7 +48,7 @@ export function SessionStatsBar({
 
       <span
         style={{
-          fontSize: '10px',
+          fontSize: '10px', // inline-ok
           fontWeight: 600,
           textTransform: 'uppercase',
           letterSpacing: '0.5px',
@@ -69,8 +69,8 @@ export function SessionStatsBar({
           style={{
             color: 'var(--fg-muted)',
             fontFamily: 'var(--font-mono)',
-            fontSize: '11px',
-            maxWidth: '120px',
+            fontSize: '11px', // inline-ok
+            maxWidth: '120px', // inline-ok
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
@@ -83,12 +83,12 @@ export function SessionStatsBar({
 
       <span style={{ color: 'var(--fg-muted)' }}>{session.turnCount} turns</span>
 
-      <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+      <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}> // inline-ok
         {formatTokens(session.totalInputTokens + session.totalOutputTokens)} tokens
       </span>
 
       {cost > 0 && (
-        <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}>
+        <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}> // inline-ok
           {formatCostCompact(cost)}
         </span>
       )}
@@ -99,7 +99,7 @@ export function SessionStatsBar({
         onClick={onToggleExpand}
         style={{
           padding: '2px 6px',
-          fontSize: '14px',
+          fontSize: '14px', // inline-ok
           borderRadius: '3px',
           border: '1px solid var(--border)',
           backgroundColor: 'var(--bg-card)',

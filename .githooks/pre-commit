@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre-commit hook: auto-format and lint staged .ts files
+# Pre-commit hook: auto-format, lint, and check inline violations
 
 # Guard: ensure node_modules exists
 if [ ! -d node_modules ]; then
@@ -7,25 +7,34 @@ if [ ! -d node_modules ]; then
   exit 1
 fi
 
+HOOK_EXIT=0
+
+# --- Step 1: Prettier + ESLint on staged .ts files ---
 STAGED_TS=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts')
 
-if [ -z "$STAGED_TS" ]; then
-  exit 0
+if [ -n "$STAGED_TS" ]; then
+  echo "[pre-commit] Formatting staged .ts files..."
+  echo "$STAGED_TS" | xargs npx prettier --write
+
+  # Re-stage files that Prettier modified
+  echo "$STAGED_TS" | xargs git add
+
+  echo "[pre-commit] Linting staged .ts files..."
+  echo "$STAGED_TS" | xargs npx eslint --max-warnings=0 --no-warn-ignored
+  if [ $? -ne 0 ]; then
+    echo "[pre-commit] ESLint errors/warnings found. Fix them before committing."
+    HOOK_EXIT=1
+  fi
 fi
 
-echo "[pre-commit] Formatting staged .ts files..."
-echo "$STAGED_TS" | xargs npx prettier --write
+# --- Step 2: Inline violation check on staged .ts + .tsx files ---
+STAGED_ALL=$(git diff --cached --name-only --diff-filter=ACM -- '*.ts' '*.tsx')
 
-# Re-stage files that Prettier modified
-echo "$STAGED_TS" | xargs git add
-
-echo "[pre-commit] Linting staged .ts files..."
-echo "$STAGED_TS" | xargs npx eslint --max-warnings=0 --no-warn-ignored
-LINT_EXIT=$?
-
-if [ $LINT_EXIT -ne 0 ]; then
-  echo "[pre-commit] ESLint errors/warnings found. Fix them before committing."
-  exit 1
+if [ -n "$STAGED_ALL" ]; then
+  echo "$STAGED_ALL" | sh scripts/check-inline-violations.sh
+  if [ $? -ne 0 ]; then
+    HOOK_EXIT=1
+  fi
 fi
 
-exit 0
+exit $HOOK_EXIT

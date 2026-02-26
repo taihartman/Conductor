@@ -1,3 +1,5 @@
+import { vi } from 'vitest';
+
 export const Uri = {
   file: (path: string) => ({ fsPath: path, scheme: 'file', path }),
   joinPath: (base: any, ...segments: string[]) => ({
@@ -14,6 +16,10 @@ export const workspace = {
     onDidDelete: () => ({ dispose: () => {} }),
     dispose: () => {},
   }),
+  getConfiguration: vi.fn(() => ({
+    get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+  })),
+  onDidChangeConfiguration: vi.fn(() => ({ dispose: () => {} })),
 };
 
 export const window = {

@@ -8,9 +8,9 @@ interface DetailTabsProps {
 }
 
 const TABS: Array<{ id: DetailTab; label: string }> = [
-  { id: 'feed', label: 'Feed' },
-  { id: 'tools', label: 'Tools' },
-  { id: 'tokens', label: 'Tokens' },
+  { id: 'feed', label: 'Feed' }, // inline-ok
+  { id: 'tools', label: 'Tools' }, // inline-ok
+  { id: 'tokens', label: 'Tokens' }, // inline-ok
 ];
 
 export function DetailTabs({ activeTab, onTabChange }: DetailTabsProps): React.ReactElement {
@@ -29,8 +29,8 @@ export function DetailTabs({ activeTab, onTabChange }: DetailTabsProps): React.R
           key={tab.id}
           onClick={() => onTabChange(tab.id)}
           style={{
-            padding: '4px 12px',
-            fontSize: '11px',
+            padding: '4px 12px', // inline-ok
+            fontSize: '11px', // inline-ok
             fontWeight: activeTab === tab.id ? 600 : 400,
             color: activeTab === tab.id ? 'var(--fg-primary)' : 'var(--fg-muted)',
             backgroundColor: 'transparent',

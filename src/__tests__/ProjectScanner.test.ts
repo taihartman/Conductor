@@ -105,6 +105,56 @@ describe('ProjectScanner.getProjectDirForWorkspace', () => {
   });
 });
 
+describe('ProjectScanner.scanSessionFiles with multiple project dirs', () => {
+  let tmpDir: string;
+  let projectDirA: string;
+  let projectDirB: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'scanner-multi-'));
+    projectDirA = path.join(tmpDir, 'project-a');
+    projectDirB = path.join(tmpDir, 'project-b');
+    fs.mkdirSync(projectDirA, { recursive: true });
+    fs.mkdirSync(projectDirB, { recursive: true });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('returns files from multiple project directories', () => {
+    fs.writeFileSync(path.join(projectDirA, 'session-a.jsonl'), '{"type":"user"}\n');
+    fs.writeFileSync(path.join(projectDirB, 'session-b.jsonl'), '{"type":"user"}\n');
+
+    const scanner = new ProjectScanner(tmpDir);
+    const files = scanner.scanSessionFiles([projectDirA, projectDirB]);
+
+    expect(files).toHaveLength(2);
+    const ids = files.map((f) => f.sessionId);
+    expect(ids).toContain('session-a');
+    expect(ids).toContain('session-b');
+  });
+
+  it('returns empty when given empty array (scoped but no dirs)', () => {
+    fs.writeFileSync(path.join(projectDirA, 'session-a.jsonl'), '{"type":"user"}\n');
+    fs.writeFileSync(path.join(projectDirB, 'session-b.jsonl'), '{"type":"user"}\n');
+
+    const scanner = new ProjectScanner(tmpDir);
+    const files = scanner.scanSessionFiles([]);
+
+    expect(files).toHaveLength(0);
+  });
+
+  it('falls back to scanning all dirs when given undefined', () => {
+    fs.writeFileSync(path.join(projectDirA, 'session-a.jsonl'), '{"type":"user"}\n');
+
+    const scanner = new ProjectScanner(tmpDir);
+    const files = scanner.scanSessionFiles(undefined);
+
+    expect(files).toHaveLength(1);
+  });
+});
+
 describe('ProjectScanner subdirectory scanning', () => {
   let tmpDir: string;
   let projectDir: string;

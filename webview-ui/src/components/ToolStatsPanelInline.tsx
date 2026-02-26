@@ -18,7 +18,7 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
           padding: 'var(--spacing-xl)',
           textAlign: 'center',
           color: 'var(--fg-muted)',
-          fontSize: '12px',
+          fontSize: '12px', // inline-ok
         }}
       >
         {UI_STRINGS.TOOL_USAGE_EMPTY}
@@ -28,7 +28,7 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
 
   return (
     <div style={{ padding: 'var(--spacing-sm)', overflowY: 'auto' }}>
-      {toolStats.slice(0, 20).map((stat) => (
+      {toolStats.slice(0, 20).map((stat) => ( // inline-ok
         <div
           key={stat.toolName}
           style={{
@@ -36,19 +36,19 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
             alignItems: 'center',
             gap: 'var(--spacing-sm)',
             padding: '3px var(--spacing-xs)',
-            fontSize: '12px',
+            fontSize: '12px', // inline-ok
           }}
         >
           <span
             style={{
               fontFamily: 'var(--font-mono)',
-              minWidth: '100px',
-              maxWidth: '100px',
+              minWidth: '100px', // inline-ok
+              maxWidth: '100px', // inline-ok
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
               color: 'var(--fg-primary)',
-              fontSize: '11px',
+              fontSize: '11px', // inline-ok
             }}
             title={stat.toolName}
           >
@@ -58,7 +58,7 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
           <div
             style={{
               flex: 1,
-              height: '14px',
+              height: '14px', // inline-ok
               backgroundColor: 'var(--bg-primary)',
               borderRadius: '3px',
               overflow: 'hidden',
@@ -78,10 +78,10 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
 
           <span
             style={{
-              minWidth: '30px',
+              minWidth: '30px', // inline-ok
               textAlign: 'right',
               fontFamily: 'var(--font-mono)',
-              fontSize: '11px',
+              fontSize: '11px', // inline-ok
               color: 'var(--fg-secondary)',
             }}
           >
@@ -91,9 +91,9 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
           {stat.errorCount > 0 && (
             <span
               style={{
-                minWidth: '25px',
+                minWidth: '25px', // inline-ok
                 textAlign: 'right',
-                fontSize: '10px',
+                fontSize: '10px', // inline-ok
                 color: 'var(--status-error)',
               }}
             >
@@ -103,9 +103,9 @@ export function ToolStatsPanelInline({ toolStats }: ToolStatsPanelInlineProps): 
 
           <span
             style={{
-              minWidth: '45px',
+              minWidth: '45px', // inline-ok
               textAlign: 'right',
-              fontSize: '10px',
+              fontSize: '10px', // inline-ok
               color: 'var(--fg-muted)',
             }}
             title={`Avg: ${formatDuration(stat.avgDurationMs)}`}

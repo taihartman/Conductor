@@ -848,3 +848,164 @@ describe('SessionTracker per-session activity storage', () => {
     expect(t.activitiesBySession.has('stale-act')).toBe(false);
   });
 });
+
+describe('SessionTracker scope retry', () => {
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    mockGetConfiguration.mockReset();
+  });
+
+  it('starts scope retry when scoped-but-empty', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    tracker.start();
+    const t = tracker as any;
+
+    // scopeRetryTimer should be set (scoped but empty → retry starts)
+    expect(t.scopeRetryTimer).toBeDefined();
+
+    tracker.dispose();
+  });
+
+  it('does not start scope retry when unscoped', () => {
+    const tracker = new SessionTracker(outputChannel);
+    tracker.start();
+    const t = tracker as any;
+
+    expect(t.scopeRetryTimer).toBeUndefined();
+
+    tracker.dispose();
+  });
+
+  it('retry discovers the dir and restarts watcher', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    tracker.start();
+    const t = tracker as any;
+
+    const oldWatcher = t.watcher;
+    const disposeSpy = vi.spyOn(oldWatcher, 'dispose');
+
+    // Initially scoped but empty
+    expect(t.scopedProjectDirs).toEqual([]);
+
+    // Mock resolveProjectDirs to simulate the dir appearing
+    const resolvedDir = '/home/user/.claude/projects/-nonexistent-workspace';
+    vi.spyOn(t.scanner, 'getProjectDirForWorkspace').mockReturnValue(resolvedDir);
+
+    // Advance past the retry interval (30s)
+    vi.advanceTimersByTime(30_000);
+
+    // Watcher should have been restarted
+    expect(disposeSpy).toHaveBeenCalled();
+    expect(t.watcher).not.toBe(oldWatcher);
+    expect(t.scopedProjectDirs).toEqual([resolvedDir]);
+
+    tracker.dispose();
+  });
+
+  it('retry stops after success', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    tracker.start();
+    const t = tracker as any;
+
+    expect(t.scopeRetryTimer).toBeDefined();
+
+    // Mock dir appearing
+    vi.spyOn(t.scanner, 'getProjectDirForWorkspace').mockReturnValue('/fake/dir');
+
+    // Advance past retry interval — retry succeeds
+    vi.advanceTimersByTime(30_000);
+
+    // Timer should be cleared after success
+    expect(t.scopeRetryTimer).toBeUndefined();
+
+    tracker.dispose();
+  });
+
+  it('dispose cleans up the retry timer', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    tracker.start();
+    const t = tracker as any;
+
+    expect(t.scopeRetryTimer).toBeDefined();
+
+    tracker.dispose();
+
+    expect(t.scopeRetryTimer).toBeUndefined();
+  });
+});
+
+describe('SessionTracker scoping semantics', () => {
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    // Default: no additional workspaces
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  afterEach(() => {
+    mockGetConfiguration.mockReset();
+  });
+
+  it('resolveProjectDirs returns undefined when no workspace and no additional workspaces', () => {
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+    expect(t.scopedProjectDirs).toBeUndefined();
+    tracker.dispose();
+  });
+
+  it('resolveProjectDirs returns [] when workspace provided but dir does not exist', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    const t = tracker as any;
+    // Scoped (workspace provided) but empty (dir doesn't exist)
+    expect(t.scopedProjectDirs).toEqual([]);
+    tracker.dispose();
+  });
+
+  it('refresh scans nothing when scoped but empty', () => {
+    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    const t = tracker as any;
+
+    // Spy on the scanner to verify what gets passed
+    const scanSpy = vi.spyOn(t.scanner, 'scanSessionFiles');
+    scanSpy.mockReturnValue([]);
+
+    tracker.refresh();
+
+    // Should be called with [] (scoped but empty), not undefined
+    expect(scanSpy).toHaveBeenCalledWith([], expect.any(Number));
+
+    scanSpy.mockRestore();
+    tracker.dispose();
+  });
+
+  it('refresh scans all projects when unscoped (no workspace)', () => {
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    const scanSpy = vi.spyOn(t.scanner, 'scanSessionFiles');
+    scanSpy.mockReturnValue([]);
+
+    tracker.refresh();
+
+    // Should be called with undefined (unscoped)
+    expect(scanSpy).toHaveBeenCalledWith(undefined, expect.any(Number));
+
+    scanSpy.mockRestore();
+    tracker.dispose();
+  });
+});

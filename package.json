@@ -38,7 +38,19 @@
         "command": "conductor.refresh",
         "title": "Conductor: Refresh"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Conductor",
+      "properties": {
+        "conductor.additionalWorkspaces": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "scope": "window",
+          "markdownDescription": "Additional workspace paths to monitor for Claude Code sessions. Use absolute paths (e.g., `/Users/you/other-project`)."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run build",

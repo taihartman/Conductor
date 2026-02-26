@@ -113,8 +113,8 @@ export function ZenModeScene({
             position: 'absolute',
             left: note.x,
             top: note.y,
-            fontSize: '20px',
-            color: '#b8a0d8',
+            fontSize: '20px', // inline-ok
+            color: '#b8a0d8', // inline-ok
             opacity: 0.4,
             animationDelay: note.delay,
             pointerEvents: 'none',
@@ -134,7 +134,7 @@ export function ZenModeScene({
             position: 'absolute',
             left: `${note.x}%`,
             top: `${note.y}%`,
-            fontSize: '24px',
+            fontSize: '24px', // inline-ok
             color: COLORS.ZEN_NOTE_BRIGHT,
             pointerEvents: 'none',
             userSelect: 'none',

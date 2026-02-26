@@ -162,9 +162,9 @@ export class SessionStateMachine implements ISessionStateMachine {
       this._status = 'working';
       this._pendingQuestion = undefined;
     } else if (msg.stop_reason === 'end_turn') {
-      // Text-only end_turn: Claude is done and waiting for user input
+      // Text-only end_turn: Claude finished its turn
       this._pendingQuestion = undefined;
-      this._status = 'waiting';
+      this._status = 'done';
     } else {
       // Text-only, not end_turn: thinking
       if (this._status !== 'working' && this._status !== 'error') {
@@ -232,8 +232,10 @@ export class SessionStateMachine implements ISessionStateMachine {
   handleSystemRecord(record: SystemRecord): SessionStatus {
     if (record.subtype === 'turn_duration') {
       this.cancelTimers();
-      // Turn finished — Claude is waiting for the next user message
-      this._status = 'waiting';
+      // Turn finished — only mark done if not already waiting for AskUserQuestion
+      if (this._status !== 'waiting') {
+        this._status = 'done';
+      }
     }
     return this._status;
   }

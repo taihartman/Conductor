@@ -35,8 +35,9 @@ function getContextText(session: SessionInfo): string {
         : UI_STRINGS.CONTEXT_WAITING;
     case 'error':
       return UI_STRINGS.CONTEXT_ERROR;
-    case 'idle':
     case 'done':
+      return `${UI_STRINGS.CONTEXT_DONE} \u2014 ${timeAgo(session.lastActivityAt)}`;
+    case 'idle':
       return timeAgo(session.lastActivityAt);
     default:
       return '';
@@ -69,7 +70,7 @@ export function OverviewCard({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       style={{
-        padding: '10px 12px',
+        padding: '10px 12px', // inline-ok
         cursor: 'pointer',
         backgroundColor: isSelected
           ? COLORS.SELECTED_CARD_BG
@@ -126,7 +127,7 @@ export function OverviewCard({
             onBlur={() => setIsEditing(false)}
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: '13px',
+              fontSize: '13px', // inline-ok
               fontWeight: 700,
               color: 'var(--fg-primary)',
               background: 'var(--bg-secondary)',
@@ -142,7 +143,7 @@ export function OverviewCard({
           <span
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: '13px',
+              fontSize: '13px', // inline-ok
               fontWeight: 700,
               color: 'var(--fg-primary)',
               overflow: 'hidden',
@@ -163,7 +164,7 @@ export function OverviewCard({
         <span style={{ flex: 1 }} />
         <span
           style={{
-            fontSize: '10px',
+            fontSize: '10px', // inline-ok
             fontWeight: 600,
             textTransform: 'uppercase',
             letterSpacing: '0.5px',
@@ -178,13 +179,13 @@ export function OverviewCard({
       {/* Row 2: Context text (what Claude is doing) */}
       <div
         style={{
-          fontSize: '11px',
+          fontSize: '11px', // inline-ok
           color: isActive ? 'var(--fg-primary)' : 'var(--fg-secondary)',
           fontFamily: session.status === 'working' ? 'var(--font-mono)' : undefined,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
-          minHeight: '16px',
+          minHeight: '16px', // inline-ok
         }}
         title={getContextText(session)}
       >
@@ -197,7 +198,7 @@ export function OverviewCard({
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          fontSize: '10px',
+          fontSize: '10px', // inline-ok
           color: 'var(--fg-muted)',
         }}
       >

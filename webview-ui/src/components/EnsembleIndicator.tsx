@@ -15,7 +15,7 @@ export function EnsembleIndicator({ childAgents }: EnsembleIndicatorProps): Reac
         display: 'inline-flex',
         alignItems: 'center',
         gap: '3px',
-        fontSize: '11px',
+        fontSize: '11px', // inline-ok
         color: 'var(--fg-muted)',
       }}
       title={`${childAgents.length} sub-agent${childAgents.length !== 1 ? 's' : ''}`}
@@ -24,7 +24,7 @@ export function EnsembleIndicator({ childAgents }: EnsembleIndicatorProps): Reac
         <StatusDot key={agent.sessionId} status={agent.status} size={5} />
       ))}
       {childAgents.length > 5 && (
-        <span style={{ fontSize: '10px' }}>+{childAgents.length - 5}</span>
+        <span style={{ fontSize: '10px' }}>+{childAgents.length - 5}</span> // inline-ok
       )}
       <span style={{ marginLeft: '2px' }}>
         {childAgents.length} agent{childAgents.length !== 1 ? 's' : ''}

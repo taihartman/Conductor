@@ -17,6 +17,7 @@ export const UI_STRINGS = {
   CONTEXT_THINKING: 'Thinking...',
   CONTEXT_WAITING: 'Ready for input',
   CONTEXT_ERROR: 'Stuck \u2014 repeated errors',
+  CONTEXT_DONE: 'Finished',
   COLLAPSE_HINT: 'Esc to collapse',
   TURN_COMPLETED: 'Turn completed',
   USER_MESSAGE_FALLBACK: 'User message',

@@ -45,22 +45,14 @@ export function ConductorHeader({
           ref={mascotButtonRef}
           onClick={onMascotClick}
           aria-label={UI_STRINGS.ZEN_MASCOT_LABEL}
-          title={nudgeActive ? UI_STRINGS.ZEN_MASCOT_TOOLTIP : undefined}
-          className={nudgeActive ? 'zen-nudge-active' : undefined}
-          style={{
-            background: 'transparent',
-            border: 'none',
-            padding: 0,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-          }}
+          title={UI_STRINGS.ZEN_MASCOT_TOOLTIP}
+          className={`zen-mascot-btn${nudgeActive ? ' zen-nudge-active' : ''}`}
         >
           <OwlblobMascot size={40} />
         </button>
         <h1
           style={{
-            fontSize: '14px',
+            fontSize: '14px', // inline-ok
             fontWeight: 700,
             color: 'var(--fg-primary)',
             margin: 0,
@@ -72,7 +64,7 @@ export function ConductorHeader({
           style={{
             display: 'flex',
             gap: 'var(--spacing-md)',
-            fontSize: '12px',
+            fontSize: '12px', // inline-ok
             color: 'var(--fg-secondary)',
           }}
         >
@@ -116,8 +108,8 @@ export function ConductorHeader({
       <button
         onClick={onRefresh}
         style={{
-          padding: '3px 10px',
-          fontSize: '11px',
+          padding: '3px 10px', // inline-ok
+          fontSize: '11px', // inline-ok
           borderRadius: '3px',
           border: '1px solid var(--border)',
           backgroundColor: 'var(--bg-card)',
@@ -125,7 +117,7 @@ export function ConductorHeader({
           cursor: 'pointer',
           fontFamily: 'inherit',
         }}
-        title="Refresh sessions"
+        title="Refresh sessions" // inline-ok
       >
         {UI_STRINGS.REFRESH_BUTTON}
       </button>

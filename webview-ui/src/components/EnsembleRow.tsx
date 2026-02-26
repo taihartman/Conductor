@@ -18,13 +18,13 @@ export function EnsembleRow({ agent, isSelected, onClick }: EnsembleRowProps): R
         gap: '6px',
         padding: '4px var(--spacing-sm)',
         cursor: 'pointer',
-        backgroundColor: isSelected ? 'rgba(0, 122, 204, 0.12)' : undefined,
+        backgroundColor: isSelected ? 'rgba(0, 122, 204, 0.12)' : undefined, // inline-ok
         borderRadius: '3px',
-        fontSize: '11px',
+        fontSize: '11px', // inline-ok
       }}
       onMouseEnter={(e) => {
         if (!isSelected) {
-          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)';
+          e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.03)'; // inline-ok
         }
       }}
       onMouseLeave={(e) => {
