@@ -17,10 +17,11 @@ import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/p
 import { SessionInfo } from './models/types';
 import { ISessionNameStore } from './persistence/ISessionNameStore';
 import { ISessionOrderStore } from './persistence/ISessionOrderStore';
+import { ISessionVisibilityStore } from './persistence/ISessionVisibilityStore';
 import { ITerminalBridge } from './terminal/ITerminalBridge';
 import { ISessionLauncher } from './terminal/ISessionLauncher';
 import { IPtyBridge } from './terminal/IPtyBridge';
-import { PANEL_TITLE, LOG_PREFIX } from './constants';
+import { PANEL_TITLE, LOG_PREFIX, TIMING } from './constants';
 
 /**
  * Singleton webview panel for the Conductor.
@@ -39,6 +40,7 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly sessionTracker: SessionTracker;
   private readonly nameStore: ISessionNameStore;
   private readonly orderStore: ISessionOrderStore;
+  private readonly visibilityStore: ISessionVisibilityStore;
   private readonly terminalBridge: ITerminalBridge;
   private readonly sessionLauncher: ISessionLauncher;
   private readonly ptyBridge: IPtyBridge;
@@ -46,6 +48,7 @@ export class DashboardPanel implements vscode.Disposable {
   private focusedSessionId: string | null = null;
   private lastSessionIdSet: string = '';
   private cachedOrder: string[] = [];
+  private launchDiscoveryTimer: ReturnType<typeof setInterval> | undefined;
 
   /**
    * Create a new dashboard panel or reveal an existing one.
@@ -59,6 +62,7 @@ export class DashboardPanel implements vscode.Disposable {
    * @param sessionTracker - The session tracker instance to read state from
    * @param nameStore - Persistence layer for user-defined session display names
    * @param orderStore - Persistence layer for user-defined session card order
+   * @param visibilityStore - Persistence layer for session visibility (hidden/force-shown)
    * @param terminalBridge - Bridge for sending user input to Claude Code terminals
    * @param sessionLauncher - Launches Claude Code sessions from within Conductor
    * @param ptyBridge - Relays PTY I/O for Conductor-launched sessions
@@ -69,6 +73,7 @@ export class DashboardPanel implements vscode.Disposable {
     sessionTracker: SessionTracker,
     nameStore: ISessionNameStore,
     orderStore: ISessionOrderStore,
+    visibilityStore: ISessionVisibilityStore,
     terminalBridge: ITerminalBridge,
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge
@@ -99,6 +104,7 @@ export class DashboardPanel implements vscode.Disposable {
       sessionTracker,
       nameStore,
       orderStore,
+      visibilityStore,
       terminalBridge,
       sessionLauncher,
       ptyBridge
@@ -113,6 +119,7 @@ export class DashboardPanel implements vscode.Disposable {
     sessionTracker: SessionTracker,
     nameStore: ISessionNameStore,
     orderStore: ISessionOrderStore,
+    visibilityStore: ISessionVisibilityStore,
     terminalBridge: ITerminalBridge,
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge
@@ -122,6 +129,7 @@ export class DashboardPanel implements vscode.Disposable {
     this.sessionTracker = sessionTracker;
     this.nameStore = nameStore;
     this.orderStore = orderStore;
+    this.visibilityStore = visibilityStore;
     this.terminalBridge = terminalBridge;
     this.sessionLauncher = sessionLauncher;
     this.ptyBridge = ptyBridge;
@@ -147,6 +155,8 @@ export class DashboardPanel implements vscode.Disposable {
       null,
       this.disposables
     );
+
+    this.visibilityStore.onVisibilityChanged(() => this.postFullState(), null, this.disposables);
 
     // Wire PTY data from SessionLauncher → PtyBridge ring buffer + webview
     this.sessionLauncher.onPtyData(
@@ -179,7 +189,8 @@ export class DashboardPanel implements vscode.Disposable {
   public postFullState(): void {
     const state = this.sessionTracker.getState(this.focusedSessionId);
     const named = this.applyCustomNames(state.sessions);
-    const sessions = this.applyCustomOrder(named);
+    const visible = this.applyVisibility(named);
+    const sessions = this.applyCustomOrder(visible);
     console.log(
       `${LOG_PREFIX.PANEL} Posting state → ${sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
@@ -192,6 +203,44 @@ export class DashboardPanel implements vscode.Disposable {
       toolStats: state.toolStats,
       tokenSummaries: state.tokenSummaries,
     });
+  }
+
+  /**
+   * Notify the panel that a session was launched (from either the webview or command palette).
+   * Posts launch-status to the webview and starts polling for the JSONL file.
+   *
+   * @param sessionId - The launched session's UUID
+   */
+  public notifySessionLaunched(sessionId: string): void {
+    this.ptyBridge.registerSession(sessionId);
+    this.postMessage({
+      type: 'session:launch-status',
+      sessionId,
+      status: 'launched',
+    });
+    this.startLaunchDiscoveryPoll(sessionId);
+  }
+
+  private startLaunchDiscoveryPoll(sessionId: string): void {
+    this.clearLaunchDiscoveryTimer();
+    let retries = 0;
+    this.launchDiscoveryTimer = setInterval(() => {
+      this.sessionTracker.refresh();
+      const found = this.sessionTracker
+        .getState(null)
+        .sessions.some((s) => s.sessionId === sessionId);
+      if (found || ++retries >= TIMING.LAUNCH_DISCOVERY_MAX_RETRIES) {
+        this.clearLaunchDiscoveryTimer();
+      }
+      this.postFullState();
+    }, TIMING.LAUNCH_DISCOVERY_POLL_MS);
+  }
+
+  private clearLaunchDiscoveryTimer(): void {
+    if (this.launchDiscoveryTimer !== undefined) {
+      clearInterval(this.launchDiscoveryTimer);
+      this.launchDiscoveryTimer = undefined;
+    }
   }
 
   private postMessage(message: ExtensionToWebviewMessage): void {
@@ -309,12 +358,7 @@ export class DashboardPanel implements vscode.Disposable {
           .launch(message.cwd)
           .then((sessionId) => {
             console.log(`${LOG_PREFIX.PANEL} Session launched: ${sessionId}`);
-            this.ptyBridge.registerSession(sessionId);
-            this.postMessage({
-              type: 'session:launch-status',
-              sessionId,
-              status: 'launched',
-            });
+            this.notifySessionLaunched(sessionId);
           })
           .catch((err: unknown) => {
             console.log(`${LOG_PREFIX.PANEL} Failed to launch session: ${err}`);
@@ -324,6 +368,35 @@ export class DashboardPanel implements vscode.Disposable {
               error: String(err),
             });
           });
+        break;
+      }
+      case 'session:hide': {
+        console.log(`${LOG_PREFIX.PANEL} Hiding session ${message.sessionId}`);
+        const hideState = this.sessionTracker.getState(this.focusedSessionId);
+        const hideTarget = hideState.sessions.find((s) => s.sessionId === message.sessionId);
+        if (hideTarget?.isArtifact) {
+          this.visibilityStore.unforceShowSession(message.sessionId).catch((err: unknown) => {
+            console.log(`${LOG_PREFIX.PANEL} Failed to hide artifact session: ${err}`);
+          });
+        } else {
+          this.visibilityStore.hideSession(message.sessionId).catch((err: unknown) => {
+            console.log(`${LOG_PREFIX.PANEL} Failed to hide session: ${err}`);
+          });
+        }
+        break;
+      }
+      case 'session:unhide': {
+        console.log(`${LOG_PREFIX.PANEL} Unhiding session ${message.sessionId}`);
+        if (this.visibilityStore.getHiddenIds().has(message.sessionId)) {
+          this.visibilityStore.unhideSession(message.sessionId).catch((err: unknown) => {
+            console.log(`${LOG_PREFIX.PANEL} Failed to unhide session: ${err}`);
+          });
+        } else {
+          // Artifact not in forceShownIds → add it
+          this.visibilityStore.forceShowSession(message.sessionId).catch((err: unknown) => {
+            console.log(`${LOG_PREFIX.PANEL} Failed to force-show session: ${err}`);
+          });
+        }
         break;
       }
       case 'pty:input': {
@@ -396,6 +469,29 @@ export class DashboardPanel implements vscode.Disposable {
     return this.sortByOrder(sessions, this.cachedOrder);
   }
 
+  private applyVisibility(sessions: SessionInfo[]): SessionInfo[] {
+    // Build live IDs including continuation group member IDs (merged into parent).
+    // This prevents pruning member IDs that are valid but not in the final list.
+    const liveIds = new Set(sessions.map((s) => s.sessionId));
+    for (const id of this.sessionTracker.getContinuationMemberIds()) {
+      liveIds.add(id);
+    }
+
+    // Prune silently — pruneStaleIds does NOT fire onVisibilityChanged,
+    // preventing infinite postFullState() → prune → event → postFullState() loops.
+    this.visibilityStore
+      .pruneStaleIds(liveIds)
+      .catch((err) => console.log(`${LOG_PREFIX.PANEL} Failed to prune visibility: ${err}`));
+
+    const hiddenIds = this.visibilityStore.getHiddenIds();
+    const forceShownIds = this.visibilityStore.getForceShownIds();
+    return sessions.map((s) => {
+      const hidden =
+        hiddenIds.has(s.sessionId) || (s.isArtifact && !forceShownIds.has(s.sessionId));
+      return hidden ? { ...s, isHidden: true } : s;
+    });
+  }
+
   private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {
     return sessions.map((session) => {
       // Check primary ID first, then fall through to continuation member IDs
@@ -445,6 +541,7 @@ export class DashboardPanel implements vscode.Disposable {
 
   /** Dispose the panel, clear the singleton, and release all subscriptions. */
   dispose(): void {
+    this.clearLaunchDiscoveryTimer();
     DashboardPanel.currentPanel = undefined;
     this.panel.dispose();
     while (this.disposables.length) {
