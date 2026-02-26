@@ -38,34 +38,31 @@ export function ConductorDashboard(): React.ReactElement {
   const zenExitedAt = useDashboardStore((s) => s.zenExitedAt);
   const enterZenMode = useDashboardStore((s) => s.enterZenMode);
   const exitZenMode = useDashboardStore((s) => s.exitZenMode);
-  const showArtifacts = useDashboardStore((s) => s.showArtifacts);
-  const toggleShowArtifacts = useDashboardStore((s) => s.toggleShowArtifacts);
+  const activeTab = useDashboardStore((s) => s.activeTab);
+  const setActiveTab = useDashboardStore((s) => s.setActiveTab);
 
-  // Centralized visibility filter: exclude sub-agents and (optionally) artifacts
-  const visibleSessions = sessions.filter((s) => {
-    if (s.isSubAgent) return false;
-    if (s.isArtifact && !showArtifacts) return false;
-    return true;
-  });
-  const artifactCount = sessions.filter((s) => s.isArtifact && !s.isSubAgent).length;
+  // Tab-based filtering: main sessions vs hidden sessions
+  const mainSessions = sessions.filter((s) => !s.isSubAgent && !s.isHidden);
+  const hiddenSessions = sessions.filter((s) => !s.isSubAgent && s.isHidden);
+  const tabSessions = activeTab === 'sessions' ? mainSessions : hiddenSessions;
 
-  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(visibleSessions, zenExitedAt);
-  const completionCount = useCompletionDetector(visibleSessions);
+  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(mainSessions, zenExitedAt);
+  const completionCount = useCompletionDetector(mainSessions);
   const mascotButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Filter sessions (operates on pre-filtered visibleSessions)
+  // Filter sessions (operates on active tab's sessions)
   const filteredSessions = (() => {
     switch (filterMode) {
       case 'active':
-        return visibleSessions.filter(
+        return tabSessions.filter(
           (s) => STATUS_GROUPS.ACTIVE_FILTER.has(s.status)
         );
       case 'recent': {
         const cutoff = Date.now() - RECENT_THRESHOLD_MS;
-        return visibleSessions.filter((s) => new Date(s.lastActivityAt).getTime() > cutoff);
+        return tabSessions.filter((s) => new Date(s.lastActivityAt).getTime() > cutoff);
       }
       default:
-        return visibleSessions;
+        return tabSessions;
     }
   })().filter((s) => matchesSearchQuery(s, searchQuery));
 
@@ -103,6 +100,18 @@ export function ConductorDashboard(): React.ReactElement {
     vscode.postMessage({ type: 'refresh' });
   }
 
+  function handleHideSession(sessionId: string): void {
+    if (focusedSessionId === sessionId) {
+      clearFocus();
+      vscode.postMessage({ type: 'session:focus', sessionId: null });
+    }
+    vscode.postMessage({ type: 'session:hide', sessionId });
+  }
+
+  function handleUnhideSession(sessionId: string): void {
+    vscode.postMessage({ type: 'session:unhide', sessionId });
+  }
+
   function handleLaunchSession(): void {
     vscode.postMessage({ type: 'session:launch' });
   }
@@ -132,6 +141,13 @@ export function ConductorDashboard(): React.ReactElement {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Auto-switch to "sessions" tab when hidden tab becomes empty
+  useEffect(() => {
+    if (hiddenSessions.length === 0 && activeTab === 'hidden') {
+      setActiveTab('sessions');
+    }
+  }, [hiddenSessions.length, activeTab, setActiveTab]);
+
   // Auto-enter zen mode after prolonged idle
   useEffect(() => {
     if (autoZenTriggered && !zenModeActive && sessions.length > 0) {
@@ -150,7 +166,7 @@ export function ConductorDashboard(): React.ReactElement {
         }}
       >
         <ConductorHeader
-          sessions={visibleSessions}
+          sessions={mainSessions}
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
           onLaunchSession={handleLaunchSession}
@@ -159,9 +175,9 @@ export function ConductorDashboard(): React.ReactElement {
           mascotButtonRef={mascotButtonRef}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          artifactCount={artifactCount}
-          showArtifacts={showArtifacts}
-          onToggleArtifacts={toggleShowArtifacts}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          hiddenCount={hiddenSessions.length}
         />
         <div style={{ flex: 1, overflow: 'auto' }}>
           <EmptyState />
@@ -180,7 +196,7 @@ export function ConductorDashboard(): React.ReactElement {
       }}
     >
       <ConductorHeader
-        sessions={visibleSessions}
+        sessions={mainSessions}
         tokenSummaries={tokenSummaries}
         onRefresh={handleRefresh}
         onLaunchSession={handleLaunchSession}
@@ -192,9 +208,9 @@ export function ConductorDashboard(): React.ReactElement {
         layoutOrientation={layoutOrientation}
         onToggleOrientation={toggleLayoutOrientation}
         showOrientationToggle={detailViewMode === DETAIL_VIEW_MODES.SPLIT}
-        artifactCount={artifactCount}
-        showArtifacts={showArtifacts}
-        onToggleArtifacts={toggleShowArtifacts}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        hiddenCount={hiddenSessions.length}
       />
 
       {zenModeActive ? (
@@ -263,6 +279,9 @@ export function ConductorDashboard(): React.ReactElement {
                   onRename={handleRename}
                   onReorder={handleReorder}
                   searchQuery={searchQuery}
+                  onHide={handleHideSession}
+                  onUnhide={handleUnhideSession}
+                  isHiddenTab={activeTab === 'hidden'}
                 />
               </Panel>
               <Separator />
@@ -307,6 +326,9 @@ export function ConductorDashboard(): React.ReactElement {
                 onRename={handleRename}
                 onReorder={handleReorder}
                 searchQuery={searchQuery}
+                onHide={handleHideSession}
+                onUnhide={handleUnhideSession}
+                isHiddenTab={activeTab === 'hidden'}
               />
             </div>
           )}

@@ -33,6 +33,10 @@ export const COLORS = {
   CONTINUATION_BADGE_BG: 'rgba(255, 255, 255, 0.08)',
   CONTINUATION_DIVIDER_BORDER: 'rgba(255, 193, 7, 0.3)',
   CONTINUATION_DIVIDER_TEXT: 'rgba(255, 193, 7, 0.7)',
+  CONTEXT_MENU_BG: 'var(--bg-card)',
+  CONTEXT_MENU_BORDER: 'var(--border)',
+  CONTEXT_MENU_HOVER_BG: 'rgba(255, 255, 255, 0.08)',
+  CONTEXT_MENU_SHADOW: 'rgba(0, 0, 0, 0.3)',
 } as const;
 
 export const SIZES = {

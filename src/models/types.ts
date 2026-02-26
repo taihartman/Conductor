@@ -300,6 +300,13 @@ export interface PendingQuestionOption {
   description: string;
 }
 
+/** A tool awaiting user approval in the terminal. */
+export interface PendingToolInfo {
+  toolName: string;
+  /** Short summary of the tool input (e.g., "git commit -m ..."), populated by SessionTracker. */
+  inputSummary: string;
+}
+
 /** Structured representation of an AskUserQuestion prompt awaiting user input. */
 export interface PendingQuestion {
   question: string;
@@ -308,6 +315,10 @@ export interface PendingQuestion {
   multiSelect: boolean;
   /** True when waiting for plan approval (ExitPlanMode/EnterPlanMode), not a user question. */
   isPlanApproval?: boolean;
+  /** True when waiting for tool permission approval in the terminal. */
+  isToolApproval?: boolean;
+  /** Tools pending approval (present when isToolApproval is true). */
+  pendingTools?: PendingToolInfo[];
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +383,10 @@ export interface SessionInfo {
   totalCacheCreationTokens: number;
   /** Whether this session was spawned as a sub-agent (Task tool). */
   isSubAgent: boolean;
+  /** Whether this session is a system artifact (episodic memory, empty). Hidden by default. */
+  isArtifact: boolean;
+  /** Whether this session is hidden from the main view. Set by DashboardPanel. */
+  isHidden?: boolean;
   /** Session ID of the parent that spawned this sub-agent. */
   parentSessionId?: string;
   /** Filesystem path of the JSONL transcript file. */

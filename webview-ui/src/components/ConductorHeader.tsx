@@ -20,6 +20,9 @@ interface ConductorHeaderProps {
   layoutOrientation?: LayoutOrientation;
   onToggleOrientation?: () => void;
   showOrientationToggle?: boolean;
+  activeTab?: 'sessions' | 'hidden';
+  onTabChange?: (tab: 'sessions' | 'hidden') => void;
+  hiddenCount?: number;
 }
 
 export function ConductorHeader({
@@ -35,13 +38,16 @@ export function ConductorHeader({
   layoutOrientation,
   onToggleOrientation,
   showOrientationToggle,
+  activeTab,
+  onTabChange,
+  hiddenCount,
 }: ConductorHeaderProps): React.ReactElement {
-  const parentSessions = sessions.filter((s) => !s.isSubAgent);
-  const workingCount = parentSessions.filter(
+  // sessions already pre-filtered by ConductorDashboard (no sub-agents, optionally no artifacts)
+  const workingCount = sessions.filter(
     (s) => STATUS_GROUPS.ACTIVE.has(s.status)
   ).length;
-  const waitingCount = parentSessions.filter((s) => s.status === SESSION_STATUSES.WAITING).length;
-  const errorCount = parentSessions.filter((s) => s.status === SESSION_STATUSES.ERROR).length;
+  const waitingCount = sessions.filter((s) => s.status === SESSION_STATUSES.WAITING).length;
+  const errorCount = sessions.filter((s) => s.status === SESSION_STATUSES.ERROR).length;
   const totalCost = tokenSummaries.reduce((sum, t) => sum + t.estimatedCostUsd, 0);
 
   return (
@@ -117,6 +123,18 @@ export function ConductorHeader({
               {formatCost(totalCost)} {UI_STRINGS.HEADER_COST_TOTAL}
             </span>
           )}
+          {activeTab && onTabChange && (
+            <div style={{ display: 'flex', gap: '2px', marginLeft: 'var(--spacing-md)' /* inline-ok */ }}>
+              <TabButton active={activeTab === 'sessions'} onClick={() => onTabChange('sessions')}>
+                {UI_STRINGS.TAB_SESSIONS}
+              </TabButton>
+              {(hiddenCount ?? 0) > 0 && (
+                <TabButton active={activeTab === 'hidden'} onClick={() => onTabChange('hidden')}>
+                  {UI_STRINGS.TAB_HIDDEN} ({hiddenCount})
+                </TabButton>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -179,6 +197,35 @@ export function ConductorHeader({
         </button>
       </div>
     </div>
+  );
+}
+
+function TabButton({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: 'none',
+        border: 'none',
+        borderBottom: active ? '2px solid var(--accent)' : '2px solid transparent',
+        cursor: 'pointer',
+        fontSize: '12px', // inline-ok
+        padding: '2px 8px', // inline-ok
+        color: active ? 'var(--fg-primary)' : 'var(--fg-muted)',
+        fontFamily: 'inherit',
+        fontWeight: active ? 600 : 400,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 

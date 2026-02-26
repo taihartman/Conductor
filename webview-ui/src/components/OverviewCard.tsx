@@ -3,6 +3,8 @@ import type { SessionInfo } from '@shared/types';
 import { SESSION_STATUSES, STATUS_GROUPS } from '@shared/sharedConstants';
 import { StatusDot } from './StatusDot';
 import { EnsembleIndicator } from './EnsembleIndicator';
+import { ContextMenu } from './ContextMenu';
+import type { ContextMenuItem } from './ContextMenu';
 import { STATUS_CONFIG } from '../config/statusConfig';
 import {
   timeAgo,
@@ -13,6 +15,7 @@ import {
 } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
+import { useLongPress } from '../hooks/useLongPress';
 
 interface OverviewCardProps {
   session: SessionInfo;
@@ -21,8 +24,11 @@ interface OverviewCardProps {
   onClick: () => void;
   onDoubleClick: () => void;
   onRename: (sessionId: string, name: string) => void;
-  onDragHandlePointerDown: (e: React.PointerEvent) => void;
+  onDragHandlePointerDown?: (e: React.PointerEvent) => void;
   isDragging?: boolean;
+  onHide?: (sessionId: string) => void;
+  onUnhide?: (sessionId: string) => void;
+  isHiddenTab?: boolean;
 }
 
 function getContextText(session: SessionInfo): string {
@@ -37,6 +43,18 @@ function getContextText(session: SessionInfo): string {
     case SESSION_STATUSES.THINKING:
       return UI_STRINGS.CONTEXT_THINKING;
     case SESSION_STATUSES.WAITING:
+      if (session.pendingQuestion?.isToolApproval) {
+        const tools = session.pendingQuestion.pendingTools;
+        if (tools && tools.length > 0) {
+          const desc = tools
+            .map((t) => (t.inputSummary ? `${t.toolName} — ${t.inputSummary}` : t.toolName))
+            .join(', ');
+          const maxLen = 80; // inline-ok: matches TRUNCATION.TOOL_APPROVAL_DESC_MAX
+          const truncated = desc.length > maxLen ? desc.substring(0, maxLen) + '...' : desc;
+          return `${UI_STRINGS.CONTEXT_TOOL_APPROVAL}: ${truncated}`;
+        }
+        return UI_STRINGS.CONTEXT_TOOL_APPROVAL;
+      }
       if (session.pendingQuestion?.isPlanApproval) {
         return UI_STRINGS.CONTEXT_PLAN_APPROVAL;
       }
@@ -68,13 +86,47 @@ export function OverviewCard({
   onRename,
   onDragHandlePointerDown,
   isDragging,
+  onHide,
+  onUnhide,
+  isHiddenTab,
 }: OverviewCardProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
   const isActive = STATUS_GROUPS.ACTIVE.has(session.status);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [isHovered, setIsHovered] = useState(false);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const longPress = useLongPress({
+    onLongPress: (pos) => setContextMenu(pos),
+  });
+
+  const contextMenuItems: ContextMenuItem[] = isHiddenTab
+    ? [
+        ...(onUnhide
+          ? [{ label: UI_STRINGS.CONTEXT_MENU_UNHIDE, action: () => onUnhide(session.sessionId) }]
+          : []),
+        {
+          label: UI_STRINGS.CONTEXT_MENU_RENAME,
+          action: () => {
+            setEditValue(getSessionDisplayName(session));
+            setIsEditing(true);
+          },
+        },
+      ]
+    : [
+        ...(onHide
+          ? [{ label: UI_STRINGS.CONTEXT_MENU_HIDE, action: () => onHide(session.sessionId) }]
+          : []),
+        {
+          label: UI_STRINGS.CONTEXT_MENU_RENAME,
+          action: () => {
+            setEditValue(getSessionDisplayName(session));
+            setIsEditing(true);
+          },
+        },
+      ];
 
   useEffect(() => {
     if (isEditing && inputRef.current) {
@@ -85,8 +137,15 @@ export function OverviewCard({
 
   return (
     <div
-      onClick={onClick}
+      onClick={() => {
+        if (longPress.shouldSuppressClick()) return;
+        onClick();
+      }}
       onDoubleClick={onDoubleClick}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        setContextMenu({ x: e.clientX, y: e.clientY });
+      }}
       style={{
         padding: '0', // inline-ok
         cursor: 'pointer',
@@ -119,32 +178,38 @@ export function OverviewCard({
       }}
     >
       {/* Drag handle */}
-      <div
-        onPointerDown={onDragHandlePointerDown}
-        onClick={(e) => e.stopPropagation()}
-        onDoubleClick={(e) => e.stopPropagation()}
-        title={UI_STRINGS.DRAG_HANDLE_TOOLTIP}
-        aria-label={UI_STRINGS.DRAG_HANDLE_LABEL}
-        style={{
-          width: '16px', // inline-ok
-          flexShrink: 0,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          cursor: 'grab',
-          color: isHovered ? COLORS.DRAG_HANDLE_HOVER : 'transparent',
-          fontSize: '10px', // inline-ok
-          letterSpacing: '-1px',
-          userSelect: 'none',
-          borderRadius: '6px 0 0 6px',
-          transition: 'color 0.15s',
-        }}
-      >
-        {'\u22EE\u22EE'}
-      </div>
+      {onDragHandlePointerDown && (
+        <div
+          onPointerDown={onDragHandlePointerDown}
+          onClick={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          title={UI_STRINGS.DRAG_HANDLE_TOOLTIP}
+          aria-label={UI_STRINGS.DRAG_HANDLE_LABEL}
+          style={{
+            width: '16px', // inline-ok
+            flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'grab',
+            color: isHovered ? COLORS.DRAG_HANDLE_HOVER : 'transparent',
+            fontSize: '10px', // inline-ok
+            letterSpacing: '-1px',
+            userSelect: 'none',
+            borderRadius: '6px 0 0 6px',
+            transition: 'color 0.15s',
+          }}
+        >
+          {'\u22EE\u22EE'}
+        </div>
+      )}
 
       {/* Card content */}
       <div
+        onPointerDown={longPress.onPointerDown}
+        onPointerUp={longPress.onPointerUp}
+        onPointerCancel={longPress.onPointerCancel}
+        onPointerMove={longPress.onPointerMove}
         style={{
           flex: 1,
           minWidth: 0,
@@ -250,6 +315,28 @@ export function OverviewCard({
         >
           {config.label}
         </span>
+        {isHovered && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              const rect = e.currentTarget.getBoundingClientRect();
+              setContextMenu({ x: rect.right, y: rect.bottom });
+            }}
+            aria-label={UI_STRINGS.CONTEXT_MENU_LABEL}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: 'var(--fg-muted)',
+              fontSize: '14px', // inline-ok
+              padding: '0 2px', // inline-ok
+              lineHeight: 1,
+              flexShrink: 0,
+            }}
+          >
+            {'\u22EE'}
+          </button>
+        )}
       </div>
 
       {/* Row 2: Context text (what Claude is doing) */}
@@ -301,6 +388,13 @@ export function OverviewCard({
         <span>{timeAgo(session.lastActivityAt)}</span>
       </div>
       </div>
+      {contextMenu && (
+        <ContextMenu
+          items={contextMenuItems}
+          position={contextMenu}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

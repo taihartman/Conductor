@@ -13,6 +13,9 @@ interface OverviewPanelProps {
   onRename: (sessionId: string, name: string) => void;
   onReorder: (sessionIds: string[]) => void;
   searchQuery: string;
+  onHide?: (sessionId: string) => void;
+  onUnhide?: (sessionId: string) => void;
+  isHiddenTab?: boolean;
 }
 
 export function OverviewPanel({
@@ -24,6 +27,9 @@ export function OverviewPanel({
   onRename,
   onReorder,
   searchQuery,
+  onHide,
+  onUnhide,
+  isHiddenTab,
 }: OverviewPanelProps): React.ReactElement {
   // Build cost lookup
   const costBySession = new Map<string, number>();
@@ -31,9 +37,8 @@ export function OverviewPanel({
     costBySession.set(ts.sessionId, (costBySession.get(ts.sessionId) || 0) + ts.estimatedCostUsd);
   }
 
-  // Only show parent sessions (sub-agents visible in DetailPanel's EnsembleList)
-  const topLevelSessions = sessions.filter((s) => !s.isSubAgent);
-  const topLevelIds = topLevelSessions.map((s) => s.sessionId);
+  // sessions already pre-filtered by ConductorDashboard (no sub-agents, no hidden artifacts)
+  const topLevelIds = sessions.map((s) => s.sessionId);
 
   const {
     gridRef,
@@ -55,7 +60,7 @@ export function OverviewPanel({
         padding: 'var(--spacing-sm)',
       }}
     >
-      {topLevelSessions.length === 0 ? (
+      {sessions.length === 0 ? (
         <div
           style={{
             padding: 'var(--spacing-xl)',
@@ -64,7 +69,11 @@ export function OverviewPanel({
             fontSize: '12px', // inline-ok
           }}
         >
-          {searchQuery ? UI_STRINGS.SEARCH_NO_RESULTS : UI_STRINGS.NO_SESSIONS_MATCH}
+          {searchQuery
+            ? UI_STRINGS.SEARCH_NO_RESULTS
+            : isHiddenTab
+              ? UI_STRINGS.HIDDEN_TAB_EMPTY
+              : UI_STRINGS.NO_SESSIONS_MATCH}
         </div>
       ) : (
         <div
@@ -79,7 +88,7 @@ export function OverviewPanel({
             position: 'relative',
           }}
         >
-          {topLevelSessions.map((session) => (
+          {sessions.map((session) => (
             <div key={session.sessionId} data-session-id={session.sessionId}>
               <OverviewCard
                 session={session}
@@ -88,8 +97,13 @@ export function OverviewPanel({
                 onClick={() => onSessionClick(session.sessionId)}
                 onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
                 onRename={onRename}
-                onDragHandlePointerDown={(e) => handlePointerDown(e, session.sessionId)}
+                onDragHandlePointerDown={
+                  isHiddenTab ? undefined : (e) => handlePointerDown(e, session.sessionId)
+                }
                 isDragging={draggingSessionId === session.sessionId}
+                onHide={onHide}
+                onUnhide={onUnhide}
+                isHiddenTab={isHiddenTab}
               />
             </div>
           ))}

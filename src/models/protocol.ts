@@ -69,4 +69,8 @@ export type WebviewToExtensionMessage =
   /** Raw PTY input (keystrokes) from the webview xterm.js terminal. */
   | { type: 'pty:input'; sessionId: string; data: string }
   /** Resize event from the webview xterm.js terminal. */
-  | { type: 'pty:resize'; sessionId: string; cols: number; rows: number };
+  | { type: 'pty:resize'; sessionId: string; cols: number; rows: number }
+  /** User hides a session from the main view. */
+  | { type: 'session:hide'; sessionId: string }
+  /** User unhides a session from the Hidden tab. */
+  | { type: 'session:unhide'; sessionId: string };
