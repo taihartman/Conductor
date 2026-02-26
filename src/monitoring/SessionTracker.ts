@@ -376,6 +376,28 @@ export class SessionTracker implements vscode.Disposable {
       session.info.status = session.stateMachine.status;
     }
 
+    return {
+      sessions: this.assembleSessionList(),
+      activities: this.getFilteredActivities(focusedSessionId),
+      conversation: this.getFilteredConversation(focusedSessionId),
+      toolStats: this.toolStats.getStats(),
+      tokenSummaries: this.tokenCounter.getSummaries(),
+    };
+  }
+
+  /**
+   * Build the hierarchical session list with continuation merging,
+   * parent-child grouping, and chronological sorting.
+   *
+   * @remarks
+   * Ensures continuation groups are fresh, resolves sub-agent parents through
+   * the grouper, deduplicates by primary ID, merges multi-member groups,
+   * and attaches child agents. Orphaned sub-agents (parent not tracked)
+   * appear as top-level entries.
+   *
+   * @returns Sorted session list for the webview
+   */
+  private assembleSessionList(): SessionInfo[] {
     // Ensure continuation groups are fresh
     this.continuationGrouper.ensureFresh(this.sessions);
 
@@ -437,18 +459,10 @@ export class SessionTracker implements vscode.Disposable {
       parentSessions.push(sessionInfo);
     }
 
-    const sessions = [...parentSessions, ...orphanedAgents].sort((a, b) => {
+    return [...parentSessions, ...orphanedAgents].sort((a, b) => {
       const timeDiff = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
       return timeDiff !== 0 ? timeDiff : a.sessionId.localeCompare(b.sessionId);
     });
-
-    return {
-      sessions,
-      activities: this.getFilteredActivities(focusedSessionId),
-      conversation: this.getFilteredConversation(focusedSessionId),
-      toolStats: this.toolStats.getStats(),
-      tokenSummaries: this.tokenCounter.getSummaries(),
-    };
   }
 
   /**
@@ -1072,7 +1086,9 @@ export class SessionTracker implements vscode.Disposable {
 
     // Cascade: remove children of removed parents (resolved through grouper)
     for (const session of this.sessions.values()) {
-      if (session.parentSessionId && toRemove.has(session.parentSessionId)) {
+      if (!session.parentSessionId) continue;
+      const resolvedParent = this.continuationGrouper.getPrimaryId(session.parentSessionId);
+      if (toRemove.has(resolvedParent)) {
         toRemove.add(session.info.sessionId);
       }
     }

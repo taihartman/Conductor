@@ -29,6 +29,11 @@ export interface IConversationBuilder {
     focusedSessionId: string | null,
     sessions: Map<string, { parentSessionId?: string; isSubAgent: boolean }>
   ): ConversationTurn[];
+  /** Get merged conversation turns for a continuation group, annotated with segment indices. */
+  getFilteredConversationForGroup(
+    memberIds: string[],
+    sessions: Map<string, { parentSessionId?: string; isSubAgent: boolean }>
+  ): ConversationTurn[];
   /** Clear conversation data for a session (stale cleanup). */
   clearSession(sessionId: string): void;
   dispose(): void;

@@ -12,7 +12,14 @@
 
 import { IConversationBuilder } from './IConversationBuilder';
 import { summarizeToolInput } from '../config/toolSummarizers';
-import { TRUNCATION, MAX_CONVERSATION_TURNS_PER_SESSION, SPECIAL_NAMES } from '../constants';
+import {
+  TRUNCATION,
+  MAX_CONVERSATION_TURNS_PER_SESSION,
+  SPECIAL_NAMES,
+  CONTENT_BLOCK_TYPES,
+  CONVERSATION_ROLES,
+  SYSTEM_EVENTS,
+} from '../constants';
 import {
   AssistantRecord,
   UserRecord,
@@ -52,13 +59,13 @@ export class ConversationBuilder implements IConversationBuilder {
     let text = '';
 
     for (const block of msg.content || []) {
-      if (block.type === 'text') {
+      if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
           if (text.length > 0) text += '\n';
           text += textBlock.text;
         }
-      } else if (block.type === 'tool_use') {
+      } else if (block.type === CONTENT_BLOCK_TYPES.TOOL_USE) {
         const toolBlock = block as ToolUseContentBlock;
         const inputJson = this.truncate(JSON.stringify(toolBlock.input), TRUNCATION.TOOL_INPUT_MAX);
         const inputSummary = summarizeToolInput(toolBlock.name, toolBlock.input);
@@ -86,7 +93,7 @@ export class ConversationBuilder implements IConversationBuilder {
     let subAgentSessionId: string | undefined;
     let subAgentDescription: string | undefined;
     for (const tool of tools) {
-      if (tool.toolName === 'Task') {
+      if (tool.toolName === SPECIAL_NAMES.TASK_TOOL) {
         try {
           const parsed = JSON.parse(tool.inputJson);
           subAgentDescription = parsed.description
@@ -103,7 +110,7 @@ export class ConversationBuilder implements IConversationBuilder {
     const turn: ConversationTurn = {
       id: `turn-${++this.turnCounter}`,
       sessionId,
-      role: 'assistant',
+      role: CONVERSATION_ROLES.ASSISTANT,
       timestamp,
       model: msg.model,
       usage: msg.usage,
@@ -131,7 +138,7 @@ export class ConversationBuilder implements IConversationBuilder {
 
     const blocks = normalizeUserContent(msg.content);
     for (const block of blocks) {
-      if (block.type === 'tool_result') {
+      if (block.type === CONTENT_BLOCK_TYPES.TOOL_RESULT) {
         const resultBlock = block as ToolResultContentBlock;
         const pending = this.pendingToolCalls.get(resultBlock.tool_use_id);
         if (pending) {
@@ -141,7 +148,7 @@ export class ConversationBuilder implements IConversationBuilder {
           pending.interaction.output = this.extractToolOutput(resultBlock);
           this.pendingToolCalls.delete(resultBlock.tool_use_id);
         }
-      } else if (block.type === 'text') {
+      } else if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
           if (text.length > 0) text += '\n';
@@ -159,7 +166,7 @@ export class ConversationBuilder implements IConversationBuilder {
       const turn: ConversationTurn = {
         id: `turn-${++this.turnCounter}`,
         sessionId,
-        role: 'user',
+        role: CONVERSATION_ROLES.USER,
         timestamp,
         text,
       };
@@ -178,9 +185,9 @@ export class ConversationBuilder implements IConversationBuilder {
       const turn: ConversationTurn = {
         id: `turn-${++this.turnCounter}`,
         sessionId,
-        role: 'system',
+        role: CONVERSATION_ROLES.SYSTEM,
         timestamp: record.timestamp || new Date().toISOString(),
-        systemEvent: 'turn_end',
+        systemEvent: SYSTEM_EVENTS.TURN_END,
         durationMs: record.durationMs,
       };
 
@@ -203,7 +210,9 @@ export class ConversationBuilder implements IConversationBuilder {
       if (typeof content === 'string') {
         summaryText = content;
       } else if (Array.isArray(content)) {
-        const textBlocks = content.filter((b): b is TextContentBlock => b.type === 'text');
+        const textBlocks = content.filter(
+          (b): b is TextContentBlock => b.type === CONTENT_BLOCK_TYPES.TEXT
+        );
         summaryText = textBlocks.map((b) => b.text).join(' ');
       }
     }
@@ -216,9 +225,9 @@ export class ConversationBuilder implements IConversationBuilder {
       const turn: ConversationTurn = {
         id: `turn-${++this.turnCounter}`,
         sessionId,
-        role: 'system',
+        role: CONVERSATION_ROLES.SYSTEM,
         timestamp: record.timestamp || new Date().toISOString(),
-        systemEvent: 'summary',
+        systemEvent: SYSTEM_EVENTS.SUMMARY,
         summary: summaryText,
       };
 
@@ -268,6 +277,55 @@ export class ConversationBuilder implements IConversationBuilder {
   }
 
   /**
+   * Return merged conversation turns for a continuation group, annotated with
+   * `continuationSegmentIndex` based on which member each turn belongs to.
+   * Also includes sub-agent turns from children of any member.
+   *
+   * @param memberIds - Ordered list of continuation member session IDs (earliest first)
+   * @param sessions - Session metadata map for parent/child resolution
+   * @returns Merged and annotated conversation turns
+   */
+  getFilteredConversationForGroup(
+    memberIds: string[],
+    sessions: Map<string, { parentSessionId?: string; isSubAgent: boolean }>
+  ): ConversationTurn[] {
+    const primaryId = memberIds[0];
+    const memberSet = new Set(memberIds);
+    const memberIndexMap = new Map<string, number>();
+    for (let i = 0; i < memberIds.length; i++) {
+      memberIndexMap.set(memberIds[i], i);
+    }
+
+    const merged: ConversationTurn[] = [];
+
+    // Collect turns from all continuation members, annotating with segment index
+    for (const memberId of memberIds) {
+      const turns = this.conversationBySession.get(memberId) ?? [];
+      const segmentIndex = memberIndexMap.get(memberId) ?? 0;
+      for (const turn of turns) {
+        merged.push({
+          ...turn,
+          continuationSegmentIndex: segmentIndex,
+        });
+      }
+    }
+
+    // Collect sub-agent turns from children of any continuation member
+    for (const [id, info] of sessions) {
+      if (!info.isSubAgent) continue;
+      if (!info.parentSessionId) continue;
+      // Parent must be the primary (SessionTracker resolves through grouper before calling)
+      if (info.parentSessionId === primaryId || memberSet.has(info.parentSessionId)) {
+        const childTurns = this.conversationBySession.get(id) ?? [];
+        merged.push(...childTurns);
+      }
+    }
+
+    merged.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return merged;
+  }
+
+  /**
    * Remove all conversation data for a session.
    * @param sessionId
    */
@@ -301,7 +359,7 @@ export class ConversationBuilder implements IConversationBuilder {
       output = resultBlock.content;
     } else if (Array.isArray(resultBlock.content)) {
       output = resultBlock.content
-        .filter((c) => c.type === 'text' && c.text)
+        .filter((c) => c.type === CONTENT_BLOCK_TYPES.TEXT && c.text)
         .map((c) => c.text)
         .join('\n');
     } else {

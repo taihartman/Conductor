@@ -6,6 +6,29 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 
+/**
+ * Shared test helper: push records into a SessionTracker instance via its private methods.
+ * Hoisted to avoid duplication across describe blocks.
+ */
+function feedRecords(
+  tracker: SessionTracker,
+  sessionId: string,
+  records: any[],
+  options?: { isSubAgent?: boolean; parentSessionId?: string }
+): void {
+  const sessionFile = {
+    sessionId,
+    filePath: `/tmp/test/${sessionId}.jsonl`,
+    projectDir: 'test-project',
+    isSubAgent: options?.isSubAgent || false,
+    modifiedAt: new Date(),
+    parentSessionId: options?.parentSessionId,
+  };
+  const t = tracker as any;
+  t.handleNewFile(sessionFile);
+  t.handleRecords({ sessionFile, records });
+}
+
 describe('SessionTracker record processing', () => {
   it('parses assistant records with tool_use', () => {
     const line =
@@ -133,26 +156,6 @@ describe('SessionTracker replay detection', () => {
     tracker.dispose();
   });
 
-  function feedRecords(
-    tracker: SessionTracker,
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    // Access private handleNewFile and handleRecords via any
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
-
   it('marks replayed session with old timestamps as idle', () => {
     const oldTimestamp = '2026-01-01T10:00:00Z'; // > 5 minutes ago
     const records = JsonlParser.parseString(
@@ -228,25 +231,6 @@ describe('SessionTracker parent-child grouping', () => {
   afterEach(() => {
     tracker.dispose();
   });
-
-  function feedRecords(
-    tracker: SessionTracker,
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
 
   it('links sub-agent to parent via directory-based parentSessionId', () => {
     const now = new Date().toISOString();
@@ -474,28 +458,6 @@ describe('SessionTracker inactivity timeout', () => {
     tracker.dispose();
   });
 
-  /**
-   * Helper: feed records into the tracker, then manually set lastActivityAt to
-   * simulate time passing without waiting for real time.
-   */
-  function feedRecords(
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
-
   /** Helper: directly set a session's lastActivityAt to simulate staleness. */
   function setLastActivity(sessionId: string, timestamp: string): void {
     const t = tracker as any;
@@ -506,11 +468,11 @@ describe('SessionTracker inactivity timeout', () => {
   }
 
   function makeToolUseRecord(sessionId: string, timestamp: string): string {
-    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
   }
 
   function makeWaitingRecord(sessionId: string, timestamp: string): string {
-    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{"question":"Which approach?"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{"question":"Which approach?"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
   }
 
   function makeThinkingRecord(sessionId: string, timestamp: string): string {
@@ -520,7 +482,7 @@ describe('SessionTracker inactivity timeout', () => {
 
   it('transitions working session to done after inactivity timeout', () => {
     const now = new Date().toISOString();
-    feedRecords('work-1', JsonlParser.parseString(makeToolUseRecord('work-1', now)));
+    feedRecords(tracker, 'work-1', JsonlParser.parseString(makeToolUseRecord('work-1', now)));
 
     // Verify it's working
     let state = tracker.getState();
@@ -537,7 +499,7 @@ describe('SessionTracker inactivity timeout', () => {
   it('transitions thinking session to done after inactivity timeout', () => {
     const now = new Date().toISOString();
     // First make working, then feed a progress record to get thinking
-    feedRecords('think-1', JsonlParser.parseString(makeThinkingRecord('think-1', now)));
+    feedRecords(tracker, 'think-1', JsonlParser.parseString(makeThinkingRecord('think-1', now)));
 
     let state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'think-1')!.status).toBe('thinking');
@@ -551,7 +513,7 @@ describe('SessionTracker inactivity timeout', () => {
 
   it('transitions waiting session to done after inactivity timeout', () => {
     const now = new Date().toISOString();
-    feedRecords('wait-1', JsonlParser.parseString(makeWaitingRecord('wait-1', now)));
+    feedRecords(tracker, 'wait-1', JsonlParser.parseString(makeWaitingRecord('wait-1', now)));
 
     let state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('waiting');
@@ -565,7 +527,7 @@ describe('SessionTracker inactivity timeout', () => {
 
   it('does NOT transition working session that is still recent', () => {
     const now = new Date().toISOString();
-    feedRecords('work-2', JsonlParser.parseString(makeToolUseRecord('work-2', now)));
+    feedRecords(tracker, 'work-2', JsonlParser.parseString(makeToolUseRecord('work-2', now)));
 
     // Only 5 minutes of inactivity — below the 10-min threshold
     setLastActivity('work-2', new Date(Date.now() - 5 * 60 * 1000).toISOString());
@@ -577,7 +539,11 @@ describe('SessionTracker inactivity timeout', () => {
 
   it('removes session done by inactivity after stale threshold', () => {
     const now = new Date().toISOString();
-    feedRecords('stale-done-1', JsonlParser.parseString(makeToolUseRecord('stale-done-1', now)));
+    feedRecords(
+      tracker,
+      'stale-done-1',
+      JsonlParser.parseString(makeToolUseRecord('stale-done-1', now))
+    );
 
     // First: inactivity timeout (11 min) → done
     setLastActivity('stale-done-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
@@ -596,7 +562,7 @@ describe('SessionTracker inactivity timeout', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       const now = new Date().toISOString();
-      feedRecords('emit-1', JsonlParser.parseString(makeToolUseRecord('emit-1', now)));
+      feedRecords(tracker, 'emit-1', JsonlParser.parseString(makeToolUseRecord('emit-1', now)));
 
       const stateChangedSpy = vi.fn();
       tracker.onStateChanged(stateChangedSpy);
@@ -616,7 +582,7 @@ describe('SessionTracker inactivity timeout', () => {
 
   it('self-heals: session marked done by inactivity revives on new record', () => {
     const now = new Date().toISOString();
-    feedRecords('heal-1', JsonlParser.parseString(makeToolUseRecord('heal-1', now)));
+    feedRecords(tracker, 'heal-1', JsonlParser.parseString(makeToolUseRecord('heal-1', now)));
 
     // Inactivity timeout → done
     setLastActivity('heal-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
@@ -736,26 +702,8 @@ describe('SessionTracker per-session activity storage', () => {
     tracker.dispose();
   });
 
-  function feedRecords(
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
-
   function makeToolUseRecord(sessionId: string, timestamp: string, toolId: string): string {
-    return `{"type":"assistant","slug":"test","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg-${toolId}","type":"message","role":"assistant","content":[{"type":"tool_use","id":"${toolId}","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg-${toolId}","type":"message","role":"assistant","content":[{"type":"tool_use","id":"${toolId}","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
   }
 
   it('per-session activity storage prevents cross-session eviction', () => {
@@ -763,6 +711,7 @@ describe('SessionTracker per-session activity storage', () => {
 
     // Create session A with 1 activity
     feedRecords(
+      tracker,
       'session-a',
       JsonlParser.parseString(makeToolUseRecord('session-a', new Date(now).toISOString(), 'tu-a1'))
     );
@@ -779,7 +728,7 @@ describe('SessionTracker per-session activity storage', () => {
         makeToolUseRecord('session-b', new Date(now + i + 1).toISOString(), `tu-b${i}`)
       );
     }
-    feedRecords('session-b', JsonlParser.parseString(bRecords.join('\n')));
+    feedRecords(tracker, 'session-b', JsonlParser.parseString(bRecords.join('\n')));
 
     // Focus session A — its activity must still be present
     state = tracker.getState('session-a');
@@ -790,6 +739,7 @@ describe('SessionTracker per-session activity storage', () => {
   it('no-focus returns activities from all sessions in chronological order', () => {
     // Create session A with activities at T1, T3
     feedRecords(
+      tracker,
       'session-x',
       JsonlParser.parseString(
         [
@@ -801,6 +751,7 @@ describe('SessionTracker per-session activity storage', () => {
 
     // Create session B with activities at T2, T4
     feedRecords(
+      tracker,
       'session-y',
       JsonlParser.parseString(
         [
@@ -833,6 +784,7 @@ describe('SessionTracker per-session activity storage', () => {
     const oldTimestamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
 
     feedRecords(
+      tracker,
       'stale-act',
       JsonlParser.parseString(makeToolUseRecord('stale-act', oldTimestamp, 'tu-stale'))
     );
@@ -1027,30 +979,13 @@ describe('SessionTracker lastAssistantText', () => {
     tracker.dispose();
   });
 
-  function feedRecords(
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
-
   it('populates lastAssistantText from a text content block', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'text-1',
       JsonlParser.parseString(
-        `{"type":"assistant","slug":"test","sessionId":"text-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Committed as 7d2671d. All files staged."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+        `{"type":"assistant","slug":"text-1","sessionId":"text-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Committed as 7d2671d. All files staged."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
       )
     );
 
@@ -1063,9 +998,10 @@ describe('SessionTracker lastAssistantText', () => {
   it('does not set lastAssistantText when assistant has only tool_use blocks', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'tool-only',
       JsonlParser.parseString(
-        `{"type":"assistant","slug":"test","sessionId":"tool-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+        `{"type":"assistant","slug":"tool-only","sessionId":"tool-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
       )
     );
 
@@ -1078,9 +1014,10 @@ describe('SessionTracker lastAssistantText', () => {
   it('does not set lastAssistantText for whitespace-only text blocks', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'ws-only',
       JsonlParser.parseString(
-        `{"type":"assistant","slug":"test","sessionId":"ws-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"   \\n  "}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+        `{"type":"assistant","slug":"ws-only","sessionId":"ws-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"   \\n  "}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
       )
     );
 
@@ -1108,27 +1045,10 @@ describe('SessionTracker auto-naming', () => {
     tracker.dispose();
   });
 
-  function feedRecords(
-    sessionId: string,
-    records: any[],
-    options?: { isSubAgent?: boolean; parentSessionId?: string }
-  ): void {
-    const sessionFile = {
-      sessionId,
-      filePath: `/tmp/test/${sessionId}.jsonl`,
-      projectDir: 'test-project',
-      isSubAgent: options?.isSubAgent || false,
-      modifiedAt: new Date(),
-      parentSessionId: options?.parentSessionId,
-    };
-    const t = tracker as any;
-    t.handleNewFile(sessionFile);
-    t.handleRecords({ sessionFile, records });
-  }
-
   it('sets autoName from first user text for parent sessions', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'auto-1',
       JsonlParser.parseString(
         `{"type":"user","slug":"test-slug","sessionId":"auto-1","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Help me fix the login bug"}]}}`
@@ -1145,6 +1065,7 @@ describe('SessionTracker auto-naming', () => {
     const now = new Date().toISOString();
     const later = new Date(Date.now() + 1000).toISOString();
     feedRecords(
+      tracker,
       'auto-2',
       JsonlParser.parseString(
         [
@@ -1163,6 +1084,7 @@ describe('SessionTracker auto-naming', () => {
   it('tool-result-only user records do not set autoName', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'auto-3',
       JsonlParser.parseString(
         `{"type":"user","slug":"test-slug","sessionId":"auto-3","timestamp":"${now}","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"file contents"}]}}`
@@ -1178,6 +1100,7 @@ describe('SessionTracker auto-naming', () => {
   it('sub-agent gets both autoName and description', () => {
     const now = new Date().toISOString();
     feedRecords(
+      tracker,
       'sub-auto-1',
       JsonlParser.parseString(
         `{"type":"user","slug":"sub-slug","sessionId":"parent-1","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Search for authentication patterns"}]}}`
@@ -1197,6 +1120,7 @@ describe('SessionTracker auto-naming', () => {
 
     // Create parent
     feedRecords(
+      tracker,
       'parent-desc',
       JsonlParser.parseString(
         `{"type":"user","slug":"parent","sessionId":"parent-desc","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Main task"}]}}`
@@ -1205,6 +1129,7 @@ describe('SessionTracker auto-naming', () => {
 
     // Create child with user text
     feedRecords(
+      tracker,
       'child-desc',
       JsonlParser.parseString(
         `{"type":"user","slug":"child","sessionId":"parent-desc","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Find auth code"}]}}`
@@ -1227,6 +1152,7 @@ describe('SessionTracker auto-naming', () => {
 
     // Feed an assistant record with a Write tool call targeting the plans dir
     feedRecords(
+      tracker,
       'plan-write',
       JsonlParser.parseString(
         `{"type":"assistant","slug":"plan-write","sessionId":"plan-write","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Write","input":{"file_path":"/home/user/.claude/plans/plan-write.md","content":"# Plan: Fix Login Bug"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`

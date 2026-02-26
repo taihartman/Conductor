@@ -30,6 +30,9 @@ export const COLORS = {
   QUESTION_OPTION_HOVER_BG: 'rgba(255, 255, 255, 0.08)',
   QUESTION_OPTION_BORDER: 'rgba(255, 255, 255, 0.1)',
   QUESTION_OPTION_BADGE_BG: 'rgba(255, 255, 255, 0.1)',
+  CONTINUATION_BADGE_BG: 'rgba(255, 255, 255, 0.08)',
+  CONTINUATION_DIVIDER_BORDER: 'rgba(255, 193, 7, 0.3)',
+  CONTINUATION_DIVIDER_TEXT: 'rgba(255, 193, 7, 0.7)',
 } as const;
 
 export const SIZES = {
