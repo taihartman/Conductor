@@ -424,6 +424,71 @@ describe('Continuation session merging', () => {
     expect(state.sessions.find((s) => s.sessionId === 'partial-2')).toBeUndefined();
   });
 
+  it('getGroupMembers returns all members when queried by primary ID', () => {
+    const now = new Date();
+    const t1 = new Date(now.getTime() - 60000).toISOString();
+    const t2 = new Date(now.getTime() - 30000).toISOString();
+
+    feedRecords(
+      tracker,
+      'grp-1',
+      JsonlParser.parseString(
+        assistantJson({ slug: 'grp-slug', sessionId: 'grp-1', timestamp: t1 })
+      )
+    );
+    feedRecords(
+      tracker,
+      'grp-2',
+      JsonlParser.parseString(
+        assistantJson({ slug: 'grp-slug', sessionId: 'grp-2', timestamp: t2 })
+      )
+    );
+
+    const members = tracker.getGroupMembers('grp-1');
+    expect(members).toEqual(['grp-1', 'grp-2']);
+  });
+
+  it('getGroupMembers returns all members when queried by non-primary ID', () => {
+    const now = new Date();
+    const t1 = new Date(now.getTime() - 60000).toISOString();
+    const t2 = new Date(now.getTime() - 30000).toISOString();
+
+    feedRecords(
+      tracker,
+      'grp2-1',
+      JsonlParser.parseString(
+        assistantJson({ slug: 'grp2-slug', sessionId: 'grp2-1', timestamp: t1 })
+      )
+    );
+    feedRecords(
+      tracker,
+      'grp2-2',
+      JsonlParser.parseString(
+        assistantJson({ slug: 'grp2-slug', sessionId: 'grp2-2', timestamp: t2 })
+      )
+    );
+
+    // Query by non-primary member — should still return the full group
+    const members = tracker.getGroupMembers('grp2-2');
+    expect(members).toEqual(['grp2-1', 'grp2-2']);
+  });
+
+  it('getGroupMembers returns [sessionId] for ungrouped session', () => {
+    const now = new Date();
+    const t1 = new Date(now.getTime() - 60000).toISOString();
+
+    feedRecords(
+      tracker,
+      'solo-1',
+      JsonlParser.parseString(
+        assistantJson({ slug: 'solo-slug', sessionId: 'solo-1', timestamp: t1 })
+      )
+    );
+
+    const members = tracker.getGroupMembers('solo-1');
+    expect(members).toEqual(['solo-1']);
+  });
+
   it('focused sub-agent whose parent is non-primary continuation member shows activities', () => {
     const now = new Date();
     const t1 = new Date(now.getTime() - 60000).toISOString();

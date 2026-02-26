@@ -315,6 +315,8 @@ export interface PendingQuestion {
   multiSelect: boolean;
   /** True when waiting for plan approval (ExitPlanMode/EnterPlanMode), not a user question. */
   isPlanApproval?: boolean;
+  /** Discriminator for which plan tool triggered the approval. */
+  planMode?: 'enter' | 'exit';
   /** True when waiting for tool permission approval in the terminal. */
   isToolApproval?: boolean;
   /** Tools pending approval (present when isToolApproval is true). */

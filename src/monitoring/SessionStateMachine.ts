@@ -147,6 +147,7 @@ export class SessionStateMachine implements ISessionStateMachine {
     let hasToolUse = false;
     let hasAskUser = false;
     let hasPlanTool = false;
+    let planToolName: string | undefined;
     let askUserQuestion: PendingQuestion | undefined;
     const toolBlocks: Array<{ name: string; input: Record<string, unknown> }> = [];
 
@@ -190,6 +191,7 @@ export class SessionStateMachine implements ISessionStateMachine {
           }
         } else if (USER_BLOCKING_TOOLS.has(toolBlock.name)) {
           hasPlanTool = true;
+          planToolName = toolBlock.name;
         }
       }
     }
@@ -205,6 +207,7 @@ export class SessionStateMachine implements ISessionStateMachine {
         options: [],
         multiSelect: false,
         isPlanApproval: true,
+        planMode: planToolName === SPECIAL_NAMES.ENTER_PLAN_MODE ? 'enter' : 'exit',
       };
     } else if (hasToolUse && msg.stop_reason === SPECIAL_NAMES.TOOL_USE_STOP_REASON) {
       // Model finished, tools need permission/execution in terminal.

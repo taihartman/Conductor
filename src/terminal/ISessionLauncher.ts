@@ -16,6 +16,16 @@ export interface ISessionLauncher extends vscode.Disposable {
    */
   launch(cwd?: string): Promise<string>;
 
+  /**
+   * Resume an existing external session by opening a new terminal with `claude --resume`.
+   * The first message is delivered atomically via `--print` to avoid stdin race conditions.
+   *
+   * @param sessionId - The session ID to resume
+   * @param text - The user's message to deliver via `--print`
+   * @param cwd - Working directory for the terminal (defaults to workspace root)
+   */
+  resume(sessionId: string, text: string, cwd?: string): Promise<void>;
+
   /** Whether the given session was launched by Conductor (has PTY ownership). */
   isLaunchedSession(sessionId: string): boolean;
 

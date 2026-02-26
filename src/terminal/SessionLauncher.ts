@@ -134,6 +134,69 @@ export class SessionLauncher implements ISessionLauncher {
   }
 
   /**
+   * Adopt an external session by opening a VS Code terminal with `claude --resume`.
+   * When `text` is non-empty the message is delivered atomically via `--print` to
+   * avoid stdin race conditions. When `text` is empty, the session is adopted
+   * without sending a message (adopt-only mode).
+   *
+   * @param sessionId - The session ID to resume
+   * @param text - The user's message to deliver via `--print` (empty = adopt only)
+   * @param cwd - Working directory for the terminal (defaults to workspace root)
+   */
+  async resume(sessionId: string, text: string, cwd?: string): Promise<void> {
+    const workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+    const launchCommand = vscode.workspace
+      .getConfiguration()
+      .get<string>(SETTINGS.LAUNCH_COMMAND, 'claude');
+
+    console.log(
+      `${LOG_PREFIX.SESSION_LAUNCHER} Resuming session ${sessionId} in ${workspacePath ?? '(no cwd)'}`
+    );
+    this.outputChannel.appendLine(
+      `${LOG_PREFIX.SESSION_LAUNCHER} Resuming session ${sessionId} in ${workspacePath ?? '(no cwd)'}`
+    );
+
+    const shellArgs = ['--resume', sessionId];
+    if (text) {
+      shellArgs.push('--print', text);
+    }
+
+    const terminal = vscode.window.createTerminal({
+      name: PTY.RESUMED_TERMINAL_NAME,
+      shellPath: launchCommand,
+      shellArgs,
+      ...(workspacePath ? { cwd: workspacePath } : {}),
+      env: { FORCE_COLOR: '1' },
+    });
+    terminal.show(false);
+
+    console.log(`${LOG_PREFIX.SESSION_LAUNCHER} Terminal created for resumed session ${sessionId}`);
+    this.outputChannel.appendLine(
+      `${LOG_PREFIX.SESSION_LAUNCHER} Resumed session ${sessionId} terminal created`
+    );
+
+    const closeListener = vscode.window.onDidCloseTerminal((t) => {
+      if (t === terminal && this.sessions.has(sessionId)) {
+        const code = t.exitStatus?.code ?? null;
+        console.log(
+          `${LOG_PREFIX.SESSION_LAUNCHER} Terminal closed for resumed session ${sessionId} (code: ${code})`
+        );
+        this.outputChannel.appendLine(
+          `${LOG_PREFIX.SESSION_LAUNCHER} Resumed session ${sessionId} exited (code: ${code})`
+        );
+        this._onSessionExit.fire({ sessionId, code });
+        const s = this.sessions.get(sessionId);
+        s?.closeListener.dispose();
+        this.sessions.delete(sessionId);
+      }
+    });
+
+    const session: LaunchedSession = { sessionId, terminal, closeListener };
+    this.sessions.set(sessionId, session);
+  }
+
+  /**
    * Check if a session was launched by this instance.
    * @param sessionId
    * @returns `true` if the session is tracked

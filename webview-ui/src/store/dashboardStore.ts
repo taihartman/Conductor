@@ -52,8 +52,12 @@ interface DashboardState {
   activeTab: 'sessions' | 'hidden';
   /** Session ID from a Conductor-initiated launch, awaiting appearance in state:full. */
   pendingLaunchSessionId: string | null;
+  /** Session IDs currently being adopted for terminal mode. */
+  pendingAdoptions: Set<string>;
 
   setPendingLaunchSession: (sessionId: string | null) => void;
+  addPendingAdoption: (sessionId: string) => void;
+  removePendingAdoption: (sessionId: string) => void;
   setFullState: (
     sessions: SessionInfo[],
     activities: ActivityEvent[],
@@ -104,8 +108,21 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   ptyBuffers: new Map(),
   activeTab: 'sessions',
   pendingLaunchSessionId: null,
+  pendingAdoptions: new Set(),
 
   setPendingLaunchSession: (sessionId) => set({ pendingLaunchSessionId: sessionId }),
+  addPendingAdoption: (sessionId) =>
+    set((state) => {
+      const next = new Set(state.pendingAdoptions);
+      next.add(sessionId);
+      return { pendingAdoptions: next };
+    }),
+  removePendingAdoption: (sessionId) =>
+    set((state) => {
+      const next = new Set(state.pendingAdoptions);
+      next.delete(sessionId);
+      return { pendingAdoptions: next };
+    }),
   setFullState: (sessions, activities, conversation, toolStats, tokenSummaries) =>
     set((state) => {
       const pending = state.pendingLaunchSessionId;

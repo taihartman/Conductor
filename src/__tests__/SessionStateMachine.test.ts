@@ -731,7 +731,7 @@ describe('SessionStateMachine', () => {
   // =========================================================================
 
   describe('plan tool detection', () => {
-    it('ExitPlanMode transitions to waiting with isPlanApproval', () => {
+    it('ExitPlanMode transitions to waiting with isPlanApproval and planMode exit', () => {
       sm.handleAssistantRecord(
         makeAssistantRecord({
           message: {
@@ -745,10 +745,11 @@ describe('SessionStateMachine', () => {
         options: [],
         multiSelect: false,
         isPlanApproval: true,
+        planMode: 'exit',
       });
     });
 
-    it('EnterPlanMode transitions to waiting with isPlanApproval', () => {
+    it('EnterPlanMode transitions to waiting with isPlanApproval and planMode enter', () => {
       sm.handleAssistantRecord(
         makeAssistantRecord({
           message: {
@@ -762,6 +763,7 @@ describe('SessionStateMachine', () => {
         options: [],
         multiSelect: false,
         isPlanApproval: true,
+        planMode: 'enter',
       });
     });
 
@@ -791,7 +793,7 @@ describe('SessionStateMachine', () => {
       expect(sm.pendingQuestion?.isPlanApproval).toBeUndefined();
     });
 
-    it('turn_duration preserves plan approval waiting state', () => {
+    it('turn_duration preserves plan approval waiting state with planMode', () => {
       sm.handleAssistantRecord(
         makeAssistantRecord({
           message: {
@@ -801,11 +803,13 @@ describe('SessionStateMachine', () => {
       );
       expect(sm.status).toBe('waiting');
       expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
+      expect(sm.pendingQuestion?.planMode).toBe('exit');
 
       const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 2000 });
       sm.handleSystemRecord(record);
       expect(sm.status).toBe('waiting');
       expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
+      expect(sm.pendingQuestion?.planMode).toBe('exit');
     });
 
     it('plan approval cleared on user text input', () => {

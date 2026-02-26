@@ -5,7 +5,6 @@ import * as vscode from 'vscode';
  *
  * @remarks
  * Manages a ring buffer per session for webview reconnect replay.
- * Implements `ITerminalBridge` for ChatInput routing on Conductor-launched sessions.
  */
 export interface IPtyBridge extends vscode.Disposable {
   /** Register a launched session for PTY data relay. */

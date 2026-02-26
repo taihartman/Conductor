@@ -18,7 +18,6 @@ import { SessionInfo } from './models/types';
 import { ISessionNameStore } from './persistence/ISessionNameStore';
 import { ISessionOrderStore } from './persistence/ISessionOrderStore';
 import { ISessionVisibilityStore } from './persistence/ISessionVisibilityStore';
-import { ITerminalBridge } from './terminal/ITerminalBridge';
 import { ISessionLauncher } from './terminal/ISessionLauncher';
 import { IPtyBridge } from './terminal/IPtyBridge';
 import { PANEL_TITLE, LOG_PREFIX, TIMING } from './constants';
@@ -41,10 +40,10 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly nameStore: ISessionNameStore;
   private readonly orderStore: ISessionOrderStore;
   private readonly visibilityStore: ISessionVisibilityStore;
-  private readonly terminalBridge: ITerminalBridge;
   private readonly sessionLauncher: ISessionLauncher;
   private readonly ptyBridge: IPtyBridge;
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly pendingAdoptions = new Set<string>();
   private focusedSessionId: string | null = null;
   private lastSessionIdSet: string = '';
   private cachedOrder: string[] = [];
@@ -63,7 +62,6 @@ export class DashboardPanel implements vscode.Disposable {
    * @param nameStore - Persistence layer for user-defined session display names
    * @param orderStore - Persistence layer for user-defined session card order
    * @param visibilityStore - Persistence layer for session visibility (hidden/force-shown)
-   * @param terminalBridge - Bridge for sending user input to Claude Code terminals
    * @param sessionLauncher - Launches Claude Code sessions from within Conductor
    * @param ptyBridge - Relays PTY I/O for Conductor-launched sessions
    * @returns The singleton DashboardPanel instance
@@ -74,7 +72,6 @@ export class DashboardPanel implements vscode.Disposable {
     nameStore: ISessionNameStore,
     orderStore: ISessionOrderStore,
     visibilityStore: ISessionVisibilityStore,
-    terminalBridge: ITerminalBridge,
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge
   ): DashboardPanel {
@@ -105,7 +102,6 @@ export class DashboardPanel implements vscode.Disposable {
       nameStore,
       orderStore,
       visibilityStore,
-      terminalBridge,
       sessionLauncher,
       ptyBridge
     );
@@ -120,7 +116,6 @@ export class DashboardPanel implements vscode.Disposable {
     nameStore: ISessionNameStore,
     orderStore: ISessionOrderStore,
     visibilityStore: ISessionVisibilityStore,
-    terminalBridge: ITerminalBridge,
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge
   ) {
@@ -130,7 +125,6 @@ export class DashboardPanel implements vscode.Disposable {
     this.nameStore = nameStore;
     this.orderStore = orderStore;
     this.visibilityStore = visibilityStore;
-    this.terminalBridge = terminalBridge;
     this.sessionLauncher = sessionLauncher;
     this.ptyBridge = ptyBridge;
 
@@ -286,128 +280,189 @@ export class DashboardPanel implements vscode.Disposable {
         this.sessionTracker.refresh();
         this.postFullState();
         break;
-      case 'session:rename': {
-        console.log(
-          `${LOG_PREFIX.PANEL} Renaming session ${message.sessionId} → "${message.name}"`
-        );
-        // Store under the primary ID (which is the sessionId of merged sessions).
-        // Clear stale custom names on non-primary member IDs to prevent ghost resurfaces.
-        const renamePromises: Promise<void>[] = [
-          this.nameStore.setName(message.sessionId, message.name),
-        ];
-        const state = this.sessionTracker.getState(this.focusedSessionId);
-        const targetSession = state.sessions.find((s) => s.sessionId === message.sessionId);
-        if (targetSession?.continuationSessionIds) {
-          for (const memberId of targetSession.continuationSessionIds) {
-            if (memberId !== message.sessionId && this.nameStore.getName(memberId)) {
-              renamePromises.push(this.nameStore.setName(memberId, ''));
-            }
-          }
-        }
-        Promise.all(renamePromises).catch((err: unknown) => {
-          console.log(`${LOG_PREFIX.PANEL} Failed to rename session: ${err}`);
-          this.postFullState();
-        });
+      case 'session:rename':
+        this.handleRename(message.sessionId, message.name);
         break;
-      }
       case 'session:reorder':
-        console.log(
-          `${LOG_PREFIX.PANEL} Reordering sessions: ${message.sessionIds.length} session(s)`
-        );
-        this.orderStore.setOrder(message.sessionIds).catch((err: unknown) => {
-          console.log(`${LOG_PREFIX.PANEL} Failed to persist session order: ${err}`);
-        });
+        this.handleReorder(message.sessionIds);
         break;
-      case 'user:send-input': {
-        // For merged sessions, route to the most recent continuation member's terminal
-        const targetId = this.sessionTracker.getMostRecentContinuationMember(message.sessionId);
-
-        // Route through PtyBridge for Conductor-launched sessions, TerminalBridge otherwise
-        if (this.sessionLauncher.isLaunchedSession(targetId)) {
-          this.sessionLauncher.writeInput(targetId, message.text + '\n');
-          this.postMessage({
-            type: 'user:input-status',
-            sessionId: message.sessionId, // original merged ID, NOT targetId
-            status: 'sent',
-          });
-        } else {
-          this.terminalBridge
-            .sendInput(targetId, message.text)
-            .then((status) => {
-              this.postMessage({
-                type: 'user:input-status',
-                sessionId: message.sessionId, // original merged ID, NOT targetId
-                status,
-              });
-            })
-            .catch((err: unknown) => {
-              console.log(`${LOG_PREFIX.PANEL} Failed to send input: ${err}`);
-              this.postMessage({
-                type: 'user:input-status',
-                sessionId: message.sessionId,
-                status: 'error',
-                error: String(err),
-              });
-            });
-        }
+      case 'user:send-input':
+        this.handleSendInput(message.sessionId, message.text);
         break;
-      }
-      case 'session:launch': {
-        console.log(`${LOG_PREFIX.PANEL} Launching new session`);
-        this.sessionLauncher
-          .launch(message.cwd)
-          .then((sessionId) => {
-            console.log(`${LOG_PREFIX.PANEL} Session launched: ${sessionId}`);
-            this.notifySessionLaunched(sessionId);
-          })
-          .catch((err: unknown) => {
-            console.log(`${LOG_PREFIX.PANEL} Failed to launch session: ${err}`);
-            this.postMessage({
-              type: 'session:launch-status',
-              status: 'error',
-              error: String(err),
-            });
-          });
+      case 'session:launch':
+        this.handleLaunch(message.cwd);
         break;
-      }
-      case 'session:hide': {
-        console.log(`${LOG_PREFIX.PANEL} Hiding session ${message.sessionId}`);
-        const hideState = this.sessionTracker.getState(this.focusedSessionId);
-        const hideTarget = hideState.sessions.find((s) => s.sessionId === message.sessionId);
-        if (hideTarget?.isArtifact) {
-          this.visibilityStore.unforceShowSession(message.sessionId).catch((err: unknown) => {
-            console.log(`${LOG_PREFIX.PANEL} Failed to hide artifact session: ${err}`);
-          });
-        } else {
-          this.visibilityStore.hideSession(message.sessionId).catch((err: unknown) => {
-            console.log(`${LOG_PREFIX.PANEL} Failed to hide session: ${err}`);
-          });
-        }
+      case 'session:hide':
+        this.handleHide(message.sessionId);
         break;
-      }
-      case 'session:unhide': {
-        console.log(`${LOG_PREFIX.PANEL} Unhiding session ${message.sessionId}`);
-        if (this.visibilityStore.getHiddenIds().has(message.sessionId)) {
-          this.visibilityStore.unhideSession(message.sessionId).catch((err: unknown) => {
-            console.log(`${LOG_PREFIX.PANEL} Failed to unhide session: ${err}`);
-          });
-        } else {
-          // Artifact not in forceShownIds → add it
-          this.visibilityStore.forceShowSession(message.sessionId).catch((err: unknown) => {
-            console.log(`${LOG_PREFIX.PANEL} Failed to force-show session: ${err}`);
-          });
-        }
+      case 'session:unhide':
+        this.handleUnhide(message.sessionId);
         break;
-      }
-      case 'pty:input': {
+      case 'session:adopt':
+        this.handleAdopt(message.sessionId);
+        break;
+      case 'pty:input':
         this.sessionLauncher.writeInput(message.sessionId, message.data);
         break;
-      }
-      case 'pty:resize': {
+      case 'pty:resize':
         this.sessionLauncher.resize(message.sessionId, message.cols, message.rows);
         break;
+    }
+  }
+
+  // ── IPC status helpers ───────────────────────────────────────────────
+
+  private postInputStatus(sessionId: string, status: 'sent' | 'adopting'): void {
+    this.postMessage({ type: 'user:input-status', sessionId, status });
+  }
+
+  private postInputError(sessionId: string, err: unknown): void {
+    this.postMessage({
+      type: 'user:input-status',
+      sessionId,
+      status: 'error',
+      error: String(err),
+    });
+  }
+
+  // ── Message handlers ─────────────────────────────────────────────────
+
+  private handleRename(sessionId: string, name: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Renaming session ${sessionId} → "${name}"`);
+    // Store under the primary ID (which is the sessionId of merged sessions).
+    // Clear stale custom names on non-primary member IDs to prevent ghost resurfaces.
+    const renamePromises: Promise<void>[] = [this.nameStore.setName(sessionId, name)];
+    const state = this.sessionTracker.getState(this.focusedSessionId);
+    const targetSession = state.sessions.find((s) => s.sessionId === sessionId);
+    if (targetSession?.continuationSessionIds) {
+      for (const memberId of targetSession.continuationSessionIds) {
+        if (memberId !== sessionId && this.nameStore.getName(memberId)) {
+          renamePromises.push(this.nameStore.setName(memberId, ''));
+        }
       }
     }
+    Promise.all(renamePromises).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to rename session: ${err}`);
+      this.postFullState();
+    });
+  }
+
+  private handleReorder(sessionIds: string[]): void {
+    console.log(`${LOG_PREFIX.PANEL} Reordering sessions: ${sessionIds.length} session(s)`);
+    this.orderStore.setOrder(sessionIds).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to persist session order: ${err}`);
+    });
+  }
+
+  private handleSendInput(sessionId: string, text: string): void {
+    // For merged sessions, route to the most recent continuation member's terminal
+    const targetId = this.sessionTracker.getMostRecentContinuationMember(sessionId);
+
+    if (this.sessionLauncher.isLaunchedSession(targetId)) {
+      // Path A: targetId itself owns a terminal
+      console.log(`${LOG_PREFIX.PANEL} Input → direct write to ${targetId}`);
+      this.sessionLauncher.writeInput(targetId, text + '\n');
+      this.postInputStatus(sessionId, 'sent');
+      return;
+    }
+
+    const launchedMember = this.findLaunchedGroupMember(sessionId);
+    if (launchedMember) {
+      // Path B: a continuation group member owns a terminal
+      console.log(
+        `${LOG_PREFIX.PANEL} Input → group member write via ${launchedMember} (target was ${targetId})`
+      );
+      this.sessionLauncher.writeInput(launchedMember, text + '\n');
+      this.postInputStatus(sessionId, 'sent');
+      return;
+    }
+
+    // Path C: no terminal in group — adopt via resume()
+    const groupMembers = this.sessionTracker.getGroupMembers(sessionId);
+    const primaryId = groupMembers[0]; // earliest member = primary
+    if (this.pendingAdoptions.has(primaryId)) {
+      this.postInputStatus(sessionId, 'sent');
+      return;
+    }
+
+    console.log(`${LOG_PREFIX.PANEL} Input → adopting session ${targetId}`);
+    this.postInputStatus(sessionId, 'adopting');
+
+    this.adoptSession(sessionId, text)
+      .then(() => {
+        this.postInputStatus(sessionId, 'sent');
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to adopt session: ${err}`);
+        this.postInputError(sessionId, err);
+      });
+  }
+
+  private handleLaunch(cwd?: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Launching new session`);
+    this.sessionLauncher
+      .launch(cwd)
+      .then((launchedId) => {
+        console.log(`${LOG_PREFIX.PANEL} Session launched: ${launchedId}`);
+        this.notifySessionLaunched(launchedId);
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to launch session: ${err}`);
+        this.postMessage({
+          type: 'session:launch-status',
+          status: 'error',
+          error: String(err),
+        });
+      });
+  }
+
+  private handleHide(sessionId: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Hiding session ${sessionId}`);
+    const state = this.sessionTracker.getState(this.focusedSessionId);
+    const target = state.sessions.find((s) => s.sessionId === sessionId);
+    if (target?.isArtifact) {
+      this.visibilityStore.unforceShowSession(sessionId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to hide artifact session: ${err}`);
+      });
+    } else {
+      this.visibilityStore.hideSession(sessionId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to hide session: ${err}`);
+      });
+    }
+  }
+
+  private handleUnhide(sessionId: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Unhiding session ${sessionId}`);
+    if (this.visibilityStore.getHiddenIds().has(sessionId)) {
+      this.visibilityStore.unhideSession(sessionId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to unhide session: ${err}`);
+      });
+    } else {
+      this.visibilityStore.forceShowSession(sessionId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to force-show session: ${err}`);
+      });
+    }
+  }
+
+  private handleAdopt(sessionId: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Adopting session ${sessionId} for terminal mode`);
+    this.adoptSession(sessionId, '')
+      .then(() => {
+        this.postMessage({
+          type: 'session:adopt-status',
+          sessionId,
+          status: 'adopted',
+        });
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to adopt session: ${err}`);
+        this.postMessage({
+          type: 'session:adopt-status',
+          sessionId,
+          status: 'error',
+          error: String(err),
+        });
+      });
   }
 
   /**
@@ -490,6 +545,43 @@ export class DashboardPanel implements vscode.Disposable {
         hiddenIds.has(s.sessionId) || (s.isArtifact && !forceShownIds.has(s.sessionId));
       return hidden ? { ...s, isHidden: true } : s;
     });
+  }
+
+  /**
+   * Adopt an external session by resuming it in a VS Code terminal.
+   * Resolves continuation chains and guards against duplicate adoptions.
+   *
+   * @param sessionId - The session ID to adopt (resolved to most recent continuation member)
+   * @param text - Message to deliver via `--print` (empty = adopt only)
+   */
+  private async adoptSession(sessionId: string, text: string): Promise<void> {
+    const targetId = this.sessionTracker.getMostRecentContinuationMember(sessionId);
+    const groupMembers = this.sessionTracker.getGroupMembers(sessionId);
+    const primaryId = groupMembers[0]; // earliest member = primary
+
+    if (this.pendingAdoptions.has(primaryId)) return;
+    this.pendingAdoptions.add(primaryId);
+
+    const state = this.sessionTracker.getState(null);
+    const sessionCwd = state.sessions.find((s) => s.sessionId === targetId)?.cwd;
+
+    try {
+      await this.sessionLauncher.resume(targetId, text, sessionCwd);
+      this.ptyBridge.registerSession(targetId);
+    } finally {
+      this.pendingAdoptions.delete(primaryId);
+    }
+  }
+
+  /**
+   * Search the continuation group for a member that owns a Conductor-launched terminal.
+   *
+   * @param sessionId - Any session ID (may be primary or non-primary member)
+   * @returns The launched member's session ID, or undefined if none found
+   */
+  private findLaunchedGroupMember(sessionId: string): string | undefined {
+    const members = this.sessionTracker.getGroupMembers(sessionId);
+    return members.find((id) => this.sessionLauncher.isLaunchedSession(id));
   }
 
   private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {

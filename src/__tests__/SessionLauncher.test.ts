@@ -177,6 +177,87 @@ describe('SessionLauncher', () => {
     });
   });
 
+  describe('resume', () => {
+    it('creates terminal with --resume and --print args when text is provided', async () => {
+      await launcher.resume('session-abc', 'hello world', '/test/workspace');
+      expect(vscode.window.createTerminal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shellPath: 'claude',
+          shellArgs: ['--resume', 'session-abc', '--print', 'hello world'],
+          cwd: '/test/workspace',
+        })
+      );
+    });
+
+    it('creates terminal with --resume only when text is empty (adopt-only)', async () => {
+      await launcher.resume('session-abc', '', '/test/workspace');
+      expect(vscode.window.createTerminal).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shellPath: 'claude',
+          shellArgs: ['--resume', 'session-abc'],
+          cwd: '/test/workspace',
+        })
+      );
+    });
+
+    it('registers session so isLaunchedSession returns true', async () => {
+      expect(launcher.isLaunchedSession('session-abc')).toBe(false);
+      await launcher.resume('session-abc', 'hi');
+      expect(launcher.isLaunchedSession('session-abc')).toBe(true);
+    });
+
+    it('uses provided cwd', async () => {
+      await launcher.resume('session-abc', 'hi', '/custom/dir');
+      expect(vscode.window.createTerminal).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/custom/dir' })
+      );
+    });
+
+    it('falls back to workspace root when cwd is undefined', async () => {
+      await launcher.resume('session-abc', 'hi');
+      expect(vscode.window.createTerminal).toHaveBeenCalledWith(
+        expect.objectContaining({ cwd: '/test/workspace' })
+      );
+    });
+
+    it('omits cwd when no workspace folder and no cwd provided', async () => {
+      const origFolders = vscode.workspace.workspaceFolders;
+      (vscode.workspace as any).workspaceFolders = undefined;
+
+      await launcher.resume('session-abc', 'hi');
+      const callArg = vi.mocked(vscode.window.createTerminal).mock.calls[0][0] as any;
+      expect(callArg.cwd).toBeUndefined();
+
+      (vscode.workspace as any).workspaceFolders = origFolders;
+    });
+
+    it('uses PTY.RESUMED_TERMINAL_NAME as terminal name', async () => {
+      await launcher.resume('session-abc', 'hi');
+      expect(mockTerminals[0].name).toBe('Claude (Resumed)');
+    });
+
+    it('shows the terminal without stealing focus', async () => {
+      await launcher.resume('session-abc', 'hi');
+      expect(mockTerminals[0].show).toHaveBeenCalledWith(false);
+    });
+
+    it('fires onSessionExit and cleans up when terminal closes', async () => {
+      const exitEvents: { sessionId: string; code: number | null }[] = [];
+      launcher.onSessionExit((e) => exitEvents.push(e));
+
+      await launcher.resume('session-abc', 'hi');
+      expect(launcher.isLaunchedSession('session-abc')).toBe(true);
+
+      const terminal = mockTerminals[0];
+      terminal.exitStatus = { code: 1 };
+      terminalCloseCallback?.(terminal);
+
+      expect(exitEvents).toHaveLength(1);
+      expect(exitEvents[0]).toEqual({ sessionId: 'session-abc', code: 1 });
+      expect(launcher.isLaunchedSession('session-abc')).toBe(false);
+    });
+  });
+
   describe('writeInput', () => {
     it('sends text to the terminal without appending newline', async () => {
       const sessionId = await launcher.launch('/test/workspace');

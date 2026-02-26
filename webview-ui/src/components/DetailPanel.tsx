@@ -1,5 +1,6 @@
 import React, { useCallback } from 'react';
 import type { SessionInfo } from '@shared/types';
+import { SESSION_STATUSES } from '@shared/sharedConstants';
 import { useDashboardStore } from '../store/dashboardStore';
 import { SessionStatsBar } from './SessionStatsBar';
 import { EnsembleList } from './EnsembleList';
@@ -8,6 +9,7 @@ import { AnalyticsDrawer } from './AnalyticsDrawer';
 import { ChatInput } from './ChatInput';
 import { TerminalView } from './TerminalView';
 import { UI_STRINGS } from '../config/strings';
+import { vscode } from '../vscode';
 
 interface DetailPanelProps {
   session: SessionInfo;
@@ -27,17 +29,44 @@ export function DetailPanel({
   const setFilteredSubAgentId = useDashboardStore((s) => s.setFilteredSubAgentId);
   const analyticsDrawerOpen = useDashboardStore((s) => s.analyticsDrawerOpen);
   const toggleAnalyticsDrawer = useDashboardStore((s) => s.toggleAnalyticsDrawer);
+  const sessions = useDashboardStore((s) => s.sessions);
   const viewMode = useDashboardStore(
     (s) => s.viewModes.get(session.sessionId) ?? 'conversation'
   );
   const toggleViewMode = useDashboardStore((s) => s.toggleViewMode);
+  const addPendingAdoption = useDashboardStore((s) => s.addPendingAdoption);
+  const isAdopting = useDashboardStore((s) => s.pendingAdoptions.has(session.sessionId));
+
+  // Resolve the sub-agent's full SessionInfo for ChatInput approval buttons.
+  // Priority: filtered sub-agent > any waiting child agent > none.
+  const activeSubAgentSession = (() => {
+    if (filteredSubAgentId) {
+      return sessions.find((s) => s.sessionId === filteredSubAgentId) ?? null;
+    }
+    const waitingChild = session.childAgents?.find(
+      (c) => c.status === SESSION_STATUSES.WAITING
+    );
+    if (waitingChild) {
+      return sessions.find((s) => s.sessionId === waitingChild.sessionId) ?? null;
+    }
+    return null;
+  })();
 
   const isTerminalMode = viewMode === 'terminal';
-  const canToggle = session.launchedByConductor === true;
 
   const handleToggleView = useCallback(() => {
-    toggleViewMode(session.sessionId);
-  }, [toggleViewMode, session.sessionId]);
+    if (isTerminalMode) {
+      // Switching FROM terminal → always toggle locally
+      toggleViewMode(session.sessionId);
+    } else if (session.launchedByConductor) {
+      // Conductor-launched: toggle locally (terminal already exists)
+      toggleViewMode(session.sessionId);
+    } else {
+      // External session: adopt first, then toggle on success
+      addPendingAdoption(session.sessionId);
+      vscode.postMessage({ type: 'session:adopt', sessionId: session.sessionId });
+    }
+  }, [toggleViewMode, addPendingAdoption, session.sessionId, session.launchedByConductor, isTerminalMode]);
 
   // Get cost from token summaries
   const tokenSummary = tokenSummaries.find((t) => t.sessionId === session.sessionId);
@@ -71,38 +100,40 @@ export function DetailPanel({
         analyticsOpen={analyticsDrawerOpen}
       />
 
-      {/* View mode toggle bar — only for Conductor-launched sessions */}
-      {canToggle && (
-        <div
+      {/* View mode toggle bar */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 'var(--spacing-sm)',
+          padding: '4px var(--spacing-md)', // inline-ok
+          borderBottom: '1px solid var(--border)',
+          flexShrink: 0,
+        }}
+      >
+        <button
+          onClick={handleToggleView}
+          disabled={isAdopting}
+          title={UI_STRINGS.TERMINAL_TOGGLE_TOOLTIP}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 'var(--spacing-sm)',
-            padding: '4px var(--spacing-md)', // inline-ok
-            borderBottom: '1px solid var(--border)',
-            flexShrink: 0,
+            padding: '2px 8px', // inline-ok
+            fontSize: '11px', // inline-ok
+            borderRadius: '3px',
+            border: '1px solid var(--border)',
+            backgroundColor: isTerminalMode ? 'var(--accent, #007acc)' : 'var(--bg-card)',
+            color: isTerminalMode ? '#fff' : 'var(--fg-secondary)', // inline-ok: button text
+            cursor: isAdopting ? 'wait' : 'pointer',
+            fontFamily: 'inherit',
+            opacity: isAdopting ? 0.7 : 1, // inline-ok: disabled state
           }}
         >
-          <button
-            onClick={handleToggleView}
-            title={UI_STRINGS.TERMINAL_TOGGLE_TOOLTIP}
-            style={{
-              padding: '2px 8px', // inline-ok
-              fontSize: '11px', // inline-ok
-              borderRadius: '3px',
-              border: '1px solid var(--border)',
-              backgroundColor: isTerminalMode ? 'var(--accent, #007acc)' : 'var(--bg-card)',
-              color: isTerminalMode ? '#fff' : 'var(--fg-secondary)', // inline-ok: button text
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            {isTerminalMode
+          {isAdopting
+            ? UI_STRINGS.CHAT_INPUT_ADOPTING
+            : isTerminalMode
               ? UI_STRINGS.CONVERSATION_VIEW_TOGGLE
               : UI_STRINGS.TERMINAL_VIEW_TOGGLE}
-          </button>
-        </div>
-      )}
+        </button>
+      </div>
 
       <div
         style={{
@@ -151,7 +182,11 @@ export function DetailPanel({
                   : undefined
               }
             />
-            <ChatInput sessionId={session.sessionId} session={session} />
+            <ChatInput
+              sessionId={session.sessionId}
+              session={session}
+              subAgentSession={activeSubAgentSession ?? undefined}
+            />
           </div>
         )}
 

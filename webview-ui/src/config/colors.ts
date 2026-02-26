@@ -37,6 +37,8 @@ export const COLORS = {
   CONTEXT_MENU_BORDER: 'var(--border)',
   CONTEXT_MENU_HOVER_BG: 'rgba(255, 255, 255, 0.08)',
   CONTEXT_MENU_SHADOW: 'rgba(0, 0, 0, 0.3)',
+  TOOL_DENY_BUTTON_BG: 'rgba(220, 53, 69, 0.15)',
+  TOOL_ALLOW_ALWAYS_BUTTON_BG: 'rgba(255, 255, 255, 0.08)',
 } as const;
 
 export const SIZES = {

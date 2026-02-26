@@ -10,6 +10,8 @@ export function useVsCodeMessage(): void {
     setInputStatus,
     appendPtyBuffer,
     setPendingLaunchSession,
+    removePendingAdoption,
+    setViewMode,
   } = useDashboardStore();
 
   useEffect(() => {
@@ -45,6 +47,12 @@ export function useVsCodeMessage(): void {
             setPendingLaunchSession(null);
           }
           break;
+        case 'session:adopt-status':
+          removePendingAdoption(message.sessionId);
+          if (message.status === 'adopted') {
+            setViewMode(message.sessionId, 'terminal');
+          }
+          break;
       }
     }
 
@@ -57,5 +65,7 @@ export function useVsCodeMessage(): void {
     setInputStatus,
     appendPtyBuffer,
     setPendingLaunchSession,
+    removePendingAdoption,
+    setViewMode,
   ]);
 }

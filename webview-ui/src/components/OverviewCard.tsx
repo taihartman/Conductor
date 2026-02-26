@@ -56,7 +56,9 @@ function getContextText(session: SessionInfo): string {
         return UI_STRINGS.CONTEXT_TOOL_APPROVAL;
       }
       if (session.pendingQuestion?.isPlanApproval) {
-        return UI_STRINGS.CONTEXT_PLAN_APPROVAL;
+        return session.pendingQuestion.planMode === 'enter'
+          ? UI_STRINGS.CONTEXT_ENTER_PLAN_APPROVAL
+          : UI_STRINGS.CONTEXT_EXIT_PLAN_APPROVAL;
       }
       return session.pendingQuestion
         ? session.pendingQuestion.question.length > 80

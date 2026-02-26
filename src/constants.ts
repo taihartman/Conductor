@@ -24,10 +24,8 @@ export const LOG_PREFIX = {
   NAME_STORE: '[Conductor:NameStore]',
   ORDER_STORE: '[Conductor:OrderStore]',
   VISIBILITY_STORE: '[Conductor:VisibilityStore]',
-  TERMINAL_BRIDGE: '[Conductor:TerminalBridge]',
   SESSION_LAUNCHER: '[Conductor:SessionLauncher]',
   PTY_BRIDGE: '[Conductor:PtyBridge]',
-  RESUME_BRIDGE: '[Conductor:ResumeBridge]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -77,12 +75,8 @@ export const PTY = {
   RING_BUFFER_SIZE: 102400,
   /** Display name for the VS Code terminal created by SessionLauncher. */
   TERMINAL_NAME: 'Claude (Conductor)',
-} as const;
-
-/** Configuration for `claude --resume --print` process management. */
-export const RESUME = {
-  /** Maximum time (ms) to wait for a --resume --print process before killing it. */
-  TIMEOUT_MS: 120_000,
+  /** Display name for VS Code terminals created by adopting an external session. */
+  RESUMED_TERMINAL_NAME: 'Claude (Resumed)',
 } as const;
 
 /** VS Code globalState keys for persistent storage. */
@@ -149,4 +143,6 @@ export {
   CONVERSATION_ROLES,
   SYSTEM_EVENTS,
   STATUS_GROUPS,
+  TOOL_APPROVAL_INPUTS,
+  PLAN_INPUTS,
 } from './models/sharedConstants';

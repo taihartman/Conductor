@@ -84,6 +84,27 @@ export const SYSTEM_EVENTS = {
 // Session status groups (common filtering patterns)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Input values for terminal responses
+// ---------------------------------------------------------------------------
+
+/** Terminal input values for tool approval responses. */
+export const TOOL_APPROVAL_INPUTS = {
+  ALLOW: '1',
+  ALLOW_ALWAYS: '2',
+  DENY: '3',
+} as const;
+
+/** Terminal input values for plan mode responses. */
+export const PLAN_INPUTS = {
+  YES: 'yes',
+  NO: 'no',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Session status groups (common filtering patterns)
+// ---------------------------------------------------------------------------
+
 /** Reusable session status groupings for filtering and comparison. */
 export const STATUS_GROUPS = {
   /** Statuses indicating active AI work (tool calls or text generation). */

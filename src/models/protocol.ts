@@ -15,10 +15,13 @@
 import { SessionInfo, ActivityEvent, ConversationTurn, ToolStatEntry, TokenSummary } from './types';
 
 /** Result of attempting to send user input to a Claude Code terminal. */
-export type InputSendStatus = 'sent' | 'no-terminal' | 'error';
+export type InputSendStatus = 'sent' | 'no-terminal' | 'error' | 'adopting';
 
 /** Status of a session launch attempt. */
 export type LaunchStatus = 'launched' | 'error';
+
+/** Result of adopting an external session for terminal mode. */
+export type AdoptStatus = 'adopted' | 'error';
 
 /**
  * Messages sent from the extension backend to the webview.
@@ -44,7 +47,9 @@ export type ExtensionToWebviewMessage =
   /** PTY output data for a Conductor-launched session's embedded terminal. */
   | { type: 'pty:data'; sessionId: string; data: string }
   /** Result of a session launch attempt (success with sessionId, or error). */
-  | { type: 'session:launch-status'; sessionId?: string; status: LaunchStatus; error?: string };
+  | { type: 'session:launch-status'; sessionId?: string; status: LaunchStatus; error?: string }
+  /** Result of adopting an external session for terminal mode. */
+  | { type: 'session:adopt-status'; sessionId: string; status: AdoptStatus; error?: string };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -73,4 +78,6 @@ export type WebviewToExtensionMessage =
   /** User hides a session from the main view. */
   | { type: 'session:hide'; sessionId: string }
   /** User unhides a session from the Hidden tab. */
-  | { type: 'session:unhide'; sessionId: string };
+  | { type: 'session:unhide'; sessionId: string }
+  /** Sent when user toggles to terminal mode on an external (non-Conductor) session. */
+  | { type: 'session:adopt'; sessionId: string };

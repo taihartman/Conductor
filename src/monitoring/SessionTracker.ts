@@ -970,6 +970,19 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
+   * Get all member IDs in the continuation group that contains the given session.
+   * Used by DashboardPanel to find a launched terminal within a continuation group.
+   *
+   * @param sessionId - Any session ID (may be primary or non-primary member)
+   * @returns Ordered list of member session IDs (earliest first)
+   */
+  getGroupMembers(sessionId: string): readonly string[] {
+    this.continuationGrouper.ensureFresh(this.sessions);
+    const primaryId = this.continuationGrouper.getPrimaryId(sessionId);
+    return this.continuationGrouper.getGroupMembers(primaryId);
+  }
+
+  /**
    * Get all session IDs that are members of continuation groups.
    * Used by DashboardPanel to include member IDs as "live" during stale ID pruning,
    * preventing incorrect removal of hidden IDs that map to merged-away members.

@@ -9,22 +9,37 @@
  * On mount (or remount after toggle), replays buffered data from the PtyBridge
  * ring buffer so the terminal shows recent output immediately.
  */
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 import { vscode } from '../vscode';
 import { useDashboardStore } from '../store/dashboardStore';
+import { UI_STRINGS } from '../config/strings';
 
 interface TerminalViewProps {
   sessionId: string;
 }
+
+/** Delay before showing the no-PTY-data placeholder (ms). */
+const NO_PTY_DATA_DELAY_MS = 1500; // inline-ok: one-off timing constant
 
 export function TerminalView({ sessionId }: TerminalViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
   const ptyBuffer = useDashboardStore((s) => s.ptyBuffers.get(sessionId) ?? '');
+  const [showPlaceholder, setShowPlaceholder] = useState(false);
+
+  // Show placeholder after a delay if no PTY data arrives
+  useEffect(() => {
+    if (ptyBuffer) {
+      setShowPlaceholder(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowPlaceholder(true), NO_PTY_DATA_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [ptyBuffer]);
 
   // Initialize terminal on mount
   useEffect(() => {
@@ -112,15 +127,35 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      onClick={handleClick}
-      style={{
-        flex: 1,
-        width: '100%',
-        height: '100%',
-        overflow: 'hidden',
-      }}
-    />
+    <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      <div
+        ref={containerRef}
+        onClick={handleClick}
+        style={{
+          width: '100%',
+          height: '100%',
+          overflow: 'hidden',
+        }}
+      />
+      {showPlaceholder && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(30, 30, 30, 0.85)', // inline-ok: overlay backdrop
+            color: 'var(--fg-secondary)',
+            fontSize: '13px', // inline-ok: placeholder text size
+            padding: 'var(--spacing-lg)',
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          {UI_STRINGS.TERMINAL_NO_PTY_DATA}
+        </div>
+      )}
+    </div>
   );
 }

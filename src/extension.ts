@@ -4,7 +4,6 @@ import { SessionTracker } from './monitoring/SessionTracker';
 import { SessionNameStore } from './persistence/SessionNameStore';
 import { SessionOrderStore } from './persistence/SessionOrderStore';
 import { SessionVisibilityStore } from './persistence/SessionVisibilityStore';
-import { ResumeBridge } from './terminal/ResumeBridge';
 import { SessionLauncher } from './terminal/SessionLauncher';
 import { PtyBridge } from './terminal/PtyBridge';
 import {
@@ -42,9 +41,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const visibilityStore = new SessionVisibilityStore(context.workspaceState, outputChannel);
   context.subscriptions.push(visibilityStore);
 
-  const resumeBridge = new ResumeBridge(outputChannel);
-  context.subscriptions.push(resumeBridge);
-
   const sessionLauncher = new SessionLauncher(outputChannel);
   context.subscriptions.push(sessionLauncher);
 
@@ -59,7 +55,6 @@ export function activate(context: vscode.ExtensionContext): void {
       nameStore,
       orderStore,
       visibilityStore,
-      resumeBridge,
       sessionLauncher,
       ptyBridge
     );

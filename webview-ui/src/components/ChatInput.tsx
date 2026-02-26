@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import type { SessionInfo } from '@shared/types';
-import { SESSION_STATUSES } from '@shared/sharedConstants';
+import { SESSION_STATUSES, TOOL_APPROVAL_INPUTS, PLAN_INPUTS } from '@shared/sharedConstants';
 import { vscode } from '../vscode';
 import { useDashboardStore } from '../store/dashboardStore';
 import { UI_STRINGS } from '../config/strings';
@@ -10,9 +10,11 @@ import { QuestionOptions } from './QuestionOptions';
 interface ChatInputProps {
   sessionId: string;
   session: SessionInfo;
+  /** Sub-agent session whose pendingQuestion should be surfaced (if any). */
+  subAgentSession?: SessionInfo;
 }
 
-export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactElement {
+export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProps): React.ReactElement {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -30,9 +32,9 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
     }
   }, [canSend, sessionId, text]);
 
-  // Clear sending state when we get feedback
+  // Clear sending state when we get feedback (but not on 'adopting' — terminal is still opening)
   React.useEffect(() => {
-    if (lastInputStatus && lastInputStatus.sessionId === sessionId) {
+    if (lastInputStatus && lastInputStatus.sessionId === sessionId && lastInputStatus.status !== 'adopting') {
       setSending(false);
     }
   }, [lastInputStatus, sessionId]);
@@ -64,8 +66,14 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
     [sending, sessionId]
   );
 
-  // Status feedback text
+  // Parent's own pendingQuestion takes priority; otherwise fall back to sub-agent's.
+  const effectiveSession = session.pendingQuestion ? session : (subAgentSession ?? session);
+
+  // Status feedback text — adopting check first since sending is still true during adoption
   const feedbackText = (() => {
+    if (lastInputStatus?.sessionId === sessionId && lastInputStatus.status === 'adopting') {
+      return UI_STRINGS.CHAT_INPUT_ADOPTING;
+    }
     if (sending) return '...';
     if (!lastInputStatus || lastInputStatus.sessionId !== sessionId) return null;
     switch (lastInputStatus.status) {
@@ -90,32 +98,116 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
       }}
     >
       {/* AskUserQuestion — shows question text + clickable option buttons */}
-      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion &&
-       !session.pendingQuestion.isPlanApproval && !session.pendingQuestion.isToolApproval && (
+      {effectiveSession.status === SESSION_STATUSES.WAITING && effectiveSession.pendingQuestion &&
+       !effectiveSession.pendingQuestion.isPlanApproval && !effectiveSession.pendingQuestion.isToolApproval && (
         <div style={{ marginBottom: '6px' /* inline-ok */ }}>
-          {session.pendingQuestion.header && (
+          {effectiveSession.pendingQuestion.header && (
             <div style={{
               fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
               letterSpacing: '0.5px', color: 'var(--fg-muted)', marginBottom: '4px', // inline-ok
             }}>
-              {session.pendingQuestion.header}
+              {effectiveSession.pendingQuestion.header}
             </div>
           )}
           <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', lineHeight: 1.4 /* inline-ok */ }}>
-            <strong>{UI_STRINGS.CHAT_INPUT_WAITING_PREFIX}</strong> {session.pendingQuestion.question}
+            <strong>{UI_STRINGS.CHAT_INPUT_WAITING_PREFIX}</strong> {effectiveSession.pendingQuestion.question}
           </div>
-          {session.pendingQuestion.options.length > 0 && (
-            <QuestionOptions
-              options={session.pendingQuestion.options}
-              onSelect={handleOptionSelect}
-              disabled={sending}
-            />
+          {effectiveSession.pendingQuestion.options.length > 0 && (
+            <>
+              <QuestionOptions
+                options={effectiveSession.pendingQuestion.options}
+                onSelect={handleOptionSelect}
+                disabled={sending}
+              />
+              <button
+                onClick={() => textareaRef.current?.focus()}
+                style={{
+                  width: '100%',
+                  padding: '6px 10px', // inline-ok
+                  marginTop: '4px', // inline-ok
+                  fontSize: '12px', // inline-ok
+                  fontStyle: 'italic',
+                  color: 'var(--fg-secondary)',
+                  background: COLORS.QUESTION_OPTION_BG,
+                  border: `1px dashed ${COLORS.QUESTION_OPTION_BORDER}`,
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                {UI_STRINGS.CHAT_INPUT_OTHER_OPTION}
+              </button>
+            </>
           )}
         </div>
       )}
 
-      {/* Plan approval — approve button + feedback textarea */}
-      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion?.isPlanApproval && (
+      {/* EnterPlanMode — Yes/No buttons */}
+      {effectiveSession.status === SESSION_STATUSES.WAITING &&
+       effectiveSession.pendingQuestion?.isPlanApproval &&
+       effectiveSession.pendingQuestion.planMode === 'enter' && (
+        <div style={{ marginBottom: '6px' /* inline-ok */ }}>
+          <div style={{
+            fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
+            letterSpacing: '0.5px', color: 'var(--status-waiting)', marginBottom: '4px', // inline-ok
+          }}>
+            {UI_STRINGS.CHAT_INPUT_ENTER_PLAN_PREFIX}
+          </div>
+          <div style={{
+            fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '6px', // inline-ok
+            fontStyle: 'italic',
+          }}>
+            {UI_STRINGS.CHAT_INPUT_ENTER_PLAN_HINT}
+          </div>
+          <div style={{ display: 'flex', gap: '6px' /* inline-ok */ }}>
+            <button
+              onClick={() => {
+                setSending(true);
+                vscode.postMessage({ type: 'user:send-input', sessionId, text: PLAN_INPUTS.YES });
+              }}
+              disabled={sending}
+              style={{
+                padding: '4px 12px', // inline-ok
+                fontSize: '11px', // inline-ok
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: 'none',
+                cursor: sending ? 'default' : 'pointer',
+                background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
+                color: '#fff', // inline-ok: button text color
+                opacity: sending ? 0.5 : 1, // inline-ok
+              }}
+            >
+              {UI_STRINGS.CHAT_INPUT_ENTER_PLAN_YES}
+            </button>
+            <button
+              onClick={() => {
+                setSending(true);
+                vscode.postMessage({ type: 'user:send-input', sessionId, text: PLAN_INPUTS.NO });
+              }}
+              disabled={sending}
+              style={{
+                padding: '4px 12px', // inline-ok
+                fontSize: '11px', // inline-ok
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: 'none',
+                cursor: sending ? 'default' : 'pointer',
+                background: COLORS.TOOL_ALLOW_ALWAYS_BUTTON_BG,
+                color: 'var(--fg-primary)',
+                opacity: sending ? 0.5 : 1, // inline-ok
+              }}
+            >
+              {UI_STRINGS.CHAT_INPUT_ENTER_PLAN_NO}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ExitPlanMode — approve button + feedback textarea (also handles undefined planMode for backward compat) */}
+      {effectiveSession.status === SESSION_STATUSES.WAITING &&
+       effectiveSession.pendingQuestion?.isPlanApproval &&
+       effectiveSession.pendingQuestion.planMode !== 'enter' && (
         <div style={{ marginBottom: '6px' /* inline-ok */ }}>
           <div style={{
             fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
@@ -132,7 +224,7 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
           <button
             onClick={() => {
               setSending(true);
-              vscode.postMessage({ type: 'user:send-input', sessionId, text: 'yes' });
+              vscode.postMessage({ type: 'user:send-input', sessionId, text: PLAN_INPUTS.YES });
             }}
             disabled={sending}
             style={{
@@ -152,8 +244,8 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
         </div>
       )}
 
-      {/* Tool approval — informational display of pending tools */}
-      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion?.isToolApproval && (
+      {/* Tool approval — pending tools + Allow/Always/Deny buttons */}
+      {effectiveSession.status === SESSION_STATUSES.WAITING && effectiveSession.pendingQuestion?.isToolApproval && (
         <div style={{ marginBottom: '6px' /* inline-ok */ }}>
           <div style={{
             fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
@@ -161,7 +253,7 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
           }}>
             {UI_STRINGS.CHAT_INPUT_TOOL_APPROVAL_PREFIX}
           </div>
-          {session.pendingQuestion.pendingTools?.map((tool, i) => (
+          {effectiveSession.pendingQuestion.pendingTools?.map((tool, i) => (
             <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' /* inline-ok */ }}>
               <strong>{tool.toolName}</strong>
               {tool.inputSummary && (
@@ -169,11 +261,67 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
               )}
             </div>
           ))}
-          <div style={{
-            fontSize: '11px', color: 'var(--fg-muted)', marginTop: '4px', // inline-ok
-            fontStyle: 'italic',
-          }}>
-            {UI_STRINGS.CHAT_INPUT_TOOL_APPROVAL_HINT}
+          <div style={{ display: 'flex', gap: '6px', marginTop: '6px' /* inline-ok */ }}>
+            <button
+              onClick={() => {
+                setSending(true);
+                vscode.postMessage({ type: 'user:send-input', sessionId, text: TOOL_APPROVAL_INPUTS.ALLOW });
+              }}
+              disabled={sending}
+              style={{
+                padding: '4px 12px', // inline-ok
+                fontSize: '11px', // inline-ok
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: 'none',
+                cursor: sending ? 'default' : 'pointer',
+                background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
+                color: '#fff', // inline-ok: button text color
+                opacity: sending ? 0.5 : 1, // inline-ok
+              }}
+            >
+              {UI_STRINGS.CHAT_INPUT_TOOL_ALLOW}
+            </button>
+            <button
+              onClick={() => {
+                setSending(true);
+                vscode.postMessage({ type: 'user:send-input', sessionId, text: TOOL_APPROVAL_INPUTS.ALLOW_ALWAYS });
+              }}
+              disabled={sending}
+              style={{
+                padding: '4px 12px', // inline-ok
+                fontSize: '11px', // inline-ok
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: 'none',
+                cursor: sending ? 'default' : 'pointer',
+                background: COLORS.TOOL_ALLOW_ALWAYS_BUTTON_BG,
+                color: 'var(--fg-primary)',
+                opacity: sending ? 0.5 : 1, // inline-ok
+              }}
+            >
+              {UI_STRINGS.CHAT_INPUT_TOOL_ALLOW_ALWAYS}
+            </button>
+            <button
+              onClick={() => {
+                setSending(true);
+                vscode.postMessage({ type: 'user:send-input', sessionId, text: TOOL_APPROVAL_INPUTS.DENY });
+              }}
+              disabled={sending}
+              style={{
+                padding: '4px 12px', // inline-ok
+                fontSize: '11px', // inline-ok
+                fontWeight: 600,
+                borderRadius: '4px',
+                border: 'none',
+                cursor: sending ? 'default' : 'pointer',
+                background: COLORS.TOOL_DENY_BUTTON_BG,
+                color: 'var(--fg-primary)',
+                opacity: sending ? 0.5 : 1, // inline-ok
+              }}
+            >
+              {UI_STRINGS.CHAT_INPUT_TOOL_DENY}
+            </button>
           </div>
         </div>
       )}
