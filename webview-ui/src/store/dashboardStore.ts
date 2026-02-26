@@ -48,9 +48,12 @@ interface DashboardState {
   viewModes: Map<string, 'conversation' | 'terminal'>;
   /** Per-session PTY ring buffer replay data (populated on session:launch-status). */
   ptyBuffers: Map<string, string>;
-  /** Whether to show system artifact sessions (episodic memory, empty). */
-  showArtifacts: boolean;
+  /** Active tab in the overview panel. */
+  activeTab: 'sessions' | 'hidden';
+  /** Session ID from a Conductor-initiated launch, awaiting appearance in state:full. */
+  pendingLaunchSessionId: string | null;
 
+  setPendingLaunchSession: (sessionId: string | null) => void;
   setFullState: (
     sessions: SessionInfo[],
     activities: ActivityEvent[],
@@ -75,7 +78,7 @@ interface DashboardState {
   setViewMode: (sessionId: string, mode: 'conversation' | 'terminal') => void;
   toggleViewMode: (sessionId: string) => void;
   appendPtyBuffer: (sessionId: string, data: string) => void;
-  toggleShowArtifacts: () => void;
+  setActiveTab: (tab: 'sessions' | 'hidden') => void;
   zenModeActive: boolean;
   zenExitedAt: number | null;
   enterZenMode: () => void;
@@ -99,10 +102,30 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   panelLayout: null,
   viewModes: new Map(),
   ptyBuffers: new Map(),
-  showArtifacts: false,
+  activeTab: 'sessions',
+  pendingLaunchSessionId: null,
 
+  setPendingLaunchSession: (sessionId) => set({ pendingLaunchSessionId: sessionId }),
   setFullState: (sessions, activities, conversation, toolStats, tokenSummaries) =>
-    set({ sessions, activities, conversation, toolStats, tokenSummaries }),
+    set((state) => {
+      const pending = state.pendingLaunchSessionId;
+      const found = pending !== null && sessions.some((s) => s.sessionId === pending);
+      return {
+        sessions,
+        activities,
+        conversation,
+        toolStats,
+        tokenSummaries,
+        ...(found
+          ? {
+              focusedSessionId: pending,
+              detailViewMode: DETAIL_VIEW_MODES.SPLIT,
+              filteredSubAgentId: null,
+              pendingLaunchSessionId: null,
+            }
+          : {}),
+      };
+    }),
   setActivities: (activities) => set({ activities }),
   setConversation: (turns) => set({ conversation: turns }),
   setFocusedSession: (sessionId) =>
@@ -160,7 +183,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       next.set(sessionId, current === 'conversation' ? 'terminal' : 'conversation');
       return { viewModes: next };
     }),
-  toggleShowArtifacts: () => set((state) => ({ showArtifacts: !state.showArtifacts })),
+  setActiveTab: (tab) => set({ activeTab: tab }),
   appendPtyBuffer: (sessionId, data) =>
     set((state) => {
       const next = new Map(state.ptyBuffers);
