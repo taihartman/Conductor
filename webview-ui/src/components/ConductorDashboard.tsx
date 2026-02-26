@@ -8,6 +8,7 @@ import { EmptyState } from './EmptyState';
 import { ZenModeScene } from './ZenModeScene';
 import { useZenNudge } from '../hooks/useZenNudge';
 import { useCompletionDetector } from '../hooks/useCompletionDetector';
+import { matchesSearchQuery } from '../utils/sessionFilter';
 import { vscode } from '../vscode';
 
 const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
@@ -23,10 +24,13 @@ export function ConductorDashboard(): React.ReactElement {
   const collapseFocusedSession = useDashboardStore((s) => s.collapseFocusedSession);
   const clearFocus = useDashboardStore((s) => s.clearFocus);
   const zenModeActive = useDashboardStore((s) => s.zenModeActive);
+  const searchQuery = useDashboardStore((s) => s.searchQuery);
+  const setSearchQuery = useDashboardStore((s) => s.setSearchQuery);
+  const zenExitedAt = useDashboardStore((s) => s.zenExitedAt);
   const enterZenMode = useDashboardStore((s) => s.enterZenMode);
   const exitZenMode = useDashboardStore((s) => s.exitZenMode);
 
-  const nudgeActive = useZenNudge(sessions);
+  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(sessions, zenExitedAt);
   const completionCount = useCompletionDetector(sessions);
   const mascotButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -44,7 +48,7 @@ export function ConductorDashboard(): React.ReactElement {
       default:
         return sessions;
     }
-  })();
+  })().filter((s) => matchesSearchQuery(s, searchQuery));
 
   // Find focused session
   const focusedSession = focusedSessionId
@@ -77,9 +81,10 @@ export function ConductorDashboard(): React.ReactElement {
   }
 
   const handleZenExit = useCallback(() => {
+    resetIdle();
     exitZenMode();
     mascotButtonRef.current?.focus();
-  }, [exitZenMode]);
+  }, [resetIdle, exitZenMode]);
 
   // Escape key handler — zen mode takes priority
   const handleKeyDown = useCallback(
@@ -100,6 +105,13 @@ export function ConductorDashboard(): React.ReactElement {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
+  // Auto-enter zen mode after prolonged idle
+  useEffect(() => {
+    if (autoZenTriggered && !zenModeActive && sessions.length > 0) {
+      enterZenMode();
+    }
+  }, [autoZenTriggered, zenModeActive, enterZenMode, sessions.length]);
+
   if (sessions.length === 0) {
     return (
       <div
@@ -117,6 +129,8 @@ export function ConductorDashboard(): React.ReactElement {
           nudgeActive={false}
           onMascotClick={enterZenMode}
           mascotButtonRef={mascotButtonRef}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
         />
         <div style={{ flex: 1, overflow: 'auto' }}>
           <EmptyState />
@@ -145,6 +159,8 @@ export function ConductorDashboard(): React.ReactElement {
         nudgeActive={nudgeActive}
         onMascotClick={enterZenMode}
         mascotButtonRef={mascotButtonRef}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
 
       {zenModeActive ? (
@@ -186,6 +202,7 @@ export function ConductorDashboard(): React.ReactElement {
                 onSessionClick={handleSessionClick}
                 onSessionDoubleClick={handleSessionDoubleClick}
                 onRename={handleRename}
+                searchQuery={searchQuery}
               />
             </div>
           )}

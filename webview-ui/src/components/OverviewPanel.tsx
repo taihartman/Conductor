@@ -10,6 +10,7 @@ interface OverviewPanelProps {
   onSessionClick: (sessionId: string) => void;
   onSessionDoubleClick: (sessionId: string) => void;
   onRename: (sessionId: string, name: string) => void;
+  searchQuery: string;
 }
 
 export function OverviewPanel({
@@ -19,6 +20,7 @@ export function OverviewPanel({
   onSessionClick,
   onSessionDoubleClick,
   onRename,
+  searchQuery,
 }: OverviewPanelProps): React.ReactElement {
   // Build cost lookup
   const costBySession = new Map<string, number>();
@@ -48,7 +50,7 @@ export function OverviewPanel({
             fontSize: '12px', // inline-ok
           }}
         >
-          {UI_STRINGS.NO_SESSIONS_MATCH}
+          {searchQuery ? UI_STRINGS.SEARCH_NO_RESULTS : UI_STRINGS.NO_SESSIONS_MATCH}
         </div>
       ) : (
         <div

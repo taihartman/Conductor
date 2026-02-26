@@ -107,6 +107,8 @@ export class DashboardPanel implements vscode.Disposable {
     );
 
     this.sessionTracker.onStateChanged(() => this.postFullState());
+
+    this.nameStore.onNamesChanged(() => this.postFullState(), null, this.disposables);
   }
 
   /**
@@ -126,6 +128,7 @@ export class DashboardPanel implements vscode.Disposable {
 
     this.postMessage({ type: 'sessions:update', sessions });
     this.postMessage({ type: 'activity:full', events: state.activities });
+    this.postMessage({ type: 'conversation:full', turns: state.conversation });
     this.postMessage({ type: 'toolStats:update', stats: state.toolStats });
     this.postMessage({ type: 'tokens:update', tokenSummaries: state.tokenSummaries });
   }
@@ -146,6 +149,18 @@ export class DashboardPanel implements vscode.Disposable {
     this.postMessage({ type: 'activity:full', events: activities });
   }
 
+  /**
+   * Send only the conversation transcript to the webview.
+   *
+   * @remarks
+   * Uses {@link SessionTracker.getFilteredConversation} to send focused-session
+   * conversation turns without assembling the full dashboard state.
+   */
+  private postConversation(): void {
+    const conversation = this.sessionTracker.getFilteredConversation(this.focusedSessionId);
+    this.postMessage({ type: 'conversation:full', turns: conversation });
+  }
+
   private handleMessage(message: WebviewToExtensionMessage): void {
     console.log(`${LOG_PREFIX.PANEL} Webview message received: ${message.type}`);
     switch (message.type) {
@@ -155,6 +170,7 @@ export class DashboardPanel implements vscode.Disposable {
       case 'session:focus':
         this.focusedSessionId = message.sessionId;
         this.postActivities();
+        this.postConversation();
         break;
       case 'refresh':
         this.sessionTracker.refresh();
@@ -164,7 +180,8 @@ export class DashboardPanel implements vscode.Disposable {
         console.log(
           `${LOG_PREFIX.PANEL} Renaming session ${message.sessionId} → "${message.name}"`
         );
-        this.nameStore.setName(message.sessionId, message.name).then(() => {
+        this.nameStore.setName(message.sessionId, message.name).catch((err: unknown) => {
+          console.log(`${LOG_PREFIX.PANEL} Failed to rename session: ${err}`);
           this.postFullState();
         });
         break;

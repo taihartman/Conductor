@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
 import { formatCost } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
@@ -11,6 +11,8 @@ interface ConductorHeaderProps {
   nudgeActive: boolean;
   onMascotClick: () => void;
   mascotButtonRef?: React.Ref<HTMLButtonElement>;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
 export function ConductorHeader({
@@ -20,6 +22,8 @@ export function ConductorHeader({
   nudgeActive,
   onMascotClick,
   mascotButtonRef,
+  searchQuery,
+  onSearchChange,
 }: ConductorHeaderProps): React.ReactElement {
   const parentSessions = sessions.filter((s) => !s.isSubAgent);
   const workingCount = parentSessions.filter(
@@ -105,22 +109,90 @@ export function ConductorHeader({
         </div>
       </div>
 
-      <button
-        onClick={onRefresh}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+        <SearchInput query={searchQuery} onChange={onSearchChange} />
+        <button
+          onClick={onRefresh}
+          style={{
+            padding: '3px 10px', // inline-ok
+            fontSize: '11px', // inline-ok
+            borderRadius: '3px',
+            border: '1px solid var(--border)',
+            backgroundColor: 'var(--bg-card)',
+            color: 'var(--fg-secondary)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+          }}
+          title="Refresh sessions" // inline-ok
+        >
+          {UI_STRINGS.REFRESH_BUTTON}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SearchInput({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (value: string) => void;
+}): React.ReactElement {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  return (
+    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+      <input
+        ref={inputRef}
+        type="text"
+        value={query}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            onChange('');
+            inputRef.current?.blur();
+            e.stopPropagation();
+          }
+        }}
+        placeholder={UI_STRINGS.SEARCH_PLACEHOLDER}
+        aria-label={UI_STRINGS.SEARCH_PLACEHOLDER}
         style={{
-          padding: '3px 10px', // inline-ok
+          width: '160px', // inline-ok
+          padding: '3px 22px 3px 6px', // inline-ok
           fontSize: '11px', // inline-ok
+          fontFamily: 'var(--font-mono)',
           borderRadius: '3px',
           border: '1px solid var(--border)',
           backgroundColor: 'var(--bg-card)',
-          color: 'var(--fg-secondary)',
-          cursor: 'pointer',
-          fontFamily: 'inherit',
+          color: 'var(--fg-primary)',
+          outline: 'none',
         }}
-        title="Refresh sessions" // inline-ok
-      >
-        {UI_STRINGS.REFRESH_BUTTON}
-      </button>
+      />
+      {query && (
+        <button
+          onClick={() => {
+            onChange('');
+            inputRef.current?.focus();
+          }}
+          aria-label={UI_STRINGS.SEARCH_CLEAR}
+          style={{
+            position: 'absolute',
+            right: '4px', // inline-ok
+            top: '50%',
+            transform: 'translateY(-50%)',
+            background: 'none',
+            border: 'none',
+            color: 'var(--fg-muted)',
+            cursor: 'pointer',
+            fontSize: '12px', // inline-ok
+            lineHeight: 1,
+            padding: '0 2px', // inline-ok
+          }}
+        >
+          ×
+        </button>
+      )}
     </div>
   );
 }

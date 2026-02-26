@@ -4,6 +4,7 @@ import type {
   SubAgentInfo,
   SessionStatus,
   ActivityEvent,
+  ConversationTurn,
   ToolStatEntry,
   TokenSummary,
 } from '@shared/types';
@@ -13,6 +14,7 @@ export type {
   SubAgentInfo,
   SessionStatus,
   ActivityEvent,
+  ConversationTurn,
   ToolStatEntry,
   TokenSummary,
 };
@@ -23,15 +25,19 @@ export type DetailViewMode = 'overview-only' | 'split' | 'expanded';
 interface DashboardState {
   sessions: SessionInfo[];
   activities: ActivityEvent[];
+  conversation: ConversationTurn[];
   toolStats: ToolStatEntry[];
   tokenSummaries: TokenSummary[];
   focusedSessionId: string | null;
   filterMode: FilterMode;
   detailViewMode: DetailViewMode;
   filteredSubAgentId: string | null;
+  analyticsDrawerOpen: boolean;
+  searchQuery: string;
 
   setSessions: (sessions: SessionInfo[]) => void;
   setActivities: (activities: ActivityEvent[]) => void;
+  setConversation: (turns: ConversationTurn[]) => void;
   setToolStats: (stats: ToolStatEntry[]) => void;
   setTokenSummaries: (summaries: TokenSummary[]) => void;
   setFocusedSession: (sessionId: string | null) => void;
@@ -41,7 +47,10 @@ interface DashboardState {
   expandFocusedSession: () => void;
   collapseFocusedSession: () => void;
   clearFocus: () => void;
+  toggleAnalyticsDrawer: () => void;
+  setSearchQuery: (query: string) => void;
   zenModeActive: boolean;
+  zenExitedAt: number | null;
   enterZenMode: () => void;
   exitZenMode: () => void;
 }
@@ -49,15 +58,19 @@ interface DashboardState {
 export const useDashboardStore = create<DashboardState>((set) => ({
   sessions: [],
   activities: [],
+  conversation: [],
   toolStats: [],
   tokenSummaries: [],
   focusedSessionId: null,
   filterMode: 'recent',
   detailViewMode: 'overview-only',
   filteredSubAgentId: null,
+  analyticsDrawerOpen: false,
+  searchQuery: '',
 
   setSessions: (sessions) => set({ sessions }),
   setActivities: (activities) => set({ activities }),
+  setConversation: (turns) => set({ conversation: turns }),
   setToolStats: (stats) => set({ toolStats: stats }),
   setTokenSummaries: (summaries) => set({ tokenSummaries: summaries }),
   setFocusedSession: (sessionId) =>
@@ -85,10 +98,15 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       detailViewMode: 'overview-only',
       filteredSubAgentId: null,
     }),
+  toggleAnalyticsDrawer: () =>
+    set((state) => ({ analyticsDrawerOpen: !state.analyticsDrawerOpen })),
+  setSearchQuery: (query) => set({ searchQuery: query }),
   zenModeActive: false,
+  zenExitedAt: null,
   enterZenMode: () =>
     set((state) => ({
       zenModeActive: state.sessions.length > 0,
+      zenExitedAt: null,
     })),
-  exitZenMode: () => set({ zenModeActive: false }),
+  exitZenMode: () => set({ zenModeActive: false, zenExitedAt: Date.now() }),
 }));
