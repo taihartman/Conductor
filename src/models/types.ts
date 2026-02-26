@@ -95,6 +95,27 @@ export interface ToolResultContentBlock {
 export type ContentBlock = TextContentBlock | ToolUseContentBlock | ToolResultContentBlock;
 
 /**
+ * Normalize user message content to a ContentBlock array.
+ *
+ * Real JSONL user records have two formats:
+ * - Simple prompts: `content` is a plain string (e.g. `"Help me fix the bug"`)
+ * - Complex (with tool results): `content` is a `ContentBlock[]`
+ *
+ * This helper ensures callers always get a `ContentBlock[]`.
+ *
+ * @param content - Raw content from a UserMessage (string, array, or undefined)
+ * @returns Normalized array of ContentBlock entries
+ */
+export function normalizeUserContent(content: ContentBlock[] | string | undefined): ContentBlock[] {
+  if (!content) return [];
+  if (typeof content === 'string') {
+    return content.trim() ? [{ type: 'text' as const, text: content }] : [];
+  }
+  if (Array.isArray(content)) return content;
+  return [];
+}
+
+/**
  * Token usage counters from an assistant message's API response.
  *
  * @remarks
@@ -139,7 +160,7 @@ export interface AssistantMessage {
 /** The inner message payload of a {@link UserRecord}. */
 export interface UserMessage {
   role: 'user';
-  content: ContentBlock[];
+  content: ContentBlock[] | string;
 }
 
 // ---------------------------------------------------------------------------

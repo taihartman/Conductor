@@ -18,6 +18,7 @@ import {
   ToolUseContentBlock,
   ToolResultContentBlock,
   TextContentBlock,
+  normalizeUserContent,
 } from '../models/types';
 
 /**
@@ -191,7 +192,8 @@ export class SessionStateMachine implements ISessionStateMachine {
 
     this.cancelTimers();
 
-    for (const block of msg.content || []) {
+    const blocks = normalizeUserContent(msg.content);
+    for (const block of blocks) {
       if (block.type === 'tool_result') {
         const resultBlock = block as ToolResultContentBlock;
         if (resultBlock.is_error) {

@@ -48,6 +48,7 @@ import {
   ToolUseContentBlock,
   ToolResultContentBlock,
   TextContentBlock,
+  normalizeUserContent,
 } from '../models/types';
 
 /** Internal tracking state for a session, not exposed to the webview. */
@@ -369,9 +370,10 @@ export class SessionTracker implements vscode.Disposable {
         childAgents: childrenByParent.get(s.info.sessionId) || [],
       }));
 
-    const sessions = [...parentSessions, ...orphanedAgents].sort(
-      (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime()
-    );
+    const sessions = [...parentSessions, ...orphanedAgents].sort((a, b) => {
+      const timeDiff = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
+      return timeDiff !== 0 ? timeDiff : a.sessionId.localeCompare(b.sessionId);
+    });
 
     return {
       sessions,
@@ -688,9 +690,11 @@ export class SessionTracker implements vscode.Disposable {
     const msg = record.message;
     if (!msg) return;
 
+    const blocks = normalizeUserContent(msg.content);
+
     // Capture first user text as auto-name for ALL sessions
     if (!session.info.autoName) {
-      for (const block of msg.content || []) {
+      for (const block of blocks) {
         if (block.type === 'text') {
           const textBlock = block as TextContentBlock;
           if (textBlock.text && textBlock.text.trim().length > 0) {
@@ -712,7 +716,7 @@ export class SessionTracker implements vscode.Disposable {
       }
     }
 
-    for (const block of msg.content || []) {
+    for (const block of blocks) {
       if (block.type === 'tool_result') {
         const resultBlock = block as ToolResultContentBlock;
 
