@@ -14,7 +14,11 @@ vi.stubGlobal('matchMedia', (query: string) => ({
   dispatchEvent: vi.fn(),
 }));
 
-import { shouldNudge, prefersReducedMotion } from '../../webview-ui/src/hooks/useZenNudge';
+import {
+  shouldNudge,
+  shouldAutoZen,
+  prefersReducedMotion,
+} from '../../webview-ui/src/hooks/useZenNudge';
 import type { SessionInfo } from '../models/types';
 
 /* ── Helpers ─────────────────────────────────────────────────── */
@@ -107,6 +111,44 @@ describe('shouldNudge', () => {
     const customThreshold = 10_000;
     expect(shouldNudge(sessions, now - 15_000, customThreshold, now)).toBe(true);
     expect(shouldNudge(sessions, now - 5_000, customThreshold, now)).toBe(false);
+  });
+});
+
+describe('shouldAutoZen', () => {
+  const THRESHOLD = 300_000;
+  const COOLDOWN = 300_000;
+
+  it('returns true when idle past threshold and zenExitedAt is null', () => {
+    const now = Date.now();
+    expect(shouldAutoZen(now - 400_000, THRESHOLD, null, COOLDOWN, now)).toBe(true);
+  });
+
+  it('returns false when idle time is below threshold', () => {
+    const now = Date.now();
+    expect(shouldAutoZen(now - 100_000, THRESHOLD, null, COOLDOWN, now)).toBe(false);
+  });
+
+  it('returns false when within cooldown after exit', () => {
+    const now = Date.now();
+    const exitedAt = now - 60_000; // exited 1 min ago, cooldown is 5 min
+    expect(shouldAutoZen(now - 400_000, THRESHOLD, exitedAt, COOLDOWN, now)).toBe(false);
+  });
+
+  it('returns true after cooldown expires', () => {
+    const now = Date.now();
+    const exitedAt = now - 400_000; // exited 6m40s ago, cooldown is 5 min
+    expect(shouldAutoZen(now - 400_000, THRESHOLD, exitedAt, COOLDOWN, now)).toBe(true);
+  });
+
+  it('boundary: returns true at exactly threshold, false just under', () => {
+    const now = Date.now();
+    expect(shouldAutoZen(now - THRESHOLD, THRESHOLD, null, COOLDOWN, now)).toBe(true);
+    expect(shouldAutoZen(now - THRESHOLD + 1, THRESHOLD, null, COOLDOWN, now)).toBe(false);
+  });
+
+  it('returns true when zenExitedAt is explicitly null', () => {
+    const now = Date.now();
+    expect(shouldAutoZen(now - 500_000, THRESHOLD, null, COOLDOWN, now)).toBe(true);
   });
 });
 

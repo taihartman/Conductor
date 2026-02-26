@@ -8,4 +8,22 @@ export const COLORS = {
   NORMAL_BAR: 'rgba(0, 122, 204, 0.5)',
   HIGH_COST_WARNING: '#f0ad4e',
   ZEN_NOTE_BRIGHT: 'rgba(220, 200, 255, 0.8)',
+  ASSISTANT_TURN_BG: 'rgba(255, 255, 255, 0.02)',
+  TOOL_BLOCK_BG: 'rgba(0, 0, 0, 0.15)',
+  TOOL_BLOCK_HEADER_HOVER: 'rgba(255, 255, 255, 0.05)',
+  TOOL_BLOCK_ERROR_INDICATOR: 'rgba(220, 53, 69, 0.8)',
+  TOOL_BLOCK_SUCCESS_INDICATOR: 'rgba(40, 167, 69, 0.8)',
+  TOOL_BLOCK_PENDING_INDICATOR: 'rgba(255, 193, 7, 0.8)',
+  SYSTEM_TURN_BORDER: 'rgba(255, 255, 255, 0.08)',
+  SUB_AGENT_BG: 'rgba(0, 122, 204, 0.08)',
+  SUB_AGENT_BORDER: 'rgba(0, 122, 204, 0.2)',
+  ANALYTICS_DRAWER_BG: 'var(--bg-secondary)',
+  CODE_BLOCK_BG: 'rgba(0, 0, 0, 0.25)',
+  INLINE_CODE_BG: 'rgba(0, 0, 0, 0.2)',
+} as const;
+
+export const SIZES = {
+  CODE_BLOCK_MAX_HEIGHT: '400px',
+  TOOL_INPUT_MAX_HEIGHT: '200px',
+  TOOL_OUTPUT_MAX_HEIGHT: '300px',
 } as const;
