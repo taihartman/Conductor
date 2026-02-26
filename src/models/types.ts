@@ -180,16 +180,17 @@ export interface UserRecord extends JsonlRecordBase {
 }
 
 /**
- * A system-level record such as turn duration measurement.
+ * A system-level record such as turn duration or stop-hook summary.
  *
  * @remarks
- * When `subtype` is `'turn_duration'`, the `durationMs` field contains the total
- * wall-clock time of the completed turn. This triggers an idle transition in the
- * session state machine.
+ * - `turn_duration`: contains wall-clock time of the completed turn in `durationMs`.
+ * - `stop_hook_summary`: emitted when a stop hook fires at turn end. May arrive
+ *   alongside `turn_duration` (124 observed cases) or alone (63 cases).
+ *   Both signal turn completion for the state machine.
  */
 export interface SystemRecord extends JsonlRecordBase {
   type: 'system';
-  subtype?: 'turn_duration';
+  subtype?: 'turn_duration' | 'stop_hook_summary';
   /** Wall-clock duration of the turn in milliseconds. */
   durationMs?: number;
 }
@@ -285,6 +286,8 @@ export interface ConversationTurn {
   /** For assistant turns that spawn sub-agents via Task tool. */
   subAgentSessionId?: string;
   subAgentDescription?: string;
+  /** 0-based index of the continuation segment this turn belongs to (set for merged groups). */
+  continuationSegmentIndex?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -303,6 +306,8 @@ export interface PendingQuestion {
   header?: string;
   options: PendingQuestionOption[];
   multiSelect: boolean;
+  /** True when waiting for plan approval (ExitPlanMode/EnterPlanMode), not a user question. */
+  isPlanApproval?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -379,6 +384,10 @@ export interface SessionInfo {
   launchedByConductor?: boolean;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
+  /** All member session IDs when this session is a merged continuation group (2+ members). */
+  continuationSessionIds?: string[];
+  /** Number of times context was cleared (members - 1). Only set for merged continuation groups. */
+  continuationCount?: number;
   /** Most recent tool name (for overview display). */
   lastToolName?: string;
   /** Summarized input of the most recent tool. */

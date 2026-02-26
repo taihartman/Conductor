@@ -28,10 +28,22 @@ import { SessionStateMachine, ISessionStateMachine } from './SessionStateMachine
 import { ToolStats } from '../analytics/ToolStats';
 import { TokenCounter } from '../analytics/TokenCounter';
 import { ConversationBuilder } from './ConversationBuilder';
+import { ContinuationGrouper } from './ContinuationGrouper';
+import { IContinuationGrouper } from './IContinuationGrouper';
 import { summarizeToolInput } from '../config/toolSummarizers';
 import { ISessionNameResolver } from '../persistence/ISessionNameResolver';
 import { SessionNameResolver } from '../persistence/SessionNameResolver';
-import { LOG_PREFIX, TRUNCATION, SPECIAL_NAMES, SETTINGS } from '../constants';
+import {
+  LOG_PREFIX,
+  TRUNCATION,
+  SPECIAL_NAMES,
+  SETTINGS,
+  CONTENT_BLOCK_TYPES,
+  RECORD_TYPES,
+  ACTIVITY_TYPES,
+  SESSION_STATUSES,
+  STATUS_GROUPS,
+} from '../constants';
 import {
   JsonlRecord,
   AssistantRecord,
@@ -67,6 +79,8 @@ interface InternalSessionState {
   planTitleChecked: boolean;
   /** Set to true when a Write to the plans dir is detected, triggering a re-check. */
   pendingPlanCheck: boolean;
+  /** True when slug was explicitly set from JSONL data (not the default sessionId prefix). */
+  slugIsExplicit: boolean;
 }
 
 /**
@@ -126,6 +140,7 @@ export class SessionTracker implements vscode.Disposable {
   private readonly toolStats: ToolStats = new ToolStats();
   private readonly tokenCounter: TokenCounter = new TokenCounter();
   private readonly conversationBuilder: ConversationBuilder = new ConversationBuilder();
+  private readonly continuationGrouper: IContinuationGrouper = new ContinuationGrouper();
   private readonly outputChannel: vscode.OutputChannel;
 
   private readonly _onStateChanged = new vscode.EventEmitter<void>();
@@ -276,6 +291,8 @@ export class SessionTracker implements vscode.Disposable {
       return all.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
     }
 
+    this.continuationGrouper.ensureFresh(this.sessions);
+
     const focused = this.sessions.get(focusedSessionId);
     if (focused?.info.isSubAgent) {
       // Sub-agent: return only that agent's activities
@@ -284,18 +301,25 @@ export class SessionTracker implements vscode.Disposable {
       );
     }
 
-    // Parent session: merge parent + child activities
-    const childIds: string[] = [];
+    // Resolve to primary and get all continuation members
+    const primaryId = this.continuationGrouper.getPrimaryId(focusedSessionId);
+    const memberIds = this.continuationGrouper.getGroupMembers(primaryId);
+
+    // Collect activities from all continuation members
+    const merged: ActivityEvent[] = [];
+    for (const memberId of memberIds) {
+      merged.push(...(this.activitiesBySession.get(memberId) ?? []));
+    }
+
+    // Also merge child sub-agent activities (from any continuation member)
     for (const session of this.sessions.values()) {
-      if (session.info.isSubAgent && session.parentSessionId === focusedSessionId) {
-        childIds.push(session.info.sessionId);
+      if (!session.info.isSubAgent || !session.parentSessionId) continue;
+      const parentPrimary = this.continuationGrouper.getPrimaryId(session.parentSessionId);
+      if (parentPrimary === primaryId) {
+        merged.push(...(this.activitiesBySession.get(session.info.sessionId) ?? []));
       }
     }
 
-    const merged: ActivityEvent[] = [...(this.activitiesBySession.get(focusedSessionId) ?? [])];
-    for (const childId of childIds) {
-      merged.push(...(this.activitiesBySession.get(childId) ?? []));
-    }
     merged.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     return merged.slice(-MAX_ACTIVITIES_FOR_WEBVIEW);
   }
@@ -309,15 +333,30 @@ export class SessionTracker implements vscode.Disposable {
   getFilteredConversation(focusedSessionId?: string | null): ConversationTurn[] {
     if (!focusedSessionId) return [];
 
+    this.continuationGrouper.ensureFresh(this.sessions);
+
+    // Build session map with parentSessionId resolved through grouper
     const sessionMap = new Map<string, { parentSessionId?: string; isSubAgent: boolean }>();
     for (const [id, session] of this.sessions) {
+      const resolvedParent = session.parentSessionId
+        ? this.continuationGrouper.getPrimaryId(session.parentSessionId)
+        : undefined;
       sessionMap.set(id, {
-        parentSessionId: session.parentSessionId,
+        parentSessionId: resolvedParent,
         isSubAgent: session.info.isSubAgent,
       });
     }
 
-    return this.conversationBuilder.getFilteredConversation(focusedSessionId, sessionMap);
+    // Resolve focused ID to primary
+    const primaryId = this.continuationGrouper.getPrimaryId(focusedSessionId);
+    const members = this.continuationGrouper.getGroupMembers(primaryId);
+
+    if (members.length > 1) {
+      // Multi-member continuation group: use group-aware method
+      return this.conversationBuilder.getFilteredConversationForGroup([...members], sessionMap);
+    }
+
+    return this.conversationBuilder.getFilteredConversation(primaryId, sessionMap);
   }
 
   /**
@@ -337,14 +376,23 @@ export class SessionTracker implements vscode.Disposable {
       session.info.status = session.stateMachine.status;
     }
 
-    // Build parent → children mapping
+    // Ensure continuation groups are fresh
+    this.continuationGrouper.ensureFresh(this.sessions);
+
+    // Build parent → children mapping.
+    // Sub-agent parentSessionId is resolved through the grouper so children
+    // of any continuation member are attached to the merged parent.
     const childrenByParent = new Map<string, SubAgentInfo[]>();
     const orphanedAgents: SessionInfo[] = [];
 
     for (const session of this.sessions.values()) {
       if (!session.info.isSubAgent) continue;
 
-      const parentId = session.parentSessionId;
+      const rawParentId = session.parentSessionId;
+      // Resolve through grouper: if the parent is a non-primary continuation member,
+      // map to the primary so all children appear under the merged session.
+      const parentId = rawParentId ? this.continuationGrouper.getPrimaryId(rawParentId) : undefined;
+
       if (parentId && this.sessions.has(parentId)) {
         const children = childrenByParent.get(parentId) || [];
         children.push({
@@ -362,13 +410,32 @@ export class SessionTracker implements vscode.Disposable {
       }
     }
 
-    // Build final sessions list: parents with nested children + orphans
-    const parentSessions = Array.from(this.sessions.values())
-      .filter((s) => !s.info.isSubAgent)
-      .map((s) => ({
-        ...s.info,
-        childAgents: childrenByParent.get(s.info.sessionId) || [],
-      }));
+    // Build final sessions list with continuation merging
+    const processedPrimaries = new Set<string>();
+    const parentSessions: SessionInfo[] = [];
+
+    for (const session of this.sessions.values()) {
+      if (session.info.isSubAgent) continue;
+
+      const primaryId = this.continuationGrouper.getPrimaryId(session.info.sessionId);
+      if (processedPrimaries.has(primaryId)) continue;
+      processedPrimaries.add(primaryId);
+
+      const members = this.continuationGrouper.getGroupMembers(primaryId);
+      let sessionInfo: SessionInfo;
+
+      if (members.length > 1) {
+        // Merge continuation group
+        sessionInfo = this.mergeContinuationGroup([...members]);
+      } else {
+        sessionInfo = { ...session.info };
+      }
+
+      // Attach child agents (from all continuation members)
+      sessionInfo.childAgents = childrenByParent.get(primaryId) || [];
+
+      parentSessions.push(sessionInfo);
+    }
 
     const sessions = [...parentSessions, ...orphanedAgents].sort((a, b) => {
       const timeDiff = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
@@ -465,7 +532,7 @@ export class SessionTracker implements vscode.Disposable {
           sessionId: file.sessionId,
           slug: file.sessionId.substring(0, 8),
           summary: '',
-          status: 'idle',
+          status: SESSION_STATUSES.IDLE,
           model: '',
           gitBranch: '',
           cwd: '',
@@ -486,7 +553,9 @@ export class SessionTracker implements vscode.Disposable {
         description: '',
         planTitleChecked: false,
         pendingPlanCheck: false,
+        slugIsExplicit: false,
       });
+      this.continuationGrouper.markDirty();
     }
   }
 
@@ -507,8 +576,8 @@ export class SessionTracker implements vscode.Disposable {
       const lastRecord = records[records.length - 1];
       const lastRecordTime = lastRecord?.timestamp ? new Date(lastRecord.timestamp).getTime() : 0;
       if (lastRecordTime > 0 && Date.now() - lastRecordTime > REPLAY_STALE_THRESHOLD_MS) {
-        session.stateMachine.setStatus('done');
-        session.info.status = 'done';
+        session.stateMachine.setStatus(SESSION_STATUSES.DONE);
+        session.info.status = SESSION_STATUSES.DONE;
       }
     }
 
@@ -549,6 +618,8 @@ export class SessionTracker implements vscode.Disposable {
     // Update common metadata from any record
     if (record.slug) {
       session.info.slug = record.slug;
+      session.slugIsExplicit = true;
+      this.continuationGrouper.markDirty();
       if (session.info.isSubAgent && !session.description) {
         session.description = record.slug;
       }
@@ -568,23 +639,23 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     switch (record.type) {
-      case 'assistant':
+      case RECORD_TYPES.ASSISTANT:
         this.processAssistant(session, record as AssistantRecord);
         break;
-      case 'user':
+      case RECORD_TYPES.USER:
         this.processUser(session, record as UserRecord);
         break;
-      case 'system':
+      case RECORD_TYPES.SYSTEM:
         this.processSystem(session, record as SystemRecord);
         break;
-      case 'summary':
+      case RECORD_TYPES.SUMMARY:
         this.processSummary(session, record as SummaryRecord);
         break;
-      case 'progress':
+      case RECORD_TYPES.PROGRESS:
         this.processProgress(session, record as ProgressRecord);
         break;
-      case 'queue-operation':
-      case 'file-history-snapshot':
+      case RECORD_TYPES.QUEUE_OPERATION:
+      case RECORD_TYPES.FILE_HISTORY_SNAPSHOT:
         // Silently consumed - no UI impact
         break;
     }
@@ -618,7 +689,7 @@ export class SessionTracker implements vscode.Disposable {
 
     // Process content blocks for activity events
     for (const block of msg.content || []) {
-      if (block.type === 'tool_use') {
+      if (block.type === CONTENT_BLOCK_TYPES.TOOL_USE) {
         const toolBlock = block as ToolUseContentBlock;
         const summarized = summarizeToolInput(toolBlock.name, toolBlock.input);
 
@@ -627,7 +698,7 @@ export class SessionTracker implements vscode.Disposable {
         session.info.lastToolInput = summarized;
 
         // Detect plan file writes — trigger async plan title resolution
-        if (toolBlock.name === 'Write') {
+        if (toolBlock.name === SPECIAL_NAMES.WRITE_TOOL) {
           const filePath = toolBlock.input?.file_path as string | undefined;
           if (filePath && this.nameResolver.isPlanFilePath(filePath, session.info.slug)) {
             session.pendingPlanCheck = true;
@@ -645,11 +716,11 @@ export class SessionTracker implements vscode.Disposable {
           sessionId: session.info.sessionId,
           sessionSlug: session.info.slug,
           timestamp: record.timestamp || new Date().toISOString(),
-          type: 'tool_call',
+          type: ACTIVITY_TYPES.TOOL_CALL,
           toolName: toolBlock.name,
           toolInput: summarized,
         });
-      } else if (block.type === 'text') {
+      } else if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
           const truncatedText =
@@ -664,7 +735,7 @@ export class SessionTracker implements vscode.Disposable {
             sessionId: session.info.sessionId,
             sessionSlug: session.info.slug,
             timestamp: record.timestamp || new Date().toISOString(),
-            type: 'text',
+            type: ACTIVITY_TYPES.TEXT,
             text: truncatedText,
           });
         }
@@ -678,7 +749,7 @@ export class SessionTracker implements vscode.Disposable {
     session.info.pendingQuestion = session.stateMachine.pendingQuestion;
 
     // Track turn count on end_turn with no tool_use
-    const hasToolUse = (msg.content || []).some((b) => b.type === 'tool_use');
+    const hasToolUse = (msg.content || []).some((b) => b.type === CONTENT_BLOCK_TYPES.TOOL_USE);
     if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON && !hasToolUse) {
       session.info.turnCount++;
     }
@@ -695,7 +766,7 @@ export class SessionTracker implements vscode.Disposable {
     // Capture first user text as auto-name for ALL sessions
     if (!session.info.autoName) {
       for (const block of blocks) {
-        if (block.type === 'text') {
+        if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
           const textBlock = block as TextContentBlock;
           if (textBlock.text && textBlock.text.trim().length > 0) {
             session.info.autoName = this.nameResolver.resolveFromPrompt(textBlock.text);
@@ -717,7 +788,7 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     for (const block of blocks) {
-      if (block.type === 'tool_result') {
+      if (block.type === CONTENT_BLOCK_TYPES.TOOL_RESULT) {
         const resultBlock = block as ToolResultContentBlock;
 
         this.toolStats.recordToolResult(
@@ -733,7 +804,7 @@ export class SessionTracker implements vscode.Disposable {
             errorMessage = resultBlock.content.substring(0, TRUNCATION.ERROR_MESSAGE_MAX);
           } else if (Array.isArray(resultBlock.content)) {
             const text = resultBlock.content
-              .filter((c) => c.type === 'text' && c.text)
+              .filter((c) => c.type === CONTENT_BLOCK_TYPES.TEXT && c.text)
               .map((c) => c.text)
               .join(' ');
             errorMessage = text.substring(0, TRUNCATION.ERROR_MESSAGE_MAX) || undefined;
@@ -745,11 +816,11 @@ export class SessionTracker implements vscode.Disposable {
           sessionId: session.info.sessionId,
           sessionSlug: session.info.slug,
           timestamp: record.timestamp || new Date().toISOString(),
-          type: 'tool_result',
+          type: ACTIVITY_TYPES.TOOL_RESULT,
           isError: resultBlock.is_error,
           errorMessage,
         });
-      } else if (block.type === 'text') {
+      } else if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
           this.addActivity({
@@ -757,7 +828,7 @@ export class SessionTracker implements vscode.Disposable {
             sessionId: session.info.sessionId,
             sessionSlug: session.info.slug,
             timestamp: record.timestamp || new Date().toISOString(),
-            type: 'user_input',
+            type: ACTIVITY_TYPES.USER_INPUT,
             text:
               textBlock.text.length > TRUNCATION.TEXT_MAX
                 ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
@@ -782,13 +853,16 @@ export class SessionTracker implements vscode.Disposable {
         sessionId: session.info.sessionId,
         sessionSlug: session.info.slug,
         timestamp: record.timestamp || new Date().toISOString(),
-        type: 'turn_end',
+        type: ACTIVITY_TYPES.TURN_END,
         durationMs: record.durationMs,
       });
     }
 
     // Delegate status transition to state machine
     session.stateMachine.handleSystemRecord(record);
+
+    // Sync pendingQuestion from state machine (stop_hook_summary clears it on DONE)
+    session.info.pendingQuestion = session.stateMachine.pendingQuestion;
 
     this.conversationBuilder.processSystem(session.info.sessionId, record);
   }
@@ -801,7 +875,9 @@ export class SessionTracker implements vscode.Disposable {
       if (typeof content === 'string') {
         session.info.summary = content;
       } else if (Array.isArray(content)) {
-        const textBlocks = content.filter((b): b is TextContentBlock => b.type === 'text');
+        const textBlocks = content.filter(
+          (b): b is TextContentBlock => b.type === CONTENT_BLOCK_TYPES.TEXT
+        );
         if (textBlocks.length > 0) {
           session.info.summary = textBlocks.map((b) => b.text).join(' ');
         }
@@ -813,6 +889,104 @@ export class SessionTracker implements vscode.Disposable {
 
   private processProgress(session: InternalSessionState, record: ProgressRecord): void {
     session.stateMachine.handleProgressRecord(record);
+  }
+
+  /**
+   * Resolve a session ID to the most recent active member of its continuation group.
+   * Used by DashboardPanel to route terminal input to the right session.
+   *
+   * @param sessionId - Any session ID (may be primary or non-primary member)
+   * @returns The most recently active member's session ID
+   */
+  getMostRecentContinuationMember(sessionId: string): string {
+    this.continuationGrouper.ensureFresh(this.sessions);
+    const primaryId = this.continuationGrouper.getPrimaryId(sessionId);
+    return this.continuationGrouper.getMostRecentMember(primaryId, this.sessions);
+  }
+
+  /**
+   * Merge multiple continuation sessions into a single SessionInfo for display.
+   *
+   * @param memberIds - Ordered list of session IDs (earliest first)
+   * @returns Merged SessionInfo with aggregated tokens, turns, and metadata
+   */
+  private mergeContinuationGroup(memberIds: string[]): SessionInfo {
+    const primary = this.sessions.get(memberIds[0])!;
+    const mostRecentId = this.continuationGrouper.getMostRecentMember(memberIds[0], this.sessions);
+    const mostRecent = this.sessions.get(mostRecentId)!;
+
+    // Aggregate token counts across all members
+    let totalInputTokens = 0;
+    let totalOutputTokens = 0;
+    let totalCacheReadTokens = 0;
+    let totalCacheCreationTokens = 0;
+    let turnCount = 0;
+    let earliestStart = primary.info.startedAt;
+    let latestActivity = primary.info.lastActivityAt;
+    let pendingQuestion = primary.info.pendingQuestion;
+
+    // Resolve names: check primary first, then fall through to later members
+    let autoName = primary.info.autoName;
+    let customName = primary.info.customName;
+
+    for (const memberId of memberIds) {
+      const member = this.sessions.get(memberId);
+      if (!member) continue;
+
+      totalInputTokens += member.info.totalInputTokens;
+      totalOutputTokens += member.info.totalOutputTokens;
+      totalCacheReadTokens += member.info.totalCacheReadTokens;
+      totalCacheCreationTokens += member.info.totalCacheCreationTokens;
+      turnCount += member.info.turnCount;
+
+      if (member.info.startedAt < earliestStart) {
+        earliestStart = member.info.startedAt;
+      }
+      if (member.info.lastActivityAt > latestActivity) {
+        latestActivity = member.info.lastActivityAt;
+      }
+
+      // Fall through name resolution: first non-empty wins
+      if (!autoName && member.info.autoName) {
+        autoName = member.info.autoName;
+      }
+      if (!customName && member.info.customName) {
+        customName = member.info.customName;
+      }
+
+      // Pending question from any waiting member
+      if (!pendingQuestion && member.info.pendingQuestion) {
+        pendingQuestion = member.info.pendingQuestion;
+      }
+    }
+
+    return {
+      sessionId: primary.info.sessionId,
+      slug: primary.info.slug,
+      summary: mostRecent.info.summary,
+      status: mostRecent.info.status,
+      model: mostRecent.info.model,
+      gitBranch: mostRecent.info.gitBranch || primary.info.gitBranch,
+      cwd: primary.info.cwd,
+      startedAt: earliestStart,
+      lastActivityAt: latestActivity,
+      turnCount,
+      totalInputTokens,
+      totalOutputTokens,
+      totalCacheReadTokens,
+      totalCacheCreationTokens,
+      isSubAgent: false,
+      filePath: primary.info.filePath,
+      autoName,
+      customName,
+      lastToolName: mostRecent.info.lastToolName,
+      lastToolInput: mostRecent.info.lastToolInput,
+      lastAssistantText: mostRecent.info.lastAssistantText,
+      pendingQuestion,
+      continuationSessionIds: memberIds,
+      continuationCount: memberIds.length - 1,
+      launchedByConductor: primary.info.launchedByConductor,
+    };
   }
 
   private addActivity(event: ActivityEvent): void {
@@ -856,11 +1030,11 @@ export class SessionTracker implements vscode.Disposable {
     for (const [id, session] of this.sessions) {
       const status = session.stateMachine.status;
       if (
-        (status === 'working' || status === 'thinking' || status === 'waiting') &&
+        STATUS_GROUPS.ACTIVE_FILTER.has(status) &&
         now - new Date(session.info.lastActivityAt).getTime() > INACTIVITY_TIMEOUT_MS
       ) {
-        session.stateMachine.setStatus('done');
-        session.info.status = 'done';
+        session.stateMachine.setStatus(SESSION_STATUSES.DONE);
+        session.info.status = SESSION_STATUSES.DONE;
         console.log(`${LOG_PREFIX.SESSION_TRACKER} Inactivity timeout: ${id} → done`);
         this.outputChannel.appendLine(
           `Session ${session.info.slug} marked done (inactive for >10 min)`
@@ -870,18 +1044,33 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     // Pass 2: Stale removal — remove terminal-state sessions from memory
+    // Ensure continuation groups are fresh for group-aware checks
+    this.continuationGrouper.ensureFresh(this.sessions);
+
     const toRemove = new Set<string>();
     for (const [id, session] of this.sessions) {
       const status = session.stateMachine.status;
       if (
-        (status === 'idle' || status === 'done' || status === 'error') &&
+        (STATUS_GROUPS.COMPLETED.has(status) || status === SESSION_STATUSES.ERROR) &&
         now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
       ) {
+        // If this session belongs to a continuation group, skip removal if any
+        // group member is still active (the group lives as long as its newest member).
+        if (this.continuationGrouper.isGrouped(id)) {
+          const primaryId = this.continuationGrouper.getPrimaryId(id);
+          const members = this.continuationGrouper.getGroupMembers(primaryId);
+          const anyMemberActive = members.some((memberId) => {
+            const member = this.sessions.get(memberId);
+            if (!member) return false;
+            return STATUS_GROUPS.ACTIVE_FILTER.has(member.stateMachine.status);
+          });
+          if (anyMemberActive) continue;
+        }
         toRemove.add(id);
       }
     }
 
-    // Cascade: remove children of removed parents
+    // Cascade: remove children of removed parents (resolved through grouper)
     for (const session of this.sessions.values()) {
       if (session.parentSessionId && toRemove.has(session.parentSessionId)) {
         toRemove.add(session.info.sessionId);
@@ -901,6 +1090,7 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     if (toRemove.size > 0) {
+      this.continuationGrouper.markDirty();
       this.outputChannel.appendLine(`Cleaned up ${toRemove.size} stale session(s)`);
       changed = true;
     }

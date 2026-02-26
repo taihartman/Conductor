@@ -37,6 +37,9 @@ function getContextText(session: SessionInfo): string {
     case SESSION_STATUSES.THINKING:
       return UI_STRINGS.CONTEXT_THINKING;
     case SESSION_STATUSES.WAITING:
+      if (session.pendingQuestion?.isPlanApproval) {
+        return UI_STRINGS.CONTEXT_PLAN_APPROVAL;
+      }
       return session.pendingQuestion
         ? session.pendingQuestion.question.length > 80
           ? session.pendingQuestion.question.substring(0, 80) + '...'
@@ -212,6 +215,26 @@ export function OverviewCard({
             }}
           >
             {getSessionDisplayName(session)}
+          </span>
+        )}
+        {session.continuationCount != null && session.continuationCount > 0 && (
+          <span
+            style={{
+              fontSize: '9px', // inline-ok
+              fontWeight: 600,
+              color: 'var(--fg-muted)',
+              backgroundColor: COLORS.CONTINUATION_BADGE_BG,
+              borderRadius: '3px',
+              padding: '1px 5px', // inline-ok
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+            title={`${session.continuationCount + 1} continuation segments`}
+          >
+            {UI_STRINGS.CONTINUATION_BADGE.replace(
+              '{count}',
+              String(session.continuationCount + 1)
+            )}
           </span>
         )}
         <span style={{ flex: 1 }} />

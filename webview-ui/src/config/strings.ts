@@ -55,7 +55,7 @@ export const UI_STRINGS = {
   CHAT_INPUT_SENT: 'Sent',
   CHAT_INPUT_WAITING_PREFIX: 'Claude is asking:',
   CHAT_INPUT_ERROR: 'Failed to send',
-  CHAT_INPUT_NO_TERMINAL: 'No terminal linked \u2014 click Send to select one',
+  CHAT_INPUT_NO_TERMINAL: 'No terminal linked \u2014 open a Claude Code terminal and try again',
   TOOL_BLOCK_INPUT_LABEL: 'Input',
   TOOL_BLOCK_ERROR_OUTPUT_LABEL: 'Error',
   TOOL_BLOCK_OUTPUT_LABEL: 'Output',
@@ -65,4 +65,15 @@ export const UI_STRINGS = {
   HEADER_COST_TOTAL: 'total',
   REFRESH_TITLE: 'Refresh sessions',
   QUESTION_OPTIONS_LABEL: 'Select an option',
+  TERMINAL_VIEW_TOGGLE: 'Terminal',
+  CONVERSATION_VIEW_TOGGLE: 'Chat',
+  TERMINAL_TOGGLE_TOOLTIP: 'Switch between conversation and terminal view',
+  LAUNCH_SESSION_BUTTON: '+',
+  LAUNCH_SESSION_TOOLTIP: 'Launch a new Claude Code session',
+  LAUNCH_SESSION_ERROR: 'Failed to launch session',
+  CONTEXT_PLAN_APPROVAL: 'Awaiting plan approval',
+  /** Badge text for merged continuation sessions. Use with template: `${count} parts`. */
+  CONTINUATION_BADGE: '{count} parts',
+  /** Segment divider label between continuations. Use with template: `Context cleared — continuation {n} of {total}`. */
+  CONTINUATION_DIVIDER: 'Context cleared — continuation {n} of {total}',
 } as const;

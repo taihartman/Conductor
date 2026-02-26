@@ -21,7 +21,7 @@ import {
   normalizeUserContent,
   PendingQuestion,
 } from '../models/types';
-import { SPECIAL_NAMES, CONTENT_BLOCK_TYPES, SESSION_STATUSES } from '../constants';
+import { SPECIAL_NAMES, CONTENT_BLOCK_TYPES, SESSION_STATUSES, TIMING } from '../constants';
 
 /**
  * Interface for the session state machine.
@@ -50,6 +50,12 @@ interface ErrorEntry {
   timestamp: number;
   toolName: string;
 }
+
+/** Tools that block waiting for user input (plan approval). */
+const USER_BLOCKING_TOOLS: ReadonlySet<string> = new Set([
+  SPECIAL_NAMES.EXIT_PLAN_MODE,
+  SPECIAL_NAMES.ENTER_PLAN_MODE,
+]);
 
 /**
  * Six-state machine for a single session's status transitions.
@@ -140,6 +146,7 @@ export class SessionStateMachine implements ISessionStateMachine {
 
     let hasToolUse = false;
     let hasAskUser = false;
+    let hasPlanTool = false;
     let askUserQuestion: PendingQuestion | undefined;
 
     for (const block of msg.content || []) {
@@ -176,13 +183,24 @@ export class SessionStateMachine implements ISessionStateMachine {
               };
             }
           }
+        } else if (USER_BLOCKING_TOOLS.has(toolBlock.name)) {
+          hasPlanTool = true;
         }
       }
     }
 
+    // Priority: AskUserQuestion > plan tool > regular tool_use > text
     if (hasAskUser) {
       this._status = SESSION_STATUSES.WAITING;
       this._pendingQuestion = askUserQuestion;
+    } else if (hasPlanTool) {
+      this._status = SESSION_STATUSES.WAITING;
+      this._pendingQuestion = {
+        question: '',
+        options: [],
+        multiSelect: false,
+        isPlanApproval: true,
+      };
     } else if (hasToolUse) {
       this._status = SESSION_STATUSES.WORKING;
       this._pendingQuestion = undefined;
@@ -191,11 +209,12 @@ export class SessionStateMachine implements ISessionStateMachine {
       this._pendingQuestion = undefined;
       this._status = SESSION_STATUSES.DONE;
     } else {
-      // Text-only, not end_turn: thinking
+      // Text-only, null stop_reason — start intermission timer as fallback
       if (this._status !== SESSION_STATUSES.WORKING && this._status !== SESSION_STATUSES.ERROR) {
         this._status = SESSION_STATUSES.THINKING;
       }
       this._pendingQuestion = undefined;
+      this.startIntermissionTimer();
     }
 
     this._lastAssistantTime = Date.now();
@@ -256,10 +275,14 @@ export class SessionStateMachine implements ISessionStateMachine {
    * @returns The new session status after processing
    */
   handleSystemRecord(record: SystemRecord): SessionStatus {
-    if (record.subtype === SPECIAL_NAMES.TURN_DURATION_SUBTYPE) {
+    if (
+      record.subtype === SPECIAL_NAMES.TURN_DURATION_SUBTYPE ||
+      record.subtype === SPECIAL_NAMES.STOP_HOOK_SUMMARY_SUBTYPE
+    ) {
       this.cancelTimers();
-      // Turn finished — only mark done if not already waiting for AskUserQuestion
+      // Turn finished — only mark done if not already waiting for user input
       if (this._status !== SESSION_STATUSES.WAITING) {
+        this._pendingQuestion = undefined;
         this._status = SESSION_STATUSES.DONE;
       }
     }
@@ -283,6 +306,15 @@ export class SessionStateMachine implements ISessionStateMachine {
   /** Cancel all pending timers and release resources. */
   dispose(): void {
     this.cancelTimers();
+  }
+
+  private startIntermissionTimer(): void {
+    this.intermissionTimer = setTimeout(() => {
+      if (this._status !== SESSION_STATUSES.WAITING) {
+        this._status = SESSION_STATUSES.DONE;
+        this.onStateChanged();
+      }
+    }, TIMING.INTERMISSION_MS);
   }
 
   private cancelTimers(): void {

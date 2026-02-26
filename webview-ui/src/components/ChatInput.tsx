@@ -89,7 +89,8 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
         flexShrink: 0,
       }}
     >
-      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion && (
+      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion &&
+       !session.pendingQuestion.isPlanApproval && (
         <div style={{ marginBottom: '6px' }}>
           {session.pendingQuestion.header && (
             <div style={{

@@ -532,4 +532,285 @@ describe('SessionStateMachine', () => {
       multiSelect: false,
     });
   });
+
+  // =========================================================================
+  // Fix 1: stop_hook_summary as turn-end signal
+  // =========================================================================
+
+  describe('stop_hook_summary handling', () => {
+    it('transitions to done on stop_hook_summary', () => {
+      // Make working first
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-1', name: 'Bash', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('working');
+
+      const record = makeSystemRecord({ subtype: 'stop_hook_summary' });
+      const status = sm.handleSystemRecord(record);
+      expect(status).toBe('done');
+    });
+
+    it('preserves waiting status on stop_hook_summary', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu-ask',
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'Which?' }] },
+              },
+            ],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+
+      const record = makeSystemRecord({ subtype: 'stop_hook_summary' });
+      const status = sm.handleSystemRecord(record);
+      expect(status).toBe('waiting');
+    });
+
+    it('clears pendingQuestion on done transition from stop_hook_summary', () => {
+      // Set up a state with a stale pendingQuestion but not in WAITING
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-1', name: 'Read', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
+
+      sm.handleSystemRecord(makeSystemRecord({ subtype: 'stop_hook_summary' }));
+      expect(sm.status).toBe('done');
+      expect(sm.pendingQuestion).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Fix 2: Intermission timer for text-only null stop_reason
+  // =========================================================================
+
+  describe('intermission timer', () => {
+    it('fires after 5s on text-only null stop_reason → done', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'text', text: 'Hello' }],
+            stop_reason: null,
+          },
+        })
+      );
+      expect(sm.status).toBe('thinking');
+
+      vi.advanceTimersByTime(5_000);
+      expect(sm.status).toBe('done');
+    });
+
+    it('is cancelled by stop_hook_summary arriving first', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'text', text: 'Hello' }],
+            stop_reason: null,
+          },
+        })
+      );
+      expect(sm.status).toBe('thinking');
+
+      // stop_hook_summary arrives before 5s
+      sm.handleSystemRecord(makeSystemRecord({ subtype: 'stop_hook_summary' }));
+      expect(sm.status).toBe('done');
+
+      // Advance past the 5s — should NOT fire onStateChanged again
+      onStateChanged.mockClear();
+      vi.advanceTimersByTime(5_000);
+      expect(onStateChanged).not.toHaveBeenCalled();
+    });
+
+    it('is cancelled by turn_duration arriving first', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'text', text: 'Hello' }],
+            stop_reason: null,
+          },
+        })
+      );
+      expect(sm.status).toBe('thinking');
+
+      sm.handleSystemRecord(makeSystemRecord({ subtype: 'turn_duration', durationMs: 3000 }));
+      expect(sm.status).toBe('done');
+
+      onStateChanged.mockClear();
+      vi.advanceTimersByTime(5_000);
+      expect(onStateChanged).not.toHaveBeenCalled();
+    });
+
+    it('is cancelled by next assistant record (no flash)', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'text', text: 'Thinking...' }],
+            stop_reason: null,
+          },
+        })
+      );
+      expect(sm.status).toBe('thinking');
+
+      // Next assistant record with tool_use arrives
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-2', name: 'Read', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('working');
+
+      // Timer should have been cancelled
+      onStateChanged.mockClear();
+      vi.advanceTimersByTime(5_000);
+      expect(sm.status).toBe('working');
+      expect(onStateChanged).not.toHaveBeenCalled();
+    });
+
+    it('does not override waiting status', () => {
+      // Get to waiting
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [
+              {
+                type: 'tool_use',
+                id: 'tu-ask',
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'Q?' }] },
+              },
+            ],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+
+      // Simulate a text-only message while waiting (unusual but possible)
+      // This won't start intermission because status is not thinking/idle
+      // But if it somehow did, it should not override waiting
+      sm.setStatus('waiting');
+      vi.advanceTimersByTime(10_000);
+      expect(sm.status).toBe('waiting');
+    });
+
+    it('fires onStateChanged callback', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'text', text: 'Hello' }],
+            stop_reason: null,
+          },
+        })
+      );
+      expect(sm.status).toBe('thinking');
+
+      onStateChanged.mockClear();
+      vi.advanceTimersByTime(5_000);
+      expect(sm.status).toBe('done');
+      expect(onStateChanged).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  // =========================================================================
+  // Fix 3: ExitPlanMode / EnterPlanMode → WAITING
+  // =========================================================================
+
+  describe('plan tool detection', () => {
+    it('ExitPlanMode transitions to waiting with isPlanApproval', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-exit', name: 'ExitPlanMode', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion).toEqual({
+        question: '',
+        options: [],
+        multiSelect: false,
+        isPlanApproval: true,
+      });
+    });
+
+    it('EnterPlanMode transitions to waiting with isPlanApproval', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-enter', name: 'EnterPlanMode', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion).toEqual({
+        question: '',
+        options: [],
+        multiSelect: false,
+        isPlanApproval: true,
+      });
+    });
+
+    it('AskUserQuestion takes priority over ExitPlanMode in same message', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [
+              { type: 'tool_use', id: 'tu-exit', name: 'ExitPlanMode', input: {} },
+              {
+                type: 'tool_use',
+                id: 'tu-ask',
+                name: 'AskUserQuestion',
+                input: { questions: [{ question: 'Pick one' }] },
+              },
+            ],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion).toEqual({
+        question: 'Pick one',
+        options: [],
+        multiSelect: false,
+      });
+      // Should NOT have isPlanApproval
+      expect(sm.pendingQuestion?.isPlanApproval).toBeUndefined();
+    });
+
+    it('plan approval cleared on user text input', () => {
+      // Get to plan approval waiting
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-exit', name: 'ExitPlanMode', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
+
+      // User responds
+      sm.handleUserRecord(
+        makeUserRecord({
+          message: { content: [{ type: 'text', text: 'Looks good' }] },
+        })
+      );
+      expect(sm.status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
+    });
+  });
 });
