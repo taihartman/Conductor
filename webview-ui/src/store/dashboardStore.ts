@@ -6,9 +6,11 @@ import type {
   ToolStatEntry,
   TokenSummary,
 } from '@shared/types';
+import type { InputSendStatus } from '@shared/protocol';
 
 export type FilterMode = 'recent' | 'active' | 'all';
 export type DetailViewMode = 'overview-only' | 'split' | 'expanded';
+export type LayoutOrientation = 'vertical' | 'horizontal';
 
 interface DashboardState {
   sessions: SessionInfo[];
@@ -22,6 +24,8 @@ interface DashboardState {
   filteredSubAgentId: string | null;
   analyticsDrawerOpen: boolean;
   searchQuery: string;
+  layoutOrientation: LayoutOrientation;
+  lastInputStatus: { sessionId: string; status: InputSendStatus; error?: string } | null;
 
   setFullState: (
     sessions: SessionInfo[],
@@ -41,6 +45,8 @@ interface DashboardState {
   clearFocus: () => void;
   toggleAnalyticsDrawer: () => void;
   setSearchQuery: (query: string) => void;
+  toggleLayoutOrientation: () => void;
+  setInputStatus: (status: { sessionId: string; status: InputSendStatus; error?: string }) => void;
   zenModeActive: boolean;
   zenExitedAt: number | null;
   enterZenMode: () => void;
@@ -59,6 +65,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   filteredSubAgentId: null,
   analyticsDrawerOpen: false,
   searchQuery: '',
+  layoutOrientation: 'vertical',
+  lastInputStatus: null,
 
   setFullState: (sessions, activities, conversation, toolStats, tokenSummaries) =>
     set({ sessions, activities, conversation, toolStats, tokenSummaries }),
@@ -92,6 +100,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   toggleAnalyticsDrawer: () =>
     set((state) => ({ analyticsDrawerOpen: !state.analyticsDrawerOpen })),
   setSearchQuery: (query) => set({ searchQuery: query }),
+  toggleLayoutOrientation: () =>
+    set((state) => ({
+      layoutOrientation: state.layoutOrientation === 'vertical' ? 'horizontal' : 'vertical',
+    })),
+  setInputStatus: (status) => set({ lastInputStatus: status }),
   zenModeActive: false,
   zenExitedAt: null,
   enterZenMode: () =>

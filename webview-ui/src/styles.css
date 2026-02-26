@@ -113,6 +113,31 @@ button:active {
   opacity: 0.7;
 }
 
+/* ── Resizable Panel Handle ──────────────────────────────────── */
+/* The library sets inline flex: 0 0 auto, so we use min-height/min-width
+   instead of flex-basis to ensure the separator has visible dimensions. */
+
+[data-separator] {
+  background: var(--border);
+  transition: background 0.15s ease;
+}
+
+[data-separator]:hover:not([aria-disabled="true"]) {
+  background: var(--accent);
+}
+
+/* horizontal separator = panels stacked vertically = row-resize */
+[data-separator][aria-orientation="horizontal"] {
+  min-height: 4px;
+  cursor: row-resize;
+}
+
+/* vertical separator = panels side by side = col-resize */
+[data-separator][aria-orientation="vertical"] {
+  min-width: 4px;
+  cursor: col-resize;
+}
+
 /* ── Markdown Content ─────────────────────────────────────────── */
 
 .markdown-content pre {

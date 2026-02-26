@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
+import type { LayoutOrientation } from '../store/dashboardStore';
 import { formatCost } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { OwlblobMascot } from './OwlblobMascot';
@@ -13,6 +14,9 @@ interface ConductorHeaderProps {
   mascotButtonRef?: React.Ref<HTMLButtonElement>;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  layoutOrientation?: LayoutOrientation;
+  onToggleOrientation?: () => void;
+  showOrientationToggle?: boolean;
 }
 
 export function ConductorHeader({
@@ -24,6 +28,9 @@ export function ConductorHeader({
   mascotButtonRef,
   searchQuery,
   onSearchChange,
+  layoutOrientation,
+  onToggleOrientation,
+  showOrientationToggle,
 }: ConductorHeaderProps): React.ReactElement {
   const parentSessions = sessions.filter((s) => !s.isSubAgent);
   const workingCount = parentSessions.filter(
@@ -111,6 +118,27 @@ export function ConductorHeader({
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
         <SearchInput query={searchQuery} onChange={onSearchChange} />
+        {showOrientationToggle && onToggleOrientation && (
+          <button
+            onClick={onToggleOrientation}
+            style={{
+              padding: '3px 10px', // inline-ok
+              fontSize: '11px', // inline-ok
+              borderRadius: '3px',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--fg-secondary)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+            title={UI_STRINGS.LAYOUT_TOGGLE_TOOLTIP}
+            aria-label={UI_STRINGS.LAYOUT_TOGGLE_LABEL}
+          >
+            {layoutOrientation === 'vertical'
+              ? UI_STRINGS.LAYOUT_ICON_VERTICAL
+              : UI_STRINGS.LAYOUT_ICON_HORIZONTAL}
+          </button>
+        )}
         <button
           onClick={onRefresh}
           style={{
