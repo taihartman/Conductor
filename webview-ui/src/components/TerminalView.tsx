@@ -16,6 +16,7 @@ import '@xterm/xterm/css/xterm.css';
 import { vscode } from '../vscode';
 import { useDashboardStore } from '../store/dashboardStore';
 import { UI_STRINGS } from '../config/strings';
+import { TERMINAL_CONFIG } from '../config/colors';
 
 interface TerminalViewProps {
   sessionId: string;
@@ -45,9 +46,16 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
   useEffect(() => {
     if (!containerRef.current) return;
 
+    // Resolve CSS variable for Canvas 2D renderer — ctx.font cannot parse var() expressions.
+    // NOTE: Resolved once at mount; runtime theme changes require component remount.
+    const resolvedFont = getComputedStyle(document.documentElement)
+      .getPropertyValue('--font-mono')
+      .trim();
+    const fontFamily = resolvedFont || TERMINAL_CONFIG.FONT_FALLBACK;
+
     const terminal = new Terminal({
-      fontSize: 13, // inline-ok: terminal font size
-      fontFamily: 'var(--vscode-editor-font-family, "Menlo", "Monaco", "Courier New", monospace)',
+      fontSize: TERMINAL_CONFIG.FONT_SIZE,
+      fontFamily,
       theme: {
         background: '#1e1e1e', // inline-ok: terminal background matching VS Code dark theme
         foreground: '#cccccc', // inline-ok: terminal foreground
