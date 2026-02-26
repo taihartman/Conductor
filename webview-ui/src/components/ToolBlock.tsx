@@ -3,7 +3,7 @@ import type { ToolInteraction } from '@shared/types';
 import { COLORS, SIZES } from '../config/colors';
 import { UI_STRINGS } from '../config/strings';
 import { CodeBlock } from './CodeBlock';
-import { inferToolLanguage } from '../utils/toolLanguageMap';
+
 
 interface ToolBlockProps {
   tool: ToolInteraction;
@@ -108,9 +108,9 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
           {tool.inputJson && (
             <div style={{ marginBottom: '6px' /* inline-ok */ }}>
               <div style={{ color: 'var(--fg-muted)', marginBottom: '2px', fontSize: '10px' /* inline-ok */ }}>
-                Input
+                {UI_STRINGS.TOOL_BLOCK_INPUT_LABEL}
               </div>
-              <CodeBlock language="json" maxHeight={SIZES.TOOL_INPUT_MAX_HEIGHT}>
+              <CodeBlock maxHeight={SIZES.TOOL_INPUT_MAX_HEIGHT}>
                 {formatJson(tool.inputJson)}
               </CodeBlock>
             </div>
@@ -125,7 +125,7 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
                   fontSize: '10px', // inline-ok
                 }}
               >
-                {tool.isError ? 'Error' : 'Output'}
+                {tool.isError ? UI_STRINGS.TOOL_BLOCK_ERROR_OUTPUT_LABEL : UI_STRINGS.TOOL_BLOCK_OUTPUT_LABEL}
               </div>
               {tool.isError ? (
                 <pre
@@ -146,10 +146,7 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
                   {tool.output}
                 </pre>
               ) : (
-                <CodeBlock
-                  language={inferToolLanguage(tool.toolName, tool.inputSummary)}
-                  maxHeight={SIZES.TOOL_OUTPUT_MAX_HEIGHT}
-                >
+                <CodeBlock maxHeight={SIZES.TOOL_OUTPUT_MAX_HEIGHT}>
                   {tool.output}
                 </CodeBlock>
               )}

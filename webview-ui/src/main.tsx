@@ -1,6 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import './config/highlightSetup';
+
 import { App } from './App';
 import './styles.css';
 

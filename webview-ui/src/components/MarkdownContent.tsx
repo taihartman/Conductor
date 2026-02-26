@@ -10,15 +10,11 @@ interface MarkdownContentProps {
 
 const components: Components = {
   code({ className, children, ...props }) {
-    const match = /language-(\w+)/.exec(className ?? '');
     const text = String(children).replace(/\n$/, '');
 
     // react-markdown passes inline code without a className
     const isInline = !className && !('node' in props && props.node?.position?.start.line !== props.node?.position?.end.line);
 
-    if (match) {
-      return <CodeBlock language={match[1]}>{text}</CodeBlock>;
-    }
     if (isInline) {
       return <CodeBlock inline>{text}</CodeBlock>;
     }

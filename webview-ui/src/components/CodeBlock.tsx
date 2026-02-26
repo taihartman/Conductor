@@ -1,18 +1,14 @@
 import React from 'react';
-import { SyntaxHighlighter } from '../config/highlightSetup';
-import { vsCodeSyntaxTheme } from '../config/syntaxTheme';
 import { COLORS, SIZES } from '../config/colors';
 
 interface CodeBlockProps {
   children: string;
-  language?: string;
   inline?: boolean;
   maxHeight?: string;
 }
 
 export const CodeBlock = React.memo(function CodeBlock({
   children,
-  language,
   inline,
   maxHeight,
 }: CodeBlockProps): React.ReactElement {
@@ -34,14 +30,21 @@ export const CodeBlock = React.memo(function CodeBlock({
 
   return (
     <div style={{ maxHeight: maxHeight ?? SIZES.CODE_BLOCK_MAX_HEIGHT, overflow: 'auto', borderRadius: '3px' /* inline-ok */ }}>
-      <SyntaxHighlighter
-        language={language ?? 'text'}
-        style={vsCodeSyntaxTheme}
-        wrapLongLines
-        customStyle={{ margin: 0 }}
+      <pre
+        style={{
+          margin: 0,
+          padding: '8px 10px', // inline-ok
+          backgroundColor: COLORS.CODE_BLOCK_BG,
+          fontFamily: 'var(--font-mono)',
+          fontSize: '12px', // inline-ok
+          lineHeight: '1.5', // inline-ok
+          color: 'var(--vscode-editor-foreground, #d4d4d4)',
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-word',
+        }}
       >
-        {children}
-      </SyntaxHighlighter>
+        <code>{children}</code>
+      </pre>
     </div>
   );
 });
