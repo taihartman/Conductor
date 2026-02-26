@@ -8,3 +8,8 @@ webview-ui/dist/
 docs/api/
 firebase-debug.log
 .eslintcache
+
+# Local/generated artifacts
+.claude/settings.local.json
+.playwright-mcp/
+*.png

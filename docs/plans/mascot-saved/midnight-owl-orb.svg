@@ -1,0 +1,57 @@
+<svg width="200" height="260" viewBox="0 0 200 260" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+    @keyframes noteFloat { 0% { opacity: 0.7; transform: translateY(0) rotate(0deg); } 100% { opacity: 0; transform: translateY(-50px) rotate(12deg); } }
+    @keyframes glow { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.6; } }
+    @keyframes twinkle { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+    .float { animation: float 3s ease-in-out infinite; }
+    .note { animation: noteFloat 3s ease-in-out infinite; }
+    .glow { animation: glow 3s ease-in-out infinite; }
+    .twinkle { animation: twinkle 2s ease-in-out infinite; }
+  </style>
+
+  <defs>
+    <radialGradient id="orbGradF" cx="45%" cy="40%">
+      <stop offset="0%" stop-color="#4a4a8a" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#2a2a5a" stop-opacity="0.85"/>
+      <stop offset="100%" stop-color="#1a1a3a" stop-opacity="0.95"/>
+    </radialGradient>
+    <radialGradient id="orbGlowF" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#6a5acd" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#6a5acd" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <text class="note" x="28" y="38" font-size="17" fill="#6a5acd" opacity="0.5">&#9835;</text>
+  <text class="note" x="160" y="46" font-size="13" fill="#6a5acd" opacity="0.3" style="animation-delay:1.8s">&#9834;</text>
+
+  <g class="float">
+    <ellipse cx="100" cy="140" rx="70" ry="78" fill="url(#orbGlowF)" class="glow"/>
+    <ellipse cx="100" cy="228" rx="35" ry="6" fill="#6a5acd" opacity="0.1"/>
+    <ellipse cx="100" cy="140" rx="55" ry="62" fill="url(#orbGradF)"/>
+    <circle cx="75" cy="115" r="1.5" fill="#fff" class="twinkle"/>
+    <circle cx="125" cy="130" r="1" fill="#fff" class="twinkle" style="animation-delay:0.5s"/>
+    <circle cx="88" cy="170" r="1.2" fill="#fff" class="twinkle" style="animation-delay:1.2s"/>
+    <circle cx="115" cy="158" r="0.8" fill="#fff" class="twinkle" style="animation-delay:1.8s"/>
+    <circle cx="95" cy="145" r="1" fill="#fff" class="twinkle" style="animation-delay:0.3s"/>
+    <circle cx="108" cy="110" r="0.8" fill="#fff" class="twinkle" style="animation-delay:2.2s"/>
+    <circle cx="82" cy="155" r="0.6" fill="#fff" class="twinkle" style="animation-delay:0.9s"/>
+    <circle cx="120" cy="172" r="0.7" fill="#fff" class="twinkle" style="animation-delay:1.6s"/>
+    <path d="M 56 98 L 48 68 L 68 90" fill="#2a2a5a"/>
+    <path d="M 144 98 L 152 68 L 132 90" fill="#2a2a5a"/>
+    <circle cx="80" cy="128" r="16" fill="#3a3a6a"/>
+    <circle cx="120" cy="128" r="16" fill="#3a3a6a"/>
+    <circle cx="80" cy="128" r="12" fill="#4a4a8a" opacity="0.6"/>
+    <circle cx="120" cy="128" r="12" fill="#4a4a8a" opacity="0.6"/>
+    <path d="M 70 126 Q 80 117 90 126" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M 110 126 Q 120 117 130 126" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+    <path d="M 95 140 L 100 148 L 105 140 Z" fill="#c8a848" opacity="0.7"/>
+    <ellipse cx="100" cy="84" rx="28" ry="6" fill="#111128"/>
+    <rect x="76" y="64" width="48" height="20" rx="4" fill="#111128"/>
+    <rect x="80" y="59" width="40" height="8" rx="3" fill="#111128"/>
+    <rect x="76" y="78" width="48" height="3.5" fill="#6a5acd"/>
+    <path d="M 65 196 Q 75 212 88 200 Q 100 215 112 200 Q 125 212 135 196" stroke="none" fill="#2a2a5a" opacity="0.5"/>
+    <circle cx="68" cy="136" r="5" fill="#8a7acd" opacity="0.2" class="glow" style="animation-delay:0.5s"/>
+    <circle cx="132" cy="136" r="5" fill="#8a7acd" opacity="0.2" class="glow" style="animation-delay:0.5s"/>
+  </g>
+</svg>

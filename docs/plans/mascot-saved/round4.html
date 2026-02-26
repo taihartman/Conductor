@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Conductor Mascot — Round 4</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    padding: 40px;
+  }
+  h1 { text-align: center; margin-bottom: 10px; font-size: 28px; color: #fff; }
+  .subtitle { text-align: center; margin-bottom: 40px; color: #888; font-size: 14px; }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 30px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  .option {
+    background: #16213e;
+    border-radius: 16px;
+    padding: 30px 20px;
+    text-align: center;
+    border: 2px solid #0f3460;
+    transition: border-color 0.3s;
+  }
+  .option:hover { border-color: #e94560; }
+  .option h2 { margin-bottom: 6px; font-size: 16px; color: #fff; }
+  .option p { font-size: 12px; color: #888; margin-bottom: 16px; line-height: 1.4; }
+  .mascot-container {
+    width: 220px;
+    height: 270px;
+    margin: 0 auto 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  svg { filter: drop-shadow(0 4px 12px rgba(0,0,0,0.3)); }
+
+  @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+  @keyframes noteFloat { 0% { opacity: 0.7; transform: translateY(0) rotate(0deg); } 100% { opacity: 0; transform: translateY(-50px) rotate(12deg); } }
+  @keyframes glow { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.6; } }
+  @keyframes twinkle { 0%, 100% { opacity: 0.2; } 50% { opacity: 0.9; } }
+  @keyframes breathe { 0%, 100% { transform: scaleY(1) scaleX(1); } 50% { transform: scaleY(1.03) scaleX(0.98); } }
+  .float { animation: float 3s ease-in-out infinite; }
+  .note { animation: noteFloat 3s ease-in-out infinite; }
+  .glow { animation: glow 3s ease-in-out infinite; }
+  .twinkle { animation: twinkle 2s ease-in-out infinite; }
+  .breathe { animation: breathe 4s ease-in-out infinite; }
+</style>
+</head>
+<body>
+
+<h1>Conductor Mascot — Round 4</h1>
+<p class="subtitle">Building on Owlblob + Midnight Owl Orb</p>
+
+<!-- SAVED FAVORITES -->
+<h2 style="text-align:center; margin-bottom: 8px; color: #e94560; font-size: 18px;">Saved Favorites</h2>
+<p style="text-align:center; margin-bottom: 24px; color: #666; font-size: 13px;">From previous rounds — for comparison</p>
+
+<div class="grid" style="grid-template-columns: repeat(2, 1fr); max-width: 800px; margin-bottom: 50px;">
+
+  <!-- Saved: Owlblob -->
+  <div class="option" style="border-color: #e94560;">
+    <h2>Owlblob <span style="color:#e94560; font-size:12px;">(Saved)</span></h2>
+    <p>Owl features on a blob body. Big round eye discs, tiny ear tufts, beak. Soft and squishy. Purple palette.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <text class="note" x="30" y="38" font-size="17" fill="#b8a0d8" opacity="0.5">&#9835;</text>
+        <text class="note" x="158" y="46" font-size="13" fill="#b8a0d8" opacity="0.3" style="animation-delay:1.6s">&#9834;</text>
+        <g class="float">
+          <ellipse cx="100" cy="230" rx="42" ry="7" fill="#000" opacity="0.12"/>
+          <ellipse cx="100" cy="148" rx="58" ry="70" fill="#5c4a6a"/>
+          <ellipse cx="100" cy="160" rx="38" ry="45" fill="#7a6890"/>
+          <path d="M 82 148 Q 100 155 118 148" stroke="#8a78a0" stroke-width="1.8" fill="none" opacity="0.6"/>
+          <path d="M 85 162 Q 100 169 115 162" stroke="#8a78a0" stroke-width="1.8" fill="none" opacity="0.6"/>
+          <path d="M 87 176 Q 100 183 113 176" stroke="#8a78a0" stroke-width="1.8" fill="none" opacity="0.6"/>
+          <path d="M 55 95 L 50 68 L 68 88" fill="#5c4a6a"/>
+          <path d="M 145 95 L 150 68 L 132 88" fill="#5c4a6a"/>
+          <path d="M 58 92 L 54 72 L 66 88" fill="#7a6890"/>
+          <path d="M 142 92 L 146 72 L 134 88" fill="#7a6890"/>
+          <circle cx="80" cy="120" r="20" fill="#6a587a"/>
+          <circle cx="120" cy="120" r="20" fill="#6a587a"/>
+          <circle cx="80" cy="120" r="16" fill="#8a78a0"/>
+          <circle cx="120" cy="120" r="16" fill="#8a78a0"/>
+          <path d="M 68 118 Q 80 108 92 118" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 108 118 Q 120 108 132 118" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 95 132 L 100 140 L 105 132 Z" fill="#e8a838"/>
+          <circle cx="68" cy="130" r="6" fill="#e8a0c8" opacity="0.3"/>
+          <circle cx="132" cy="130" r="6" fill="#e8a0c8" opacity="0.3"/>
+          <ellipse cx="100" cy="84" rx="28" ry="6" fill="#2d2d44"/>
+          <rect x="76" y="64" width="48" height="20" rx="4" fill="#2d2d44"/>
+          <rect x="80" y="59" width="40" height="8" rx="3" fill="#2d2d44"/>
+          <rect x="76" y="78" width="48" height="3.5" fill="#b8a0d8"/>
+          <ellipse cx="46" cy="148" rx="14" ry="10" fill="#5c4a6a" transform="rotate(-8 46 148)"/>
+          <ellipse cx="154" cy="148" rx="14" ry="10" fill="#5c4a6a" transform="rotate(8 154 148)"/>
+          <line x1="38" y1="145" x2="36" y2="152" stroke="#4a3a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="42" y1="147" x2="40" y2="155" stroke="#4a3a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="158" y1="145" x2="160" y2="152" stroke="#4a3a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="162" y1="147" x2="164" y2="155" stroke="#4a3a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <path d="M 80 216 L 72 224 M 80 216 L 80 225 M 80 216 L 88 224" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 120 216 L 112 224 M 120 216 L 120 225 M 120 216 L 128 224" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Saved: Midnight Owl Orb -->
+  <div class="option" style="border-color: #e94560;">
+    <h2>Midnight Owl Orb <span style="color:#e94560; font-size:12px;">(Saved)</span></h2>
+    <p>Dark orb with owl eyes and ear tufts. Starfield inside. Mysterious and calm. Glows from within.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <defs>
+          <radialGradient id="sOrbGradF" cx="45%" cy="40%">
+            <stop offset="0%" stop-color="#4a4a8a" stop-opacity="0.9"/>
+            <stop offset="50%" stop-color="#2a2a5a" stop-opacity="0.85"/>
+            <stop offset="100%" stop-color="#1a1a3a" stop-opacity="0.95"/>
+          </radialGradient>
+          <radialGradient id="sOrbGlowF" cx="50%" cy="50%">
+            <stop offset="0%" stop-color="#6a5acd" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#6a5acd" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <text class="note" x="28" y="38" font-size="17" fill="#6a5acd" opacity="0.5">&#9835;</text>
+        <text class="note" x="160" y="46" font-size="13" fill="#6a5acd" opacity="0.3" style="animation-delay:1.8s">&#9834;</text>
+        <g class="float">
+          <ellipse cx="100" cy="140" rx="70" ry="78" fill="url(#sOrbGlowF)" class="glow"/>
+          <ellipse cx="100" cy="228" rx="35" ry="6" fill="#6a5acd" opacity="0.1"/>
+          <ellipse cx="100" cy="140" rx="55" ry="62" fill="url(#sOrbGradF)"/>
+          <circle cx="75" cy="115" r="1.5" fill="#fff" class="twinkle"/>
+          <circle cx="125" cy="130" r="1" fill="#fff" class="twinkle" style="animation-delay:0.5s"/>
+          <circle cx="88" cy="170" r="1.2" fill="#fff" class="twinkle" style="animation-delay:1.2s"/>
+          <circle cx="115" cy="158" r="0.8" fill="#fff" class="twinkle" style="animation-delay:1.8s"/>
+          <circle cx="95" cy="145" r="1" fill="#fff" class="twinkle" style="animation-delay:0.3s"/>
+          <circle cx="108" cy="110" r="0.8" fill="#fff" class="twinkle" style="animation-delay:2.2s"/>
+          <circle cx="82" cy="155" r="0.6" fill="#fff" class="twinkle" style="animation-delay:0.9s"/>
+          <circle cx="120" cy="172" r="0.7" fill="#fff" class="twinkle" style="animation-delay:1.6s"/>
+          <path d="M 56 98 L 48 68 L 68 90" fill="#2a2a5a"/>
+          <path d="M 144 98 L 152 68 L 132 90" fill="#2a2a5a"/>
+          <circle cx="80" cy="128" r="16" fill="#3a3a6a"/>
+          <circle cx="120" cy="128" r="16" fill="#3a3a6a"/>
+          <circle cx="80" cy="128" r="12" fill="#4a4a8a" opacity="0.6"/>
+          <circle cx="120" cy="128" r="12" fill="#4a4a8a" opacity="0.6"/>
+          <path d="M 70 126 Q 80 117 90 126" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 110 126 Q 120 117 130 126" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 95 140 L 100 148 L 105 140 Z" fill="#c8a848" opacity="0.7"/>
+          <ellipse cx="100" cy="84" rx="28" ry="6" fill="#111128"/>
+          <rect x="76" y="64" width="48" height="20" rx="4" fill="#111128"/>
+          <rect x="80" y="59" width="40" height="8" rx="3" fill="#111128"/>
+          <rect x="76" y="78" width="48" height="3.5" fill="#6a5acd"/>
+          <path d="M 65 196 Q 75 212 88 200 Q 100 215 112 200 Q 125 212 135 196" stroke="none" fill="#2a2a5a" opacity="0.5"/>
+          <circle cx="68" cy="136" r="5" fill="#8a7acd" opacity="0.2" class="glow" style="animation-delay:0.5s"/>
+          <circle cx="132" cy="136" r="5" fill="#8a7acd" opacity="0.2" class="glow" style="animation-delay:0.5s"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+</div>
+
+<!-- NEW VARIATIONS -->
+<h2 style="text-align:center; margin-bottom: 8px; color: #fff; font-size: 18px;">New Variations</h2>
+<p style="text-align:center; margin-bottom: 24px; color: #666; font-size: 13px;">Building on the saved favorites</p>
+
+<div class="grid">
+
+  <!-- A: Chonky Owlblob -->
+  <div class="option">
+    <h2>A: Chonky Owlblob</h2>
+    <p>Wider, rounder owlblob. Extra chonk. Bigger eye discs, stubbier tufts, very round belly.</p>
+    <div class="mascot-container">
+      <svg width="220" height="260" viewBox="0 0 220 260">
+        <text class="note" x="30" y="35" font-size="17" fill="#b8a0d8" opacity="0.5">&#9835;</text>
+        <text class="note" x="178" y="45" font-size="13" fill="#b8a0d8" opacity="0.3" style="animation-delay:1.5s">&#9834;</text>
+
+        <g class="float">
+          <ellipse cx="110" cy="228" rx="50" ry="8" fill="#000" opacity="0.12"/>
+
+          <!-- Big round body -->
+          <ellipse cx="110" cy="150" rx="68" ry="72" fill="#5c4a6a"/>
+          <!-- Belly -->
+          <ellipse cx="110" cy="162" rx="48" ry="50" fill="#7a6890"/>
+          <!-- Belly chevrons -->
+          <path d="M 82 148 Q 110 158 138 148" stroke="#8a78a0" stroke-width="2" fill="none" opacity="0.5"/>
+          <path d="M 85 164 Q 110 174 135 164" stroke="#8a78a0" stroke-width="2" fill="none" opacity="0.5"/>
+          <path d="M 88 180 Q 110 190 132 180" stroke="#8a78a0" stroke-width="2" fill="none" opacity="0.5"/>
+
+          <!-- Stubby ear tufts -->
+          <path d="M 58 98 L 55 78 L 72 92" fill="#5c4a6a"/>
+          <path d="M 162 98 L 165 78 L 148 92" fill="#5c4a6a"/>
+          <path d="M 60 96 L 58 82 L 70 92" fill="#7a6890"/>
+          <path d="M 160 96 L 162 82 L 150 92" fill="#7a6890"/>
+
+          <!-- BIG eye discs -->
+          <circle cx="86" cy="118" r="24" fill="#6a587a"/>
+          <circle cx="134" cy="118" r="24" fill="#6a587a"/>
+          <circle cx="86" cy="118" r="19" fill="#8a78a0"/>
+          <circle cx="134" cy="118" r="19" fill="#8a78a0"/>
+
+          <!-- Closed eyes -->
+          <path d="M 72 116 Q 86 104 100 116" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 120 116 Q 134 104 148 116" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 105 132 L 110 142 L 115 132 Z" fill="#e8a838"/>
+
+          <!-- Blush -->
+          <circle cx="68" cy="130" r="7" fill="#e8a0c8" opacity="0.3"/>
+          <circle cx="152" cy="130" r="7" fill="#e8a0c8" opacity="0.3"/>
+
+          <!-- Hat -->
+          <ellipse cx="110" cy="82" rx="30" ry="7" fill="#2d2d44"/>
+          <rect x="84" y="60" width="52" height="22" rx="4" fill="#2d2d44"/>
+          <rect x="88" y="55" width="44" height="9" rx="3" fill="#2d2d44"/>
+          <rect x="84" y="76" width="52" height="4" fill="#b8a0d8"/>
+
+          <!-- Stubby wing arms -->
+          <ellipse cx="44" cy="152" rx="16" ry="12" fill="#5c4a6a" transform="rotate(-5 44 152)"/>
+          <ellipse cx="176" cy="152" rx="16" ry="12" fill="#5c4a6a" transform="rotate(5 176 152)"/>
+
+          <!-- Tiny feet -->
+          <path d="M 90 220 L 82 228 M 90 220 L 90 229 M 90 220 L 98 228" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 130 220 L 122 228 M 130 220 L 130 229 M 130 220 L 138 228" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- B: Owlblob with Bowtie -->
+  <div class="option">
+    <h2>B: Dapper Owlblob</h2>
+    <p>Owlblob but with a bowtie instead of just chevrons. Adds personality and ties to conductor theme.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <text class="note" x="28" y="36" font-size="17" fill="#c4a0e0" opacity="0.5">&#9835;</text>
+        <text class="note" x="160" y="44" font-size="13" fill="#c4a0e0" opacity="0.3" style="animation-delay:1.3s">&#9834;</text>
+
+        <g class="float">
+          <ellipse cx="100" cy="230" rx="42" ry="7" fill="#000" opacity="0.12"/>
+
+          <!-- Body -->
+          <ellipse cx="100" cy="152" rx="58" ry="68" fill="#6a5080"/>
+          <!-- Belly -->
+          <ellipse cx="100" cy="165" rx="36" ry="42" fill="#8a70a0"/>
+
+          <!-- Ear tufts -->
+          <path d="M 54 96 L 48 66 L 68 88" fill="#6a5080"/>
+          <path d="M 146 96 L 152 66 L 132 88" fill="#6a5080"/>
+          <path d="M 57 93 L 52 70 L 66 88" fill="#8a70a0"/>
+          <path d="M 143 93 L 148 70 L 134 88" fill="#8a70a0"/>
+
+          <!-- Eye discs -->
+          <circle cx="80" cy="118" r="20" fill="#7a6090"/>
+          <circle cx="120" cy="118" r="20" fill="#7a6090"/>
+          <circle cx="80" cy="118" r="16" fill="#9a80b0"/>
+          <circle cx="120" cy="118" r="16" fill="#9a80b0"/>
+
+          <!-- Closed eyes -->
+          <path d="M 68 116 Q 80 106 92 116" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 108 116 Q 120 106 132 116" stroke="#3d2b4f" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 95 130 L 100 139 L 105 130 Z" fill="#e8a838"/>
+
+          <!-- Blush -->
+          <circle cx="66" cy="128" r="6" fill="#e8a0c8" opacity="0.3"/>
+          <circle cx="134" cy="128" r="6" fill="#e8a0c8" opacity="0.3"/>
+
+          <!-- Bowtie! -->
+          <path d="M 82 148 L 95 155 L 82 162 Z" fill="#e94560"/>
+          <path d="M 118 148 L 105 155 L 118 162 Z" fill="#e94560"/>
+          <circle cx="100" cy="155" r="4.5" fill="#c0392b"/>
+
+          <!-- Hat -->
+          <ellipse cx="100" cy="82" rx="28" ry="6" fill="#2d2d44"/>
+          <rect x="76" y="62" width="48" height="20" rx="4" fill="#2d2d44"/>
+          <rect x="80" y="57" width="40" height="8" rx="3" fill="#2d2d44"/>
+          <rect x="76" y="76" width="48" height="3.5" fill="#c4a0e0"/>
+
+          <!-- Wing stubs -->
+          <ellipse cx="46" cy="152" rx="14" ry="10" fill="#6a5080" transform="rotate(-8 46 152)"/>
+          <ellipse cx="154" cy="152" rx="14" ry="10" fill="#6a5080" transform="rotate(8 154 152)"/>
+          <line x1="38" y1="149" x2="36" y2="156" stroke="#5a4070" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="42" y1="151" x2="40" y2="159" stroke="#5a4070" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="158" y1="149" x2="160" y2="156" stroke="#5a4070" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="162" y1="151" x2="164" y2="159" stroke="#5a4070" stroke-width="1.2" stroke-linecap="round"/>
+
+          <!-- Feet -->
+          <path d="M 80 218 L 72 226 M 80 218 L 80 227 M 80 218 L 88 226" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 120 218 L 112 226 M 120 218 L 120 227 M 120 218 L 128 226" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- C: Midnight Owlblob — C meets F -->
+  <div class="option">
+    <h2>C: Midnight Owlblob</h2>
+    <p>Owlblob shape with F's dark palette and inner starfield. Best of both worlds.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <defs>
+          <radialGradient id="mobGrad" cx="45%" cy="40%">
+            <stop offset="0%" stop-color="#4a4a7a" stop-opacity="0.9"/>
+            <stop offset="60%" stop-color="#2a2a5a" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#1a1a3a" stop-opacity="0.95"/>
+          </radialGradient>
+          <radialGradient id="mobGlow" cx="50%" cy="50%">
+            <stop offset="0%" stop-color="#6a5acd" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#6a5acd" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <text class="note" x="28" y="36" font-size="17" fill="#7b68ee" opacity="0.5">&#9835;</text>
+        <text class="note" x="160" y="44" font-size="13" fill="#7b68ee" opacity="0.3" style="animation-delay:1.6s">&#9834;</text>
+
+        <g class="float">
+          <!-- Aura -->
+          <ellipse cx="100" cy="150" rx="72" ry="82" fill="url(#mobGlow)" class="glow"/>
+          <ellipse cx="100" cy="230" rx="42" ry="7" fill="#6a5acd" opacity="0.08"/>
+
+          <!-- Body -->
+          <ellipse cx="100" cy="150" rx="58" ry="70" fill="url(#mobGrad)"/>
+
+          <!-- Stars inside -->
+          <circle cx="78" cy="165" r="1.2" fill="#fff" class="twinkle"/>
+          <circle cx="122" cy="148" r="1" fill="#fff" class="twinkle" style="animation-delay:0.6s"/>
+          <circle cx="90" cy="185" r="0.8" fill="#fff" class="twinkle" style="animation-delay:1.3s"/>
+          <circle cx="115" cy="175" r="0.7" fill="#fff" class="twinkle" style="animation-delay:1.9s"/>
+          <circle cx="85" cy="142" r="0.9" fill="#fff" class="twinkle" style="animation-delay:0.4s"/>
+          <circle cx="108" cy="195" r="0.6" fill="#fff" class="twinkle" style="animation-delay:2.1s"/>
+
+          <!-- Belly (subtle) -->
+          <ellipse cx="100" cy="162" rx="36" ry="42" fill="#3a3a6a" opacity="0.4"/>
+          <path d="M 82 152 Q 100 159 118 152" stroke="#4a4a7a" stroke-width="1.5" fill="none" opacity="0.4"/>
+          <path d="M 85 166 Q 100 173 115 166" stroke="#4a4a7a" stroke-width="1.5" fill="none" opacity="0.4"/>
+
+          <!-- Ear tufts -->
+          <path d="M 54 96 L 48 66 L 68 88" fill="#2a2a5a"/>
+          <path d="M 146 96 L 152 66 L 132 88" fill="#2a2a5a"/>
+
+          <!-- Eye discs -->
+          <circle cx="80" cy="120" r="20" fill="#3a3a6a"/>
+          <circle cx="120" cy="120" r="20" fill="#3a3a6a"/>
+          <circle cx="80" cy="120" r="16" fill="#4a4a8a" opacity="0.6"/>
+          <circle cx="120" cy="120" r="16" fill="#4a4a8a" opacity="0.6"/>
+
+          <!-- Closed eyes — glowing -->
+          <path d="M 68 118 Q 80 108 92 118" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 108 118 Q 120 108 132 118" stroke="#8a7acd" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 95 132 L 100 141 L 105 132 Z" fill="#c8a848" opacity="0.7"/>
+
+          <!-- Cheek glow -->
+          <circle cx="66" cy="128" r="6" fill="#8a7acd" opacity="0.15" class="glow" style="animation-delay:0.5s"/>
+          <circle cx="134" cy="128" r="6" fill="#8a7acd" opacity="0.15" class="glow" style="animation-delay:0.5s"/>
+
+          <!-- Hat -->
+          <ellipse cx="100" cy="84" rx="28" ry="6" fill="#111128"/>
+          <rect x="76" y="64" width="48" height="20" rx="4" fill="#111128"/>
+          <rect x="80" y="59" width="40" height="8" rx="3" fill="#111128"/>
+          <rect x="76" y="78" width="48" height="3.5" fill="#7b68ee"/>
+
+          <!-- Wing stubs -->
+          <ellipse cx="46" cy="150" rx="14" ry="10" fill="#2a2a5a" transform="rotate(-8 46 150)"/>
+          <ellipse cx="154" cy="150" rx="14" ry="10" fill="#2a2a5a" transform="rotate(8 154 150)"/>
+
+          <!-- Wispy feet -->
+          <path d="M 75 216 Q 82 228 92 218 Q 100 228 108 218 Q 118 228 125 216" fill="#2a2a5a" opacity="0.4"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- D: Starfield Owlblob with Bowtie -->
+  <div class="option">
+    <h2>D: Cosmic Dapper Owl</h2>
+    <p>Dark owlblob + starfield + bowtie. The full package — mysterious, cute, and dressed up.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <defs>
+          <radialGradient id="cdoGrad" cx="45%" cy="38%">
+            <stop offset="0%" stop-color="#5a4a8a" stop-opacity="0.9"/>
+            <stop offset="50%" stop-color="#3a2a6a" stop-opacity="0.9"/>
+            <stop offset="100%" stop-color="#1a1a3a" stop-opacity="0.95"/>
+          </radialGradient>
+          <radialGradient id="cdoGlow" cx="50%" cy="50%">
+            <stop offset="0%" stop-color="#8a6aee" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#8a6aee" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <text class="note" x="28" y="36" font-size="17" fill="#8a6aee" opacity="0.5">&#9835;</text>
+        <text class="note" x="160" y="44" font-size="13" fill="#8a6aee" opacity="0.3" style="animation-delay:1.4s">&#9834;</text>
+
+        <g class="float">
+          <ellipse cx="100" cy="150" rx="72" ry="80" fill="url(#cdoGlow)" class="glow"/>
+          <ellipse cx="100" cy="228" rx="40" ry="7" fill="#8a6aee" opacity="0.08"/>
+
+          <!-- Body -->
+          <ellipse cx="100" cy="152" rx="58" ry="68" fill="url(#cdoGrad)"/>
+
+          <!-- Stars -->
+          <circle cx="82" cy="170" r="1.2" fill="#fff" class="twinkle"/>
+          <circle cx="118" cy="155" r="0.9" fill="#fff" class="twinkle" style="animation-delay:0.7s"/>
+          <circle cx="92" cy="190" r="0.8" fill="#fff" class="twinkle" style="animation-delay:1.5s"/>
+          <circle cx="112" cy="180" r="0.7" fill="#fff" class="twinkle" style="animation-delay:2s"/>
+          <circle cx="88" cy="148" r="0.6" fill="#fff" class="twinkle" style="animation-delay:0.2s"/>
+
+          <!-- Ear tufts -->
+          <path d="M 54 96 L 48 66 L 68 88" fill="#3a2a6a"/>
+          <path d="M 146 96 L 152 66 L 132 88" fill="#3a2a6a"/>
+          <path d="M 57 93 L 52 72 L 66 88" fill="#5a4a8a" opacity="0.5"/>
+          <path d="M 143 93 L 148 72 L 134 88" fill="#5a4a8a" opacity="0.5"/>
+
+          <!-- Eye discs -->
+          <circle cx="80" cy="118" r="20" fill="#3a3a6a"/>
+          <circle cx="120" cy="118" r="20" fill="#3a3a6a"/>
+          <circle cx="80" cy="118" r="16" fill="#5a4a8a" opacity="0.5"/>
+          <circle cx="120" cy="118" r="16" fill="#5a4a8a" opacity="0.5"/>
+
+          <!-- Closed eyes -->
+          <path d="M 68 116 Q 80 106 92 116" stroke="#a090e0" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 108 116 Q 120 106 132 116" stroke="#a090e0" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 95 130 L 100 139 L 105 130 Z" fill="#d8b858" opacity="0.8"/>
+
+          <!-- Bowtie -->
+          <path d="M 82 148 L 95 155 L 82 162 Z" fill="#e94560" opacity="0.85"/>
+          <path d="M 118 148 L 105 155 L 118 162 Z" fill="#e94560" opacity="0.85"/>
+          <circle cx="100" cy="155" r="4" fill="#c0392b" opacity="0.9"/>
+
+          <!-- Cheek glow -->
+          <circle cx="66" cy="126" r="6" fill="#a090e0" opacity="0.15" class="glow"/>
+          <circle cx="134" cy="126" r="6" fill="#a090e0" opacity="0.15" class="glow"/>
+
+          <!-- Hat -->
+          <ellipse cx="100" cy="82" rx="28" ry="6" fill="#111128"/>
+          <rect x="76" y="62" width="48" height="20" rx="4" fill="#111128"/>
+          <rect x="80" y="57" width="40" height="8" rx="3" fill="#111128"/>
+          <rect x="76" y="76" width="48" height="3.5" fill="#8a6aee"/>
+
+          <!-- Wing stubs -->
+          <ellipse cx="46" cy="152" rx="14" ry="10" fill="#3a2a6a" transform="rotate(-8 46 152)"/>
+          <ellipse cx="154" cy="152" rx="14" ry="10" fill="#3a2a6a" transform="rotate(8 154 152)"/>
+          <line x1="38" y1="149" x2="36" y2="156" stroke="#2a1a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="42" y1="151" x2="40" y2="159" stroke="#2a1a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="158" y1="149" x2="160" y2="156" stroke="#2a1a5a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="162" y1="151" x2="164" y2="159" stroke="#2a1a5a" stroke-width="1.2" stroke-linecap="round"/>
+
+          <!-- Feet -->
+          <path d="M 80 218 L 72 226 M 80 218 L 80 227 M 80 218 L 88 226" stroke="#d8b858" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+          <path d="M 120 218 L 112 226 M 120 218 L 120 227 M 120 218 L 128 226" stroke="#d8b858" stroke-width="2.5" fill="none" stroke-linecap="round" opacity="0.7"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- E: Owlblob Teal -->
+  <div class="option">
+    <h2>E: Teal Owlblob</h2>
+    <p>Owlblob in a cool teal-green palette. Different mood — calm forest vibes instead of mystical.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <text class="note" x="28" y="38" font-size="17" fill="#5ab8a0" opacity="0.5">&#9835;</text>
+        <text class="note" x="160" y="46" font-size="13" fill="#5ab8a0" opacity="0.3" style="animation-delay:1.7s">&#9834;</text>
+
+        <g class="float">
+          <ellipse cx="100" cy="230" rx="42" ry="7" fill="#000" opacity="0.12"/>
+
+          <!-- Body -->
+          <ellipse cx="100" cy="150" rx="58" ry="70" fill="#3a5a5a"/>
+          <!-- Belly -->
+          <ellipse cx="100" cy="162" rx="38" ry="44" fill="#4a7a70"/>
+          <!-- Chevrons -->
+          <path d="M 82 150 Q 100 157 118 150" stroke="#5a8a80" stroke-width="1.8" fill="none" opacity="0.5"/>
+          <path d="M 85 164 Q 100 171 115 164" stroke="#5a8a80" stroke-width="1.8" fill="none" opacity="0.5"/>
+          <path d="M 87 178 Q 100 185 113 178" stroke="#5a8a80" stroke-width="1.8" fill="none" opacity="0.5"/>
+
+          <!-- Ear tufts -->
+          <path d="M 55 96 L 50 68 L 68 88" fill="#3a5a5a"/>
+          <path d="M 145 96 L 150 68 L 132 88" fill="#3a5a5a"/>
+          <path d="M 58 93 L 54 73 L 66 88" fill="#4a7a70"/>
+          <path d="M 142 93 L 146 73 L 134 88" fill="#4a7a70"/>
+
+          <!-- Eye discs -->
+          <circle cx="80" cy="120" r="20" fill="#3a6a60"/>
+          <circle cx="120" cy="120" r="20" fill="#3a6a60"/>
+          <circle cx="80" cy="120" r="16" fill="#5a9a88"/>
+          <circle cx="120" cy="120" r="16" fill="#5a9a88"/>
+
+          <!-- Closed eyes -->
+          <path d="M 68 118 Q 80 108 92 118" stroke="#2a4040" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 108 118 Q 120 108 132 118" stroke="#2a4040" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 95 132 L 100 141 L 105 132 Z" fill="#e8a838"/>
+
+          <!-- Blush -->
+          <circle cx="68" cy="130" r="6" fill="#a0d8c0" opacity="0.3"/>
+          <circle cx="132" cy="130" r="6" fill="#a0d8c0" opacity="0.3"/>
+
+          <!-- Hat -->
+          <ellipse cx="100" cy="84" rx="28" ry="6" fill="#2d2d44"/>
+          <rect x="76" y="64" width="48" height="20" rx="4" fill="#2d2d44"/>
+          <rect x="80" y="59" width="40" height="8" rx="3" fill="#2d2d44"/>
+          <rect x="76" y="78" width="48" height="3.5" fill="#5ab8a0"/>
+
+          <!-- Wing stubs -->
+          <ellipse cx="46" cy="150" rx="14" ry="10" fill="#3a5a5a" transform="rotate(-8 46 150)"/>
+          <ellipse cx="154" cy="150" rx="14" ry="10" fill="#3a5a5a" transform="rotate(8 154 150)"/>
+          <line x1="38" y1="147" x2="36" y2="154" stroke="#2a4a4a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="42" y1="149" x2="40" y2="157" stroke="#2a4a4a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="158" y1="147" x2="160" y2="154" stroke="#2a4a4a" stroke-width="1.2" stroke-linecap="round"/>
+          <line x1="162" y1="149" x2="164" y2="157" stroke="#2a4a4a" stroke-width="1.2" stroke-linecap="round"/>
+
+          <!-- Feet -->
+          <path d="M 80 218 L 72 226 M 80 218 L 80 227 M 80 218 L 88 226" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 120 218 L 112 226 M 120 218 L 120 227 M 120 218 L 128 226" stroke="#e8a838" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+  <!-- F: Nebula Owl — maximum cosmic -->
+  <div class="option">
+    <h2>F: Nebula Owl</h2>
+    <p>Midnight owl orb but with a nebula color gradient inside — purple to pink to blue. More cosmic.</p>
+    <div class="mascot-container">
+      <svg width="200" height="260" viewBox="0 0 200 260">
+        <defs>
+          <radialGradient id="nebGrad" cx="40%" cy="35%">
+            <stop offset="0%" stop-color="#8a5ae0" stop-opacity="0.7"/>
+            <stop offset="30%" stop-color="#6040b0" stop-opacity="0.8"/>
+            <stop offset="60%" stop-color="#3a2a7a" stop-opacity="0.85"/>
+            <stop offset="100%" stop-color="#1a1a3a" stop-opacity="0.95"/>
+          </radialGradient>
+          <radialGradient id="nebGlow" cx="50%" cy="50%">
+            <stop offset="0%" stop-color="#8a5ae0" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#8a5ae0" stop-opacity="0"/>
+          </radialGradient>
+          <!-- Nebula cloud -->
+          <radialGradient id="nebCloud1" cx="30%" cy="60%">
+            <stop offset="0%" stop-color="#e05a8a" stop-opacity="0.2"/>
+            <stop offset="100%" stop-color="#e05a8a" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="nebCloud2" cx="70%" cy="40%">
+            <stop offset="0%" stop-color="#5a8ae0" stop-opacity="0.15"/>
+            <stop offset="100%" stop-color="#5a8ae0" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <text class="note" x="26" y="36" font-size="17" fill="#a080e0" opacity="0.5">&#9835;</text>
+        <text class="note" x="162" y="44" font-size="13" fill="#a080e0" opacity="0.3" style="animation-delay:1.5s">&#9834;</text>
+
+        <g class="float">
+          <ellipse cx="100" cy="142" rx="72" ry="80" fill="url(#nebGlow)" class="glow"/>
+          <ellipse cx="100" cy="228" rx="38" ry="6" fill="#8a5ae0" opacity="0.08"/>
+
+          <!-- Body -->
+          <ellipse cx="100" cy="142" rx="56" ry="65" fill="url(#nebGrad)"/>
+          <!-- Nebula clouds inside -->
+          <ellipse cx="85" cy="160" rx="25" ry="20" fill="url(#nebCloud1)"/>
+          <ellipse cx="115" cy="130" rx="22" ry="18" fill="url(#nebCloud2)"/>
+
+          <!-- Stars -->
+          <circle cx="75" cy="118" r="1.5" fill="#fff" class="twinkle"/>
+          <circle cx="125" cy="135" r="1" fill="#fff" class="twinkle" style="animation-delay:0.5s"/>
+          <circle cx="88" cy="170" r="1.2" fill="#fff" class="twinkle" style="animation-delay:1.2s"/>
+          <circle cx="110" cy="115" r="0.8" fill="#fff" class="twinkle" style="animation-delay:1.8s"/>
+          <circle cx="95" cy="148" r="1" fill="#fff" class="twinkle" style="animation-delay:0.3s"/>
+          <circle cx="118" cy="165" r="0.7" fill="#fff" class="twinkle" style="animation-delay:2.2s"/>
+          <circle cx="82" cy="140" r="0.6" fill="#fff" class="twinkle" style="animation-delay:0.8s"/>
+
+          <!-- Ear tufts -->
+          <path d="M 56 95 L 48 62 L 70 87" fill="#3a2a7a"/>
+          <path d="M 144 95 L 152 62 L 130 87" fill="#3a2a7a"/>
+
+          <!-- Eye discs -->
+          <circle cx="80" cy="125" r="17" fill="#4a3a7a"/>
+          <circle cx="120" cy="125" r="17" fill="#4a3a7a"/>
+          <circle cx="80" cy="125" r="13" fill="#5a4a9a" opacity="0.5"/>
+          <circle cx="120" cy="125" r="13" fill="#5a4a9a" opacity="0.5"/>
+
+          <!-- Closed eyes -->
+          <path d="M 69 123 Q 80 114 91 123" stroke="#b0a0e8" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+          <path d="M 109 123 Q 120 114 131 123" stroke="#b0a0e8" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+
+          <!-- Beak -->
+          <path d="M 95 137 L 100 146 L 105 137 Z" fill="#d8b050" opacity="0.7"/>
+
+          <!-- Cheek glow -->
+          <circle cx="66" cy="133" r="6" fill="#b090e8" opacity="0.15" class="glow"/>
+          <circle cx="134" cy="133" r="6" fill="#b090e8" opacity="0.15" class="glow"/>
+
+          <!-- Hat -->
+          <ellipse cx="100" cy="82" rx="28" ry="6" fill="#111128"/>
+          <rect x="76" y="62" width="48" height="20" rx="4" fill="#111128"/>
+          <rect x="80" y="57" width="40" height="8" rx="3" fill="#111128"/>
+          <rect x="76" y="76" width="48" height="3.5" fill="#a080e0"/>
+
+          <!-- Wing stubs with star tips -->
+          <ellipse cx="48" cy="145" rx="13" ry="10" fill="#3a2a7a"/>
+          <ellipse cx="152" cy="145" rx="13" ry="10" fill="#3a2a7a"/>
+          <circle cx="38" cy="145" r="2" fill="#fff" opacity="0.3" class="twinkle" style="animation-delay:1s"/>
+          <circle cx="162" cy="145" r="2" fill="#fff" opacity="0.3" class="twinkle" style="animation-delay:1.5s"/>
+
+          <!-- Wispy bottom -->
+          <path d="M 68 200 Q 78 215 90 205 Q 100 218 110 205 Q 122 215 132 200" fill="#3a2a7a" opacity="0.4"/>
+        </g>
+      </svg>
+    </div>
+  </div>
+
+</div>
+
+<div style="text-align:center; margin-top: 40px; color: #555; font-size: 13px;">
+  All designs shown in meditating pose — building on Owlblob (C) + Midnight Owl Orb (F)
+</div>
+
+</body>
+</html>
