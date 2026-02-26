@@ -27,7 +27,10 @@ import { SessionFile } from './ProjectScanner';
 import { SessionStateMachine, ISessionStateMachine } from './SessionStateMachine';
 import { ToolStats } from '../analytics/ToolStats';
 import { TokenCounter } from '../analytics/TokenCounter';
+import { ConversationBuilder } from './ConversationBuilder';
 import { summarizeToolInput } from '../config/toolSummarizers';
+import { ISessionNameResolver } from '../persistence/ISessionNameResolver';
+import { SessionNameResolver } from '../persistence/SessionNameResolver';
 import { LOG_PREFIX, TRUNCATION, SPECIAL_NAMES, SETTINGS } from '../constants';
 import {
   JsonlRecord,
@@ -41,6 +44,7 @@ import {
   ActivityEvent,
   ToolStatEntry,
   TokenSummary,
+  ConversationTurn,
   ToolUseContentBlock,
   ToolResultContentBlock,
   TextContentBlock,
@@ -58,6 +62,10 @@ interface InternalSessionState {
   parentSessionId?: string;
   /** Human-readable description extracted from the first user prompt. */
   description: string;
+  /** Whether we've done the initial async plan title check. */
+  planTitleChecked: boolean;
+  /** Set to true when a Write to the plans dir is detected, triggering a re-check. */
+  pendingPlanCheck: boolean;
 }
 
 /**
@@ -69,6 +77,7 @@ interface InternalSessionState {
 export interface DashboardState {
   sessions: SessionInfo[];
   activities: ActivityEvent[];
+  conversation: ConversationTurn[];
   toolStats: ToolStatEntry[];
   tokenSummaries: TokenSummary[];
 }
@@ -115,6 +124,7 @@ export class SessionTracker implements vscode.Disposable {
   private readonly activitiesBySession: Map<string, ActivityEvent[]> = new Map();
   private readonly toolStats: ToolStats = new ToolStats();
   private readonly tokenCounter: TokenCounter = new TokenCounter();
+  private readonly conversationBuilder: ConversationBuilder = new ConversationBuilder();
   private readonly outputChannel: vscode.OutputChannel;
 
   private readonly _onStateChanged = new vscode.EventEmitter<void>();
@@ -135,10 +145,16 @@ export class SessionTracker implements vscode.Disposable {
   /** Sessions removed by stale cleanup — prevents zombie resurrection on refresh.
    *  Maps sessionId → removal timestamp (ms) for bounded eviction. */
   private readonly removedSessionIds: Map<string, number> = new Map();
+  private readonly nameResolver: ISessionNameResolver;
 
-  constructor(outputChannel: vscode.OutputChannel, workspacePath?: string) {
+  constructor(
+    outputChannel: vscode.OutputChannel,
+    workspacePath?: string,
+    nameResolver?: ISessionNameResolver
+  ) {
     this.outputChannel = outputChannel;
     this.scanner = new ProjectScanner();
+    this.nameResolver = nameResolver ?? new SessionNameResolver();
     this.workspacePath = workspacePath;
     this.scopedProjectDirs = this.resolveProjectDirs(workspacePath);
   }
@@ -284,6 +300,26 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
+   * Return filtered conversation turns for the webview.
+   *
+   * @param focusedSessionId - Session to filter by, or `null` for none
+   * @returns Filtered conversation turns
+   */
+  getFilteredConversation(focusedSessionId?: string | null): ConversationTurn[] {
+    if (!focusedSessionId) return [];
+
+    const sessionMap = new Map<string, { parentSessionId?: string; isSubAgent: boolean }>();
+    for (const [id, session] of this.sessions) {
+      sessionMap.set(id, {
+        parentSessionId: session.parentSessionId,
+        isSubAgent: session.info.isSubAgent,
+      });
+    }
+
+    return this.conversationBuilder.getFilteredConversation(focusedSessionId, sessionMap);
+  }
+
+  /**
    * Assemble the complete dashboard state snapshot.
    *
    * @remarks
@@ -340,6 +376,7 @@ export class SessionTracker implements vscode.Disposable {
     return {
       sessions,
       activities: this.getFilteredActivities(focusedSessionId),
+      conversation: this.getFilteredConversation(focusedSessionId),
       toolStats: this.toolStats.getStats(),
       tokenSummaries: this.tokenCounter.getSummaries(),
     };
@@ -445,6 +482,8 @@ export class SessionTracker implements vscode.Disposable {
         isInitialReplayDone: false,
         parentSessionId: file.parentSessionId,
         description: '',
+        planTitleChecked: false,
+        pendingPlanCheck: false,
       });
     }
   }
@@ -468,6 +507,27 @@ export class SessionTracker implements vscode.Disposable {
       if (lastRecordTime > 0 && Date.now() - lastRecordTime > REPLAY_STALE_THRESHOLD_MS) {
         session.stateMachine.setStatus('done');
         session.info.status = 'done';
+      }
+    }
+
+    // Async plan title resolution: on first slug arrival or mid-session plan file write
+    if (session) {
+      const slugIsReal = session.info.slug !== session.info.sessionId.substring(0, 8);
+      const needsInitialCheck = !session.planTitleChecked && slugIsReal;
+      const needsMidSessionCheck = session.pendingPlanCheck;
+
+      if (slugIsReal && (needsInitialCheck || needsMidSessionCheck)) {
+        session.planTitleChecked = true;
+        session.pendingPlanCheck = false;
+        this.nameResolver.resolveFromPlanFile(session.info.slug).then((planTitle) => {
+          if (planTitle) {
+            session.info.autoName = planTitle;
+            console.log(
+              `${LOG_PREFIX.SESSION_TRACKER} Auto-name from plan: "${planTitle}" for ${session.info.slug}`
+            );
+            this.emitStateChanged();
+          }
+        });
       }
     }
 
@@ -582,16 +642,20 @@ export class SessionTracker implements vscode.Disposable {
       } else if (block.type === 'text') {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
+          const truncatedText =
+            textBlock.text.length > TRUNCATION.TEXT_MAX
+              ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
+              : textBlock.text;
+
+          session.info.lastAssistantText = truncatedText;
+
           this.addActivity({
             id: `evt-${++this.eventCounter}`,
             sessionId: session.info.sessionId,
             sessionSlug: session.info.slug,
             timestamp: record.timestamp || new Date().toISOString(),
             type: 'text',
-            text:
-              textBlock.text.length > TRUNCATION.TEXT_MAX
-                ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
-                : textBlock.text,
+            text: truncatedText,
           });
         }
       }
@@ -608,6 +672,8 @@ export class SessionTracker implements vscode.Disposable {
     if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON && !hasToolUse) {
       session.info.turnCount++;
     }
+
+    this.conversationBuilder.processAssistant(session.info.sessionId, record);
   }
 
   private processUser(session: InternalSessionState, record: UserRecord): void {
@@ -680,6 +746,8 @@ export class SessionTracker implements vscode.Disposable {
 
     // Delegate status transition to state machine
     session.stateMachine.handleUserRecord(record);
+
+    this.conversationBuilder.processUser(session.info.sessionId, record);
   }
 
   private processSystem(session: InternalSessionState, record: SystemRecord): void {
@@ -698,6 +766,8 @@ export class SessionTracker implements vscode.Disposable {
 
     // Delegate status transition to state machine
     session.stateMachine.handleSystemRecord(record);
+
+    this.conversationBuilder.processSystem(session.info.sessionId, record);
   }
 
   private processSummary(session: InternalSessionState, record: SummaryRecord): void {
@@ -714,6 +784,8 @@ export class SessionTracker implements vscode.Disposable {
         }
       }
     }
+
+    this.conversationBuilder.processSummary(session.info.sessionId, record);
   }
 
   private processProgress(session: InternalSessionState, record: ProgressRecord): void {
@@ -800,6 +872,7 @@ export class SessionTracker implements vscode.Disposable {
         this.watcher?.removeTracked(session.info.filePath);
         this.sessions.delete(id);
         this.activitiesBySession.delete(id);
+        this.conversationBuilder.clearSession(id);
         this.removedSessionIds.set(id, now);
       }
     }
@@ -871,6 +944,7 @@ export class SessionTracker implements vscode.Disposable {
     for (const session of this.sessions.values()) {
       session.stateMachine.dispose();
     }
+    this.conversationBuilder.dispose();
     this._onStateChanged.dispose();
     this.sessions.clear();
     this.activitiesBySession.clear();

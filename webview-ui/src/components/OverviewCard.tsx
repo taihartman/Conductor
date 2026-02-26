@@ -36,6 +36,9 @@ function getContextText(session: SessionInfo): string {
     case 'error':
       return UI_STRINGS.CONTEXT_ERROR;
     case 'done':
+      if (session.lastAssistantText) {
+        return session.lastAssistantText;
+      }
       return `${UI_STRINGS.CONTEXT_DONE} \u2014 ${timeAgo(session.lastActivityAt)}`;
     case 'idle':
       return timeAgo(session.lastActivityAt);

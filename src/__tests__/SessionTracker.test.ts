@@ -1009,3 +1009,84 @@ describe('SessionTracker scoping semantics', () => {
     tracker.dispose();
   });
 });
+
+describe('SessionTracker lastAssistantText', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  function feedRecords(
+    sessionId: string,
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
+  ): void {
+    const sessionFile = {
+      sessionId,
+      filePath: `/tmp/test/${sessionId}.jsonl`,
+      projectDir: 'test-project',
+      isSubAgent: options?.isSubAgent || false,
+      modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({ sessionFile, records });
+  }
+
+  it('populates lastAssistantText from a text content block', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'text-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"test","sessionId":"text-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Committed as 7d2671d. All files staged."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'text-1');
+    expect(session).toBeDefined();
+    expect(session!.lastAssistantText).toBe('Committed as 7d2671d. All files staged.');
+  });
+
+  it('does not set lastAssistantText when assistant has only tool_use blocks', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'tool-only',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"test","sessionId":"tool-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'tool-only');
+    expect(session).toBeDefined();
+    expect(session!.lastAssistantText).toBeUndefined();
+  });
+
+  it('does not set lastAssistantText for whitespace-only text blocks', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'ws-only',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"test","sessionId":"ws-only","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"   \\n  "}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'ws-only');
+    expect(session).toBeDefined();
+    expect(session!.lastAssistantText).toBeUndefined();
+  });
+});

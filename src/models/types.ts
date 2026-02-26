@@ -228,6 +228,45 @@ export type JsonlRecord =
   | FileHistorySnapshotRecord;
 
 // ---------------------------------------------------------------------------
+// Conversation transcript types
+// ---------------------------------------------------------------------------
+
+/** A paired tool interaction: the call and its result. */
+export interface ToolInteraction {
+  toolUseId: string;
+  toolName: string;
+  /** Serialized + truncated tool input (string, not raw object — bounded at TRUNCATION.TOOL_INPUT_MAX). */
+  inputJson: string;
+  /** ~100 char summary for collapsed header display. */
+  inputSummary: string;
+  /** Full result text, bounded at TRUNCATION.TOOL_OUTPUT_MAX. */
+  output?: string;
+  isError: boolean;
+  calledAt: string;
+  completedAt?: string;
+}
+
+/** A single turn in the conversation transcript. */
+export interface ConversationTurn {
+  id: string;
+  sessionId: string;
+  /** Discriminator: 'user' | 'assistant' | 'system'. Named 'role' to avoid collision with JSONL 'type'. */
+  role: 'user' | 'assistant' | 'system';
+  timestamp: string;
+  text?: string;
+  tools?: ToolInteraction[];
+  model?: string;
+  usage?: TokenUsage;
+  /** For system turns only. */
+  systemEvent?: 'turn_end' | 'summary';
+  durationMs?: number;
+  summary?: string;
+  /** For assistant turns that spawn sub-agents via Task tool. */
+  subAgentSessionId?: string;
+  subAgentDescription?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard state types
 // ---------------------------------------------------------------------------
 
@@ -295,12 +334,16 @@ export interface SessionInfo {
   filePath: string;
   /** User-defined display name, set via inline rename in the dashboard. */
   customName?: string;
+  /** Auto-generated name from first user prompt or plan file title. */
+  autoName?: string;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
   /** Most recent tool name (for overview display). */
   lastToolName?: string;
   /** Summarized input of the most recent tool. */
   lastToolInput?: string;
+  /** Most recent assistant text message (truncated to TEXT_MAX). */
+  lastAssistantText?: string;
   /** Question text when status is 'waiting'. */
   pendingQuestion?: string;
 }
