@@ -350,7 +350,7 @@ export class SessionTracker implements vscode.Disposable {
           sessionId: session.info.sessionId,
           slug: session.info.slug,
           status: session.info.status,
-          description: session.description || session.info.slug,
+          description: session.description || session.info.autoName || session.info.slug,
           totalInputTokens: session.info.totalInputTokens,
           totalOutputTokens: session.info.totalOutputTokens,
           lastActivityAt: session.info.lastActivityAt,
@@ -624,6 +624,14 @@ export class SessionTracker implements vscode.Disposable {
         session.info.lastToolName = toolBlock.name;
         session.info.lastToolInput = summarized;
 
+        // Detect plan file writes — trigger async plan title resolution
+        if (toolBlock.name === 'Write') {
+          const filePath = toolBlock.input?.file_path as string | undefined;
+          if (filePath && this.nameResolver.isPlanFilePath(filePath, session.info.slug)) {
+            session.pendingPlanCheck = true;
+          }
+        }
+
         this.toolStats.recordToolCall(
           toolBlock.id,
           toolBlock.name,
@@ -680,13 +688,24 @@ export class SessionTracker implements vscode.Disposable {
     const msg = record.message;
     if (!msg) return;
 
-    // Capture description from first user text in sub-agent sessions (the Task prompt)
-    if (session.info.isSubAgent && !session.description) {
+    // Capture first user text as auto-name for ALL sessions
+    if (!session.info.autoName) {
       for (const block of msg.content || []) {
         if (block.type === 'text') {
           const textBlock = block as TextContentBlock;
           if (textBlock.text && textBlock.text.trim().length > 0) {
-            session.description = textBlock.text.substring(0, TRUNCATION.DESCRIPTION_MAX);
+            session.info.autoName = this.nameResolver.resolveFromPrompt(textBlock.text);
+            console.log(
+              `${LOG_PREFIX.SESSION_TRACKER} Auto-name from prompt: "${session.info.autoName}" for ${session.info.slug}`
+            );
+            // Backward compat: also set description for sub-agent display
+            // Overwrite when description is empty or just the slug (set by metadata handler)
+            if (
+              session.info.isSubAgent &&
+              (!session.description || session.description === session.info.slug)
+            ) {
+              session.description = session.info.autoName;
+            }
             break;
           }
         }

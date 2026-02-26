@@ -2,7 +2,7 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { STATUS_CONFIG } from '../config/statusConfig';
-import { formatModel } from '../utils/formatters';
+import { formatModel, getSessionDisplayName } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 
 interface CollapsedBarProps {
@@ -39,7 +39,7 @@ export function CollapsedBar({ session, onExpand }: CollapsedBarProps): React.Re
         }}
         title={session.slug}
       >
-        {session.customName ?? session.slug}
+        {getSessionDisplayName(session)}
       </span>
       <span
         style={{

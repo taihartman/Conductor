@@ -3,7 +3,13 @@ import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { EnsembleIndicator } from './EnsembleIndicator';
 import { STATUS_CONFIG } from '../config/statusConfig';
-import { timeAgo, formatCostCompact, formatTokens, formatModel } from '../utils/formatters';
+import {
+  timeAgo,
+  formatCostCompact,
+  formatTokens,
+  formatModel,
+  getSessionDisplayName,
+} from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
 
@@ -154,14 +160,14 @@ export function OverviewCard({
               whiteSpace: 'nowrap',
               cursor: 'text',
             }}
-            title={session.customName ? session.slug : UI_STRINGS.RENAME_HINT}
+            title={session.customName || session.autoName ? session.slug : UI_STRINGS.RENAME_HINT}
             onDoubleClick={(e) => {
               e.stopPropagation();
-              setEditValue(session.customName ?? session.slug);
+              setEditValue(getSessionDisplayName(session));
               setIsEditing(true);
             }}
           >
-            {session.customName ?? session.slug}
+            {getSessionDisplayName(session)}
           </span>
         )}
         <span style={{ flex: 1 }} />

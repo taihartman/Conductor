@@ -28,6 +28,7 @@ export const FS_PATHS = {
   CLAUDE_DIR: '.claude',
   PROJECTS_DIR: 'projects',
   SUBAGENTS_DIR: 'subagents',
+  PLANS_DIR: 'plans',
   JSONL_EXT: '.jsonl',
   AGENT_PREFIX: 'agent-',
 } as const;
@@ -40,7 +41,13 @@ export const TRUNCATION = {
   URL_MAX: 80,
   ERROR_MESSAGE_MAX: 200,
   SESSION_NAME_MAX: 100,
+  CONVERSATION_TEXT_MAX: 8000,
+  TOOL_INPUT_MAX: 2000,
+  TOOL_OUTPUT_MAX: 4000,
 } as const;
+
+/** Maximum conversation turns stored per session (FIFO eviction). */
+export const MAX_CONVERSATION_TURNS_PER_SESSION = 500;
 
 /** VS Code setting keys (must match `contributes.configuration` in package.json). */
 export const SETTINGS = {

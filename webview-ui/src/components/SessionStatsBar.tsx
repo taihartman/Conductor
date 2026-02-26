@@ -2,13 +2,21 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { StatusDot } from './StatusDot';
 import { STATUS_CONFIG } from '../config/statusConfig';
-import { formatModel, formatTokens, formatCostCompact } from '../utils/formatters';
+import { UI_STRINGS } from '../config/strings';
+import {
+  formatModel,
+  formatTokens,
+  formatCostCompact,
+  getSessionDisplayName,
+} from '../utils/formatters';
 
 interface SessionStatsBarProps {
   session: SessionInfo;
   cost: number;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  onToggleAnalytics?: () => void;
+  analyticsOpen?: boolean;
 }
 
 export function SessionStatsBar({
@@ -16,6 +24,8 @@ export function SessionStatsBar({
   cost,
   isExpanded,
   onToggleExpand,
+  onToggleAnalytics,
+  analyticsOpen,
 }: SessionStatsBarProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
 
@@ -43,7 +53,7 @@ export function SessionStatsBar({
         }}
         title={session.slug}
       >
-        {session.customName ?? session.slug}
+        {getSessionDisplayName(session)}
       </span>
 
       <span
@@ -94,6 +104,26 @@ export function SessionStatsBar({
       )}
 
       <span style={{ flex: 1 }} />
+
+      {onToggleAnalytics && (
+        <button
+          onClick={onToggleAnalytics}
+          style={{
+            padding: '2px 6px',
+            fontSize: '14px', // inline-ok
+            borderRadius: '3px',
+            border: `1px solid ${analyticsOpen ? 'var(--accent)' : 'var(--border)'}`,
+            backgroundColor: analyticsOpen ? 'rgba(0, 122, 204, 0.1)' : 'var(--bg-card)', // inline-ok
+            color: analyticsOpen ? 'var(--accent)' : 'var(--fg-secondary)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            lineHeight: 1,
+          }}
+          title={UI_STRINGS.ANALYTICS_DRAWER_TOGGLE}
+        >
+          {'\u2261'}
+        </button>
+      )}
 
       <button
         onClick={onToggleExpand}

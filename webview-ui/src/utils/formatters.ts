@@ -47,3 +47,12 @@ export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
+
+/** Display name priority: user-set custom name > auto-generated name > slug. */
+export function getSessionDisplayName(session: {
+  customName?: string;
+  autoName?: string;
+  slug: string;
+}): string {
+  return session.customName ?? session.autoName ?? session.slug;
+}

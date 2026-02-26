@@ -1090,3 +1090,154 @@ describe('SessionTracker lastAssistantText', () => {
     expect(session!.lastAssistantText).toBeUndefined();
   });
 });
+
+describe('SessionTracker auto-naming', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  function feedRecords(
+    sessionId: string,
+    records: any[],
+    options?: { isSubAgent?: boolean; parentSessionId?: string }
+  ): void {
+    const sessionFile = {
+      sessionId,
+      filePath: `/tmp/test/${sessionId}.jsonl`,
+      projectDir: 'test-project',
+      isSubAgent: options?.isSubAgent || false,
+      modifiedAt: new Date(),
+      parentSessionId: options?.parentSessionId,
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({ sessionFile, records });
+  }
+
+  it('sets autoName from first user text for parent sessions', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'auto-1',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"test-slug","sessionId":"auto-1","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Help me fix the login bug"}]}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'auto-1');
+    expect(session).toBeDefined();
+    expect(session!.autoName).toBe('Help me fix the login bug');
+  });
+
+  it('does not overwrite autoName with subsequent user messages', () => {
+    const now = new Date().toISOString();
+    const later = new Date(Date.now() + 1000).toISOString();
+    feedRecords(
+      'auto-2',
+      JsonlParser.parseString(
+        [
+          `{"type":"user","slug":"test-slug","sessionId":"auto-2","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"First prompt"}]}}`,
+          `{"type":"user","slug":"test-slug","sessionId":"auto-2","timestamp":"${later}","message":{"role":"user","content":[{"type":"text","text":"Second prompt"}]}}`,
+        ].join('\n')
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'auto-2');
+    expect(session).toBeDefined();
+    expect(session!.autoName).toBe('First prompt');
+  });
+
+  it('tool-result-only user records do not set autoName', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'auto-3',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"test-slug","sessionId":"auto-3","timestamp":"${now}","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"file contents"}]}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'auto-3');
+    expect(session).toBeDefined();
+    expect(session!.autoName).toBeUndefined();
+  });
+
+  it('sub-agent gets both autoName and description', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      'sub-auto-1',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"sub-slug","sessionId":"parent-1","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Search for authentication patterns"}]}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'parent-1' }
+    );
+
+    const t = tracker as any;
+    const session = t.sessions.get('sub-auto-1');
+    expect(session).toBeDefined();
+    expect(session.info.autoName).toBe('Search for authentication patterns');
+    expect(session.description).toBe('Search for authentication patterns');
+  });
+
+  it('SubAgentInfo.description falls through to autoName when description is empty', () => {
+    const now = new Date().toISOString();
+
+    // Create parent
+    feedRecords(
+      'parent-desc',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"parent","sessionId":"parent-desc","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Main task"}]}}`
+      )
+    );
+
+    // Create child with user text
+    feedRecords(
+      'child-desc',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"child","sessionId":"parent-desc","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"Find auth code"}]}}`
+      ),
+      { isSubAgent: true, parentSessionId: 'parent-desc' }
+    );
+
+    const state = tracker.getState();
+    const parent = state.sessions.find((s) => s.sessionId === 'parent-desc');
+    expect(parent).toBeDefined();
+    expect(parent!.childAgents).toBeDefined();
+
+    const child = parent!.childAgents!.find((c) => c.sessionId === 'child-desc');
+    expect(child).toBeDefined();
+    expect(child!.description).toBe('Find auth code');
+  });
+
+  it('detects Write tool call to plans dir and sets pendingPlanCheck', () => {
+    const now = new Date().toISOString();
+
+    // Feed an assistant record with a Write tool call targeting the plans dir
+    feedRecords(
+      'plan-write',
+      JsonlParser.parseString(
+        `{"type":"assistant","slug":"plan-write","sessionId":"plan-write","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Write","input":{"file_path":"/home/user/.claude/plans/plan-write.md","content":"# Plan: Fix Login Bug"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      )
+    );
+
+    const t = tracker as any;
+    const session = t.sessions.get('plan-write');
+    expect(session).toBeDefined();
+    // pendingPlanCheck should have been set to true then consumed by handleRecords
+    // After handleRecords, planTitleChecked should be true (the async check was triggered)
+    expect(session.planTitleChecked).toBe(true);
+  });
+});

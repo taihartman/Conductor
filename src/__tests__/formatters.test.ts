@@ -6,6 +6,7 @@ import {
   formatCostCompact,
   timeAgo,
   formatDuration,
+  getSessionDisplayName,
 } from '../../webview-ui/src/utils/formatters';
 
 describe('formatModel', () => {
@@ -120,5 +121,33 @@ describe('formatDuration', () => {
   it('returns seconds for longer durations', () => {
     expect(formatDuration(1500)).toBe('1.5s');
     expect(formatDuration(1000)).toBe('1.0s');
+  });
+});
+
+describe('getSessionDisplayName', () => {
+  it('returns customName when set', () => {
+    expect(
+      getSessionDisplayName({ customName: 'My Session', autoName: 'Fix bug', slug: 'abc-123' })
+    ).toBe('My Session');
+  });
+
+  it('returns autoName when customName not set', () => {
+    expect(getSessionDisplayName({ autoName: 'Fix the login bug', slug: 'abc-123' })).toBe(
+      'Fix the login bug'
+    );
+  });
+
+  it('returns slug when neither customName nor autoName set', () => {
+    expect(getSessionDisplayName({ slug: 'abc-123' })).toBe('abc-123');
+  });
+
+  it('returns customName even when all three are set', () => {
+    expect(
+      getSessionDisplayName({
+        customName: 'Custom',
+        autoName: 'Auto',
+        slug: 'slug-123',
+      })
+    ).toBe('Custom');
   });
 });
