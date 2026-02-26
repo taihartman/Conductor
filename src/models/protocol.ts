@@ -12,22 +12,27 @@
  * elsewhere in the codebase.
  */
 
-import { SessionInfo, ActivityEvent, ToolStatEntry, TokenSummary } from './types';
+import { SessionInfo, ActivityEvent, ConversationTurn, ToolStatEntry, TokenSummary } from './types';
 
 /**
  * Messages sent from the extension backend to the webview.
  *
  * @remarks
- * - `sessions:update` — Full session list refresh, sent on every state change.
- * - `activity:full` — Complete activity feed snapshot (last 200 events).
- * - `toolStats:update` — Aggregated tool usage statistics across all sessions.
- * - `tokens:update` — Per-session token summaries with cost estimates.
+ * - `state:full` — Atomic snapshot of all dashboard state. Sent on state changes and `ready`.
+ * - `activity:full` — Activity feed for the focused session. Sent on `session:focus`.
+ * - `conversation:full` — Conversation transcript for the focused session. Sent on `session:focus`.
  */
 export type ExtensionToWebviewMessage =
-  | { type: 'sessions:update'; sessions: SessionInfo[] }
+  | {
+      type: 'state:full';
+      sessions: SessionInfo[];
+      activities: ActivityEvent[];
+      conversation: ConversationTurn[];
+      toolStats: ToolStatEntry[];
+      tokenSummaries: TokenSummary[];
+    }
   | { type: 'activity:full'; events: ActivityEvent[] }
-  | { type: 'toolStats:update'; stats: ToolStatEntry[] }
-  | { type: 'tokens:update'; tokenSummaries: TokenSummary[] };
+  | { type: 'conversation:full'; turns: ConversationTurn[] };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -42,4 +47,6 @@ export type WebviewToExtensionMessage =
   | { type: 'session:focus'; sessionId: string | null }
   | { type: 'refresh' }
   /** Sent when the user renames a session via inline edit in the overview card. */
-  | { type: 'session:rename'; sessionId: string; name: string };
+  | { type: 'session:rename'; sessionId: string; name: string }
+  /** Sent when the user completes a drag-and-drop reorder of session cards. */
+  | { type: 'session:reorder'; sessionIds: string[] };

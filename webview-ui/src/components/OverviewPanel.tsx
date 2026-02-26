@@ -1,6 +1,7 @@
 import React from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
 import { OverviewCard } from './OverviewCard';
+import { useDragReorder } from '../hooks/useDragReorder';
 import { UI_STRINGS } from '../config/strings';
 
 interface OverviewPanelProps {
@@ -10,6 +11,7 @@ interface OverviewPanelProps {
   onSessionClick: (sessionId: string) => void;
   onSessionDoubleClick: (sessionId: string) => void;
   onRename: (sessionId: string, name: string) => void;
+  onReorder: (sessionIds: string[]) => void;
   searchQuery: string;
 }
 
@@ -20,6 +22,7 @@ export function OverviewPanel({
   onSessionClick,
   onSessionDoubleClick,
   onRename,
+  onReorder,
   searchQuery,
 }: OverviewPanelProps): React.ReactElement {
   // Build cost lookup
@@ -30,6 +33,17 @@ export function OverviewPanel({
 
   // Only show parent sessions (sub-agents visible in DetailPanel's EnsembleList)
   const topLevelSessions = sessions.filter((s) => !s.isSubAgent);
+  const topLevelIds = topLevelSessions.map((s) => s.sessionId);
+
+  const {
+    gridRef,
+    draggingSessionId,
+    indicatorStyle,
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handlePointerCancel,
+  } = useDragReorder(topLevelIds, onReorder);
 
   return (
     <div
@@ -54,23 +68,33 @@ export function OverviewPanel({
         </div>
       ) : (
         <div
+          ref={gridRef}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
           style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', // inline-ok
             gap: 'var(--spacing-sm)',
+            position: 'relative',
           }}
         >
           {topLevelSessions.map((session) => (
-            <OverviewCard
-              key={session.sessionId}
-              session={session}
-              isSelected={focusedSessionId === session.sessionId}
-              cost={costBySession.get(session.sessionId) || 0}
-              onClick={() => onSessionClick(session.sessionId)}
-              onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
-              onRename={onRename}
-            />
+            <div key={session.sessionId} data-session-id={session.sessionId}>
+              <OverviewCard
+                session={session}
+                isSelected={focusedSessionId === session.sessionId}
+                cost={costBySession.get(session.sessionId) || 0}
+                onClick={() => onSessionClick(session.sessionId)}
+                onDoubleClick={() => onSessionDoubleClick(session.sessionId)}
+                onRename={onRename}
+                onDragHandlePointerDown={(e) => handlePointerDown(e, session.sessionId)}
+                isDragging={draggingSessionId === session.sessionId}
+              />
+            </div>
           ))}
+          {/* Absolutely-positioned drop indicator — does not disrupt grid flow */}
+          {indicatorStyle && <div style={indicatorStyle} />}
         </div>
       )}
     </div>

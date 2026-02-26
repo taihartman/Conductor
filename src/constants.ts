@@ -21,6 +21,7 @@ export const LOG_PREFIX = {
   WATCHER: '[Conductor:Watcher]',
   SCANNER: '[Conductor:Scanner]',
   NAME_STORE: '[Conductor:NameStore]',
+  ORDER_STORE: '[Conductor:OrderStore]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -58,6 +59,12 @@ export const SETTINGS = {
 export const STORAGE_KEYS = {
   /** sessionId → customName mapping for user-defined session labels. */
   SESSION_NAMES: 'conductor.sessionNames',
+} as const;
+
+/** VS Code workspaceState keys for per-workspace persistent storage. */
+export const WORKSPACE_STATE_KEYS = {
+  /** Ordered list of session IDs representing the user's custom card order. */
+  SESSION_ORDER: 'conductor.sessionOrder',
 } as const;
 
 /** Well-known record and tool names used for special-case handling. */

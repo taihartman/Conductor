@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { useDashboardStore } from '../store/dashboardStore';
 import { SessionStatsBar } from './SessionStatsBar';
 import { EnsembleList } from './EnsembleList';
-import { LiveFeed } from './LiveFeed';
-import { DetailTabs } from './DetailTabs';
-import type { DetailTab } from './DetailTabs';
-import { ToolStatsPanelInline } from './ToolStatsPanelInline';
-import { TokenUsagePanelInline } from './TokenUsagePanelInline';
+import { ConversationView } from './ConversationView';
+import { AnalyticsDrawer } from './AnalyticsDrawer';
 
 interface DetailPanelProps {
   session: SessionInfo;
@@ -20,28 +17,27 @@ export function DetailPanel({
   isExpanded,
   onToggleExpand,
 }: DetailPanelProps): React.ReactElement {
-  const activities = useDashboardStore((s) => s.activities);
+  const conversation = useDashboardStore((s) => s.conversation);
   const toolStats = useDashboardStore((s) => s.toolStats);
   const tokenSummaries = useDashboardStore((s) => s.tokenSummaries);
   const filteredSubAgentId = useDashboardStore((s) => s.filteredSubAgentId);
   const setFilteredSubAgentId = useDashboardStore((s) => s.setFilteredSubAgentId);
-
-  const [activeTab, setActiveTab] = useState<DetailTab>('feed');
+  const analyticsDrawerOpen = useDashboardStore((s) => s.analyticsDrawerOpen);
+  const toggleAnalyticsDrawer = useDashboardStore((s) => s.toggleAnalyticsDrawer);
 
   // Get cost from token summaries
   const tokenSummary = tokenSummaries.find((t) => t.sessionId === session.sessionId);
   const cost = tokenSummary?.estimatedCostUsd ?? 0;
 
-  // Backend already filters activities to the focused session + its children.
-  // If a specific sub-agent is selected in the EnsembleList, narrow further.
-  const sessionActivities = filteredSubAgentId
-    ? activities.filter((a) => a.sessionId === filteredSubAgentId)
-    : activities;
-
   // Filter token summaries for this session
   const sessionTokenSummaries = tokenSummaries.filter(
     (t) => t.sessionId === session.sessionId
   );
+
+  // Filter conversation by sub-agent if selected
+  const filteredConversation = filteredSubAgentId
+    ? conversation.filter((t) => t.sessionId === filteredSubAgentId)
+    : conversation;
 
   return (
     <div
@@ -57,9 +53,9 @@ export function DetailPanel({
         cost={cost}
         isExpanded={isExpanded}
         onToggleExpand={onToggleExpand}
+        onToggleAnalytics={toggleAnalyticsDrawer}
+        analyticsOpen={analyticsDrawerOpen}
       />
-
-      <DetailTabs activeTab={activeTab} onTabChange={setActiveTab} />
 
       <div
         style={{
@@ -87,7 +83,7 @@ export function DetailPanel({
           </div>
         )}
 
-        {/* Right: Tab content */}
+        {/* Center: Conversation transcript */}
         <div
           style={{
             flex: 1,
@@ -97,12 +93,16 @@ export function DetailPanel({
             minWidth: 0,
           }}
         >
-          {activeTab === 'feed' && <LiveFeed activities={sessionActivities} />}
-          {activeTab === 'tools' && <ToolStatsPanelInline toolStats={toolStats} />}
-          {activeTab === 'tokens' && (
-            <TokenUsagePanelInline tokenSummaries={sessionTokenSummaries} />
-          )}
+          <ConversationView conversation={filteredConversation} />
         </div>
+
+        {/* Right: Analytics drawer */}
+        <AnalyticsDrawer
+          open={analyticsDrawerOpen}
+          onClose={toggleAnalyticsDrawer}
+          toolStats={toolStats}
+          tokenSummaries={sessionTokenSummaries}
+        />
       </div>
     </div>
   );

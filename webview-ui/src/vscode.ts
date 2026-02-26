@@ -6,11 +6,30 @@ interface VsCodeApi {
 
 declare function acquireVsCodeApi(): VsCodeApi;
 
+function getApi(): VsCodeApi {
+  if (typeof acquireVsCodeApi === 'function') {
+    return acquireVsCodeApi();
+  }
+  // Dev-mode stub: allows running in a browser outside VS Code
+  let state: unknown = undefined;
+  return {
+    postMessage(message: unknown): void {
+      console.log('[vscode-dev-stub] postMessage:', message);
+    },
+    getState(): unknown {
+      return state;
+    },
+    setState(s: unknown): void {
+      state = s;
+    },
+  };
+}
+
 class VsCodeWrapper {
   private readonly api: VsCodeApi;
 
   constructor() {
-    this.api = acquireVsCodeApi();
+    this.api = getApi();
   }
 
   postMessage(message: unknown): void {

@@ -78,6 +78,7 @@ export function useZenNudge(
 
   const resetIdle = useCallback(() => {
     lastInteraction.current = Date.now();
+    setAutoZenTriggered(false);
   }, []);
 
   // Track user interactions

@@ -3,34 +3,32 @@ import { useDashboardStore } from '../store/dashboardStore';
 import type { ExtensionToWebviewMessage } from '@shared/protocol';
 
 export function useVsCodeMessage(): void {
-  const {
-    setSessions,
-    setActivities,
-    setToolStats,
-    setTokenSummaries,
-  } = useDashboardStore();
+  const { setFullState, setActivities, setConversation } = useDashboardStore();
 
   useEffect(() => {
     function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>): void {
       const message = event.data;
 
       switch (message.type) {
-        case 'sessions:update':
-          setSessions(message.sessions);
+        case 'state:full':
+          setFullState(
+            message.sessions,
+            message.activities,
+            message.conversation,
+            message.toolStats,
+            message.tokenSummaries
+          );
           break;
         case 'activity:full':
           setActivities(message.events);
           break;
-        case 'toolStats:update':
-          setToolStats(message.stats);
-          break;
-        case 'tokens:update':
-          setTokenSummaries(message.tokenSummaries);
+        case 'conversation:full':
+          setConversation(message.turns);
           break;
       }
     }
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [setSessions, setActivities, setToolStats, setTokenSummaries]);
+  }, [setFullState, setActivities, setConversation]);
 }

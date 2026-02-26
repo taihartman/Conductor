@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { DashboardPanel } from './DashboardPanel';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { SessionNameStore } from './persistence/SessionNameStore';
+import { SessionOrderStore } from './persistence/SessionOrderStore';
 import {
   OUTPUT_CHANNEL_NAME,
   STATUS_BAR_TEXT,
@@ -31,9 +32,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const nameStore = new SessionNameStore(context.globalState, outputChannel);
   context.subscriptions.push(nameStore);
 
+  const orderStore = new SessionOrderStore(context.workspaceState, outputChannel);
+  context.subscriptions.push(orderStore);
+
   const openCommand = vscode.commands.registerCommand(COMMANDS.OPEN, () => {
     console.log(`${LOG_PREFIX.EXTENSION} Open command invoked`);
-    DashboardPanel.createOrShow(context, sessionTracker!, nameStore);
+    DashboardPanel.createOrShow(context, sessionTracker!, nameStore, orderStore);
   });
 
   const refreshCommand = vscode.commands.registerCommand(COMMANDS.REFRESH, () => {

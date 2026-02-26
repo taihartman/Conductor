@@ -20,6 +20,8 @@ interface OverviewCardProps {
   onClick: () => void;
   onDoubleClick: () => void;
   onRename: (sessionId: string, name: string) => void;
+  onDragHandlePointerDown: (e: React.PointerEvent) => void;
+  isDragging?: boolean;
 }
 
 function getContextText(session: SessionInfo): string {
@@ -60,11 +62,14 @@ export function OverviewCard({
   onClick,
   onDoubleClick,
   onRename,
+  onDragHandlePointerDown,
+  isDragging,
 }: OverviewCardProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
   const isActive = session.status === 'working' || session.status === 'thinking';
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [isHovered, setIsHovered] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -79,7 +84,7 @@ export function OverviewCard({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       style={{
-        padding: '10px 12px', // inline-ok
+        padding: '0', // inline-ok
         cursor: 'pointer',
         backgroundColor: isSelected
           ? COLORS.SELECTED_CARD_BG
@@ -88,25 +93,63 @@ export function OverviewCard({
           ? '1px solid var(--accent)'
           : '1px solid var(--border)',
         borderRadius: '6px',
-        transition: 'background-color 0.1s, border-color 0.1s',
+        transition: 'background-color 0.1s, border-color 0.1s, opacity 0.15s',
         display: 'flex',
-        flexDirection: 'column',
-        gap: '8px',
+        flexDirection: 'row',
         minWidth: 0,
+        opacity: isDragging ? 0.4 : 1,
       }}
       onMouseEnter={(e) => {
+        setIsHovered(true);
         if (!isSelected) {
           e.currentTarget.style.backgroundColor = COLORS.HOVER_CARD_BG;
           e.currentTarget.style.borderColor = 'var(--fg-muted)';
         }
       }}
       onMouseLeave={(e) => {
+        setIsHovered(false);
         if (!isSelected) {
           e.currentTarget.style.backgroundColor = 'var(--bg-card)';
           e.currentTarget.style.borderColor = 'var(--border)';
         }
       }}
     >
+      {/* Drag handle */}
+      <div
+        onPointerDown={onDragHandlePointerDown}
+        onClick={(e) => e.stopPropagation()}
+        onDoubleClick={(e) => e.stopPropagation()}
+        title={UI_STRINGS.DRAG_HANDLE_TOOLTIP}
+        aria-label={UI_STRINGS.DRAG_HANDLE_LABEL}
+        style={{
+          width: '16px', // inline-ok
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          cursor: 'grab',
+          color: isHovered ? COLORS.DRAG_HANDLE_HOVER : 'transparent',
+          fontSize: '10px', // inline-ok
+          letterSpacing: '-1px',
+          userSelect: 'none',
+          borderRadius: '6px 0 0 6px',
+          transition: 'color 0.15s',
+        }}
+      >
+        {'\u22EE\u22EE'}
+      </div>
+
+      {/* Card content */}
+      <div
+        style={{
+          flex: 1,
+          minWidth: 0,
+          padding: '10px 12px 10px 0', // inline-ok
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
       {/* Row 1: Status dot + slug + status label */}
       <div
         style={{
@@ -232,6 +275,7 @@ export function OverviewCard({
         <span style={{ flex: 1 }} />
 
         <span>{timeAgo(session.lastActivityAt)}</span>
+      </div>
       </div>
     </div>
   );

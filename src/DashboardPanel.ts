@@ -16,6 +16,7 @@ import { SessionTracker } from './monitoring/SessionTracker';
 import { ExtensionToWebviewMessage, WebviewToExtensionMessage } from './models/protocol';
 import { SessionInfo } from './models/types';
 import { ISessionNameStore } from './persistence/ISessionNameStore';
+import { ISessionOrderStore } from './persistence/ISessionOrderStore';
 import { PANEL_TITLE, LOG_PREFIX } from './constants';
 
 /**
@@ -34,8 +35,11 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly extensionUri: vscode.Uri;
   private readonly sessionTracker: SessionTracker;
   private readonly nameStore: ISessionNameStore;
+  private readonly orderStore: ISessionOrderStore;
   private readonly disposables: vscode.Disposable[] = [];
   private focusedSessionId: string | null = null;
+  private lastSessionIdSet: string = '';
+  private cachedOrder: string[] = [];
 
   /**
    * Create a new dashboard panel or reveal an existing one.
@@ -48,12 +52,14 @@ export class DashboardPanel implements vscode.Disposable {
    * @param context - Extension context (provides the extension URI for asset paths)
    * @param sessionTracker - The session tracker instance to read state from
    * @param nameStore - Persistence layer for user-defined session display names
+   * @param orderStore - Persistence layer for user-defined session card order
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
     context: vscode.ExtensionContext,
     sessionTracker: SessionTracker,
-    nameStore: ISessionNameStore
+    nameStore: ISessionNameStore,
+    orderStore: ISessionOrderStore
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -79,7 +85,8 @@ export class DashboardPanel implements vscode.Disposable {
       panel,
       context.extensionUri,
       sessionTracker,
-      nameStore
+      nameStore,
+      orderStore
     );
 
     return DashboardPanel.currentPanel;
@@ -89,12 +96,14 @@ export class DashboardPanel implements vscode.Disposable {
     panel: vscode.WebviewPanel,
     extensionUri: vscode.Uri,
     sessionTracker: SessionTracker,
-    nameStore: ISessionNameStore
+    nameStore: ISessionNameStore,
+    orderStore: ISessionOrderStore
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
     this.sessionTracker = sessionTracker;
     this.nameStore = nameStore;
+    this.orderStore = orderStore;
 
     this.panel.webview.html = this.getHtml();
 
@@ -106,9 +115,17 @@ export class DashboardPanel implements vscode.Disposable {
       this.disposables
     );
 
-    this.sessionTracker.onStateChanged(() => this.postFullState());
+    this.sessionTracker.onStateChanged(() => this.postFullState(), null, this.disposables);
 
     this.nameStore.onNamesChanged(() => this.postFullState(), null, this.disposables);
+    this.orderStore.onOrderChanged(
+      () => {
+        this.cachedOrder = this.orderStore.getOrder();
+        this.postFullState();
+      },
+      null,
+      this.disposables
+    );
   }
 
   /**
@@ -121,16 +138,20 @@ export class DashboardPanel implements vscode.Disposable {
    */
   public postFullState(): void {
     const state = this.sessionTracker.getState(this.focusedSessionId);
-    const sessions = this.applyCustomNames(state.sessions);
+    const named = this.applyCustomNames(state.sessions);
+    const sessions = this.applyCustomOrder(named);
     console.log(
       `${LOG_PREFIX.PANEL} Posting state → ${sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
     );
 
-    this.postMessage({ type: 'sessions:update', sessions });
-    this.postMessage({ type: 'activity:full', events: state.activities });
-    this.postMessage({ type: 'conversation:full', turns: state.conversation });
-    this.postMessage({ type: 'toolStats:update', stats: state.toolStats });
-    this.postMessage({ type: 'tokens:update', tokenSummaries: state.tokenSummaries });
+    this.postMessage({
+      type: 'state:full',
+      sessions,
+      activities: state.activities,
+      conversation: state.conversation,
+      toolStats: state.toolStats,
+      tokenSummaries: state.tokenSummaries,
+    });
   }
 
   private postMessage(message: ExtensionToWebviewMessage): void {
@@ -185,7 +206,74 @@ export class DashboardPanel implements vscode.Disposable {
           this.postFullState();
         });
         break;
+      case 'session:reorder':
+        console.log(
+          `${LOG_PREFIX.PANEL} Reordering sessions: ${message.sessionIds.length} session(s)`
+        );
+        this.orderStore.setOrder(message.sessionIds).catch((err: unknown) => {
+          console.log(`${LOG_PREFIX.PANEL} Failed to persist session order: ${err}`);
+        });
+        break;
     }
+  }
+
+  /**
+   * Pure sort: reorder sessions according to the cached order. No side effects.
+   *
+   * @param sessions - Sessions to sort
+   * @param order - Ordered session IDs
+   * @returns Sessions reordered by the given ID order
+   */
+  private sortByOrder(sessions: SessionInfo[], order: string[]): SessionInfo[] {
+    const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
+    return order.filter((id) => sessionMap.has(id)).map((id) => sessionMap.get(id)!);
+  }
+
+  /**
+   * Check if the session set changed and reconcile/persist the order if needed.
+   *
+   * NOTE: The hash only detects session-set changes (add/remove), not order changes.
+   * Order-change invalidation is handled by the onOrderChanged handler which
+   * directly updates cachedOrder before calling postFullState().
+   *
+   * @param sessions - Current live sessions to reconcile against stored order
+   */
+  private reconcileOrderIfNeeded(sessions: SessionInfo[]): void {
+    const currentIdHash = sessions
+      .map((s) => s.sessionId)
+      .sort()
+      .join(',');
+
+    if (currentIdHash === this.lastSessionIdSet) return;
+
+    // Session set changed — reconcile stored order with live sessions
+    const liveIds = new Set(sessions.map((s) => s.sessionId));
+    const storedOrder = this.orderStore.getOrder();
+    const pruned = storedOrder.filter((id) => liveIds.has(id));
+
+    const prunedSet = new Set(pruned);
+    const newSessions = sessions
+      .filter((s) => !prunedSet.has(s.sessionId))
+      .sort((a, b) => {
+        const timeDiff = new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime();
+        return timeDiff !== 0 ? timeDiff : a.sessionId.localeCompare(b.sessionId);
+      })
+      .map((s) => s.sessionId);
+
+    const newOrder = [...pruned, ...newSessions];
+    this.lastSessionIdSet = currentIdHash;
+    this.cachedOrder = newOrder;
+
+    if (newOrder.join(',') !== storedOrder.join(',')) {
+      this.orderStore.setOrder(newOrder).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to persist reconciled order: ${err}`);
+      });
+    }
+  }
+
+  private applyCustomOrder(sessions: SessionInfo[]): SessionInfo[] {
+    this.reconcileOrderIfNeeded(sessions);
+    return this.sortByOrder(sessions, this.cachedOrder);
   }
 
   private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {

@@ -20,6 +20,10 @@ export const COLORS = {
   ANALYTICS_DRAWER_BG: 'var(--bg-secondary)',
   CODE_BLOCK_BG: 'rgba(0, 0, 0, 0.25)',
   INLINE_CODE_BG: 'rgba(0, 0, 0, 0.2)',
+  DRAG_HANDLE_HOVER: 'rgba(255, 255, 255, 0.5)',
+  DRAG_INDICATOR: 'rgba(0, 122, 204, 0.8)',
+  DRAG_INDICATOR_GLOW: 'rgba(0, 122, 204, 0.3)',
+  DRAG_GHOST_BG: 'rgba(30, 30, 30, 0.85)',
 } as const;
 
 export const SIZES = {

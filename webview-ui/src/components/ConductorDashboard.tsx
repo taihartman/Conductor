@@ -76,6 +76,10 @@ export function ConductorDashboard(): React.ReactElement {
     vscode.postMessage({ type: 'session:rename', sessionId, name });
   }
 
+  function handleReorder(sessionIds: string[]): void {
+    vscode.postMessage({ type: 'session:reorder', sessionIds });
+  }
+
   function handleRefresh(): void {
     vscode.postMessage({ type: 'refresh' });
   }
@@ -202,6 +206,7 @@ export function ConductorDashboard(): React.ReactElement {
                 onSessionClick={handleSessionClick}
                 onSessionDoubleClick={handleSessionDoubleClick}
                 onRename={handleRename}
+                onReorder={handleReorder}
                 searchQuery={searchQuery}
               />
             </div>

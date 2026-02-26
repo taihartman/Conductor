@@ -1,23 +1,11 @@
 import { create } from 'zustand';
 import type {
   SessionInfo,
-  SubAgentInfo,
-  SessionStatus,
   ActivityEvent,
   ConversationTurn,
   ToolStatEntry,
   TokenSummary,
 } from '@shared/types';
-
-export type {
-  SessionInfo,
-  SubAgentInfo,
-  SessionStatus,
-  ActivityEvent,
-  ConversationTurn,
-  ToolStatEntry,
-  TokenSummary,
-};
 
 export type FilterMode = 'recent' | 'active' | 'all';
 export type DetailViewMode = 'overview-only' | 'split' | 'expanded';
@@ -35,11 +23,15 @@ interface DashboardState {
   analyticsDrawerOpen: boolean;
   searchQuery: string;
 
-  setSessions: (sessions: SessionInfo[]) => void;
+  setFullState: (
+    sessions: SessionInfo[],
+    activities: ActivityEvent[],
+    conversation: ConversationTurn[],
+    toolStats: ToolStatEntry[],
+    tokenSummaries: TokenSummary[]
+  ) => void;
   setActivities: (activities: ActivityEvent[]) => void;
   setConversation: (turns: ConversationTurn[]) => void;
-  setToolStats: (stats: ToolStatEntry[]) => void;
-  setTokenSummaries: (summaries: TokenSummary[]) => void;
   setFocusedSession: (sessionId: string | null) => void;
   setFilterMode: (mode: FilterMode) => void;
   setDetailViewMode: (mode: DetailViewMode) => void;
@@ -68,11 +60,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   analyticsDrawerOpen: false,
   searchQuery: '',
 
-  setSessions: (sessions) => set({ sessions }),
+  setFullState: (sessions, activities, conversation, toolStats, tokenSummaries) =>
+    set({ sessions, activities, conversation, toolStats, tokenSummaries }),
   setActivities: (activities) => set({ activities }),
   setConversation: (turns) => set({ conversation: turns }),
-  setToolStats: (stats) => set({ toolStats: stats }),
-  setTokenSummaries: (summaries) => set({ tokenSummaries: summaries }),
   setFocusedSession: (sessionId) =>
     set({
       focusedSessionId: sessionId,

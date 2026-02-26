@@ -44,4 +44,6 @@ export const UI_STRINGS = {
   SEARCH_PLACEHOLDER: 'Search sessions...',
   SEARCH_CLEAR: 'Clear search',
   SEARCH_NO_RESULTS: 'No sessions match your search',
+  DRAG_HANDLE_LABEL: 'Drag to reorder',
+  DRAG_HANDLE_TOOLTIP: 'Drag to reorder sessions',
 } as const;
