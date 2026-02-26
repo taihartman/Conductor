@@ -37,6 +37,10 @@
       {
         "command": "conductor.refresh",
         "title": "Conductor: Refresh"
+      },
+      {
+        "command": "conductor.launchSession",
+        "title": "Conductor: Launch Claude Session"
       }
     ],
     "configuration": {
@@ -44,10 +48,18 @@
       "properties": {
         "conductor.additionalWorkspaces": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "scope": "window",
           "markdownDescription": "Additional workspace paths to monitor for Claude Code sessions. Use absolute paths (e.g., `/Users/you/other-project`)."
+        },
+        "conductor.launchCommand": {
+          "type": "string",
+          "default": "claude",
+          "scope": "window",
+          "markdownDescription": "Shell command used to launch Claude Code sessions from Conductor. Change this if `claude` is not in your PATH or you use a custom wrapper."
         }
       }
     }
@@ -70,16 +82,17 @@
     "format:check": "prettier --check \"src/**/*.ts\""
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.20.0",
     "eslint": "^9.18.0",
     "eslint-plugin-jsdoc": "~50.6.0",
-    "typescript": "^5.3.0",
-    "typescript-eslint": "^8.0.0",
     "prettier": "^3.2.0",
     "typedoc": "^0.28.0",
     "typedoc-plugin-markdown": "^4.0.0",
+    "typescript": "^5.3.0",
+    "typescript-eslint": "^8.0.0",
     "vitest": "^1.2.0"
   }
 }

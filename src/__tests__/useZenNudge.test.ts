@@ -40,6 +40,7 @@ function makeSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
     totalCacheReadTokens: 0,
     totalCacheCreationTokens: 0,
     isSubAgent: false,
+    isArtifact: false,
     filePath: '/tmp/test.jsonl',
     ...overrides,
   };
@@ -80,13 +81,11 @@ describe('shouldNudge', () => {
     expect(shouldNudge(sessions, now - 50_000, THRESHOLD, now)).toBe(false);
   });
 
-  it('ignores sub-agent sessions when checking busy state', () => {
+  it('works with pre-filtered sessions (sub-agents excluded by caller)', () => {
     const now = Date.now();
-    const sessions = [
-      makeSession({ sessionId: 'parent', status: 'working' }),
-      makeSession({ sessionId: 'child', status: 'idle', isSubAgent: true }),
-    ];
-    // Only parent is considered — it's busy, so nudge should activate
+    // ConductorDashboard pre-filters sub-agents before passing to useZenNudge,
+    // so shouldNudge only sees parent sessions.
+    const sessions = [makeSession({ sessionId: 'parent', status: 'working' })];
     expect(shouldNudge(sessions, now - 50_000, THRESHOLD, now)).toBe(true);
   });
 

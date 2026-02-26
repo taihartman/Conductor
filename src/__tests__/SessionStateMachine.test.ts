@@ -791,6 +791,23 @@ describe('SessionStateMachine', () => {
       expect(sm.pendingQuestion?.isPlanApproval).toBeUndefined();
     });
 
+    it('turn_duration preserves plan approval waiting state', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [{ type: 'tool_use', id: 'tu-exit', name: 'ExitPlanMode', input: {} }],
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
+
+      const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 2000 });
+      sm.handleSystemRecord(record);
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
+    });
+
     it('plan approval cleared on user text input', () => {
       // Get to plan approval waiting
       sm.handleAssistantRecord(
@@ -811,6 +828,146 @@ describe('SessionStateMachine', () => {
       );
       expect(sm.status).toBe('working');
       expect(sm.pendingQuestion).toBeUndefined();
+    });
+  });
+
+  // =========================================================================
+  // Tool approval detection (stop_reason: 'tool_use')
+  // =========================================================================
+
+  describe('tool approval detection', () => {
+    it('tool_use + stop_reason "tool_use" → waiting with isToolApproval', () => {
+      const record = makeAssistantRecord({
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu-bash', name: 'Bash', input: { command: 'git commit' } },
+          ],
+          stop_reason: 'tool_use',
+        },
+      });
+      const status = sm.handleAssistantRecord(record);
+      expect(status).toBe('waiting');
+      expect(sm.pendingQuestion).toBeDefined();
+      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
+      expect(sm.pendingQuestion?.pendingTools).toHaveLength(1);
+      expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Bash');
+    });
+
+    it('tool_use + stop_reason null → working (streaming, no tool approval)', () => {
+      const record = makeAssistantRecord({
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu-read', name: 'Read', input: { file_path: '/foo' } },
+          ],
+          stop_reason: null,
+        },
+      });
+      const status = sm.handleAssistantRecord(record);
+      expect(status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
+    });
+
+    it('multiple tool_use blocks → pendingTools array has all tools', () => {
+      const record = makeAssistantRecord({
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu-1', name: 'Bash', input: { command: 'npm test' } },
+            { type: 'tool_use', id: 'tu-2', name: 'Write', input: { file_path: '/a.ts' } },
+          ],
+          stop_reason: 'tool_use',
+        },
+      });
+      sm.handleAssistantRecord(record);
+      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
+      expect(sm.pendingQuestion?.pendingTools).toHaveLength(2);
+      expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Bash');
+      expect(sm.pendingQuestion?.pendingTools?.[1].toolName).toBe('Write');
+    });
+
+    it('AskUserQuestion takes priority over tool approval stop_reason', () => {
+      const record = makeAssistantRecord({
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu-bash', name: 'Bash', input: { command: 'ls' } },
+            {
+              type: 'tool_use',
+              id: 'tu-ask',
+              name: 'AskUserQuestion',
+              input: { questions: [{ question: 'Continue?' }] },
+            },
+          ],
+          stop_reason: 'tool_use',
+        },
+      });
+      sm.handleAssistantRecord(record);
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isToolApproval).toBeUndefined();
+      expect(sm.pendingQuestion?.question).toBe('Continue?');
+    });
+
+    it('tool_result clears tool approval → working', () => {
+      // Get to tool approval waiting
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [
+              { type: 'tool_use', id: 'tu-bash', name: 'Bash', input: { command: 'git push' } },
+            ],
+            stop_reason: 'tool_use',
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
+
+      // Tool result arrives (user approved in terminal)
+      sm.handleUserRecord(
+        makeUserRecord({
+          message: {
+            content: [{ type: 'tool_result', tool_use_id: 'tu-bash', content: 'ok' }],
+          },
+        })
+      );
+      expect(sm.status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
+    });
+
+    it('turn_duration preserves tool approval waiting state', () => {
+      sm.handleAssistantRecord(
+        makeAssistantRecord({
+          message: {
+            content: [
+              { type: 'tool_use', id: 'tu-edit', name: 'Edit', input: { file_path: '/b.ts' } },
+            ],
+            stop_reason: 'tool_use',
+          },
+        })
+      );
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
+
+      const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 4000 });
+      sm.handleSystemRecord(record);
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
+    });
+
+    it('filters out AskUserQuestion and plan tools from pendingTools list', () => {
+      const record = makeAssistantRecord({
+        message: {
+          content: [
+            { type: 'tool_use', id: 'tu-bash', name: 'Bash', input: { command: 'echo hi' } },
+            { type: 'tool_use', id: 'tu-exit', name: 'ExitPlanMode', input: {} },
+          ],
+          // Note: this scenario shouldn't happen (plan tool takes priority),
+          // but if it did, the filter ensures plan tools are excluded from pendingTools
+          stop_reason: 'tool_use',
+        },
+      });
+      // hasPlanTool is true, so plan approval takes priority over tool approval
+      sm.handleAssistantRecord(record);
+      expect(sm.status).toBe('waiting');
+      expect(sm.pendingQuestion?.isPlanApproval).toBe(true);
     });
   });
 });

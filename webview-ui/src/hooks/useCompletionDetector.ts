@@ -1,8 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { SessionInfo } from '@shared/types';
-
-const ACTIVE_STATUSES = new Set(['working', 'thinking']);
-const COMPLETED_STATUSES = new Set(['done', 'idle']);
+import { STATUS_GROUPS } from '@shared/sharedConstants';
 
 /**
  * Pure function: counts how many sessions transitioned from active to completed.
@@ -19,8 +17,8 @@ export function countCompletions(
     const prevSession = prevSessions.find((s) => s.sessionId === session.sessionId);
     if (
       prevSession &&
-      ACTIVE_STATUSES.has(prevSession.status) &&
-      COMPLETED_STATUSES.has(session.status)
+      STATUS_GROUPS.ACTIVE.has(prevSession.status) &&
+      STATUS_GROUPS.COMPLETED.has(session.status)
     ) {
       count++;
     }

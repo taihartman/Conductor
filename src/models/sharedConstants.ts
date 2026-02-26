@@ -1,0 +1,105 @@
+/**
+ * @module sharedConstants
+ *
+ * Constants shared between the extension backend and webview frontend.
+ * Extension code imports directly; webview uses the `@shared/sharedConstants` alias.
+ *
+ * @remarks
+ * All values use `as const` to preserve literal types for TypeScript narrowing.
+ */
+
+import type { SessionStatus } from './types';
+
+// ---------------------------------------------------------------------------
+// Content block type discriminators
+// ---------------------------------------------------------------------------
+
+/** Content block type discriminators within assistant/user messages. */
+export const CONTENT_BLOCK_TYPES = {
+  TEXT: 'text',
+  TOOL_USE: 'tool_use',
+  TOOL_RESULT: 'tool_result',
+} as const;
+
+// ---------------------------------------------------------------------------
+// JSONL record type discriminators
+// ---------------------------------------------------------------------------
+
+/** JSONL record type discriminators for the top-level `type` field. */
+export const RECORD_TYPES = {
+  ASSISTANT: 'assistant',
+  USER: 'user',
+  SYSTEM: 'system',
+  SUMMARY: 'summary',
+  PROGRESS: 'progress',
+  QUEUE_OPERATION: 'queue-operation',
+  FILE_HISTORY_SNAPSHOT: 'file-history-snapshot',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Session status values
+// ---------------------------------------------------------------------------
+
+/** Session status values for the six-state machine. */
+export const SESSION_STATUSES = {
+  WORKING: 'working',
+  THINKING: 'thinking',
+  WAITING: 'waiting',
+  ERROR: 'error',
+  DONE: 'done',
+  IDLE: 'idle',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Activity event type discriminators
+// ---------------------------------------------------------------------------
+
+/** Activity event type discriminators for the dashboard feed. */
+export const ACTIVITY_TYPES = {
+  TOOL_CALL: 'tool_call',
+  TOOL_RESULT: 'tool_result',
+  TEXT: 'text',
+  TURN_END: 'turn_end',
+  USER_INPUT: 'user_input',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Conversation turn roles & system events
+// ---------------------------------------------------------------------------
+
+/** Conversation turn role discriminators. */
+export const CONVERSATION_ROLES = {
+  USER: 'user',
+  ASSISTANT: 'assistant',
+  SYSTEM: 'system',
+} as const;
+
+/** System event subtypes within ConversationTurn. */
+export const SYSTEM_EVENTS = {
+  TURN_END: 'turn_end',
+  SUMMARY: 'summary',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Session status groups (common filtering patterns)
+// ---------------------------------------------------------------------------
+
+/** Reusable session status groupings for filtering and comparison. */
+export const STATUS_GROUPS = {
+  /** Statuses indicating active AI work (tool calls or text generation). */
+  ACTIVE: new Set<SessionStatus>([SESSION_STATUSES.WORKING, SESSION_STATUSES.THINKING]),
+  /** Statuses indicating the turn is finished. */
+  COMPLETED: new Set<SessionStatus>([SESSION_STATUSES.DONE, SESSION_STATUSES.IDLE]),
+  /** Statuses where the session is ready for user input. */
+  READY_FOR_INPUT: new Set<SessionStatus>([
+    SESSION_STATUSES.WAITING,
+    SESSION_STATUSES.DONE,
+    SESSION_STATUSES.IDLE,
+  ]),
+  /** Statuses included in the "active" dashboard filter. */
+  ACTIVE_FILTER: new Set<SessionStatus>([
+    SESSION_STATUSES.WORKING,
+    SESSION_STATUSES.THINKING,
+    SESSION_STATUSES.WAITING,
+  ]),
+} as const;

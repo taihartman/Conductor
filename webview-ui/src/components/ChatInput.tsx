@@ -89,9 +89,10 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
         flexShrink: 0,
       }}
     >
+      {/* AskUserQuestion — shows question text + clickable option buttons */}
       {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion &&
-       !session.pendingQuestion.isPlanApproval && (
-        <div style={{ marginBottom: '6px' }}>
+       !session.pendingQuestion.isPlanApproval && !session.pendingQuestion.isToolApproval && (
+        <div style={{ marginBottom: '6px' /* inline-ok */ }}>
           {session.pendingQuestion.header && (
             <div style={{
               fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
@@ -100,7 +101,7 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
               {session.pendingQuestion.header}
             </div>
           )}
-          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', lineHeight: 1.4 }}>{/* inline-ok */}
+          <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px', lineHeight: 1.4 /* inline-ok */ }}>
             <strong>{UI_STRINGS.CHAT_INPUT_WAITING_PREFIX}</strong> {session.pendingQuestion.question}
           </div>
           {session.pendingQuestion.options.length > 0 && (
@@ -110,6 +111,70 @@ export function ChatInput({ sessionId, session }: ChatInputProps): React.ReactEl
               disabled={sending}
             />
           )}
+        </div>
+      )}
+
+      {/* Plan approval — approve button + feedback textarea */}
+      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion?.isPlanApproval && (
+        <div style={{ marginBottom: '6px' /* inline-ok */ }}>
+          <div style={{
+            fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
+            letterSpacing: '0.5px', color: 'var(--status-waiting)', marginBottom: '4px', // inline-ok
+          }}>
+            {UI_STRINGS.CHAT_INPUT_PLAN_APPROVAL_PREFIX}
+          </div>
+          <div style={{
+            fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '6px', // inline-ok
+            fontStyle: 'italic',
+          }}>
+            {UI_STRINGS.CHAT_INPUT_PLAN_APPROVAL_HINT}
+          </div>
+          <button
+            onClick={() => {
+              setSending(true);
+              vscode.postMessage({ type: 'user:send-input', sessionId, text: 'yes' });
+            }}
+            disabled={sending}
+            style={{
+              padding: '4px 12px', // inline-ok
+              fontSize: '11px', // inline-ok
+              fontWeight: 600,
+              borderRadius: '4px',
+              border: 'none',
+              cursor: sending ? 'default' : 'pointer',
+              background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
+              color: '#fff', // inline-ok: button text color
+              opacity: sending ? 0.5 : 1, // inline-ok
+            }}
+          >
+            {UI_STRINGS.CHAT_INPUT_PLAN_APPROVE_BUTTON}
+          </button>
+        </div>
+      )}
+
+      {/* Tool approval — informational display of pending tools */}
+      {session.status === SESSION_STATUSES.WAITING && session.pendingQuestion?.isToolApproval && (
+        <div style={{ marginBottom: '6px' /* inline-ok */ }}>
+          <div style={{
+            fontSize: '10px', fontWeight: 600, textTransform: 'uppercase', // inline-ok
+            letterSpacing: '0.5px', color: 'var(--status-waiting)', marginBottom: '4px', // inline-ok
+          }}>
+            {UI_STRINGS.CHAT_INPUT_TOOL_APPROVAL_PREFIX}
+          </div>
+          {session.pendingQuestion.pendingTools?.map((tool, i) => (
+            <div key={i} style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' /* inline-ok */ }}>
+              <strong>{tool.toolName}</strong>
+              {tool.inputSummary && (
+                <span style={{ color: 'var(--fg-secondary)' }}> — {tool.inputSummary}</span>
+              )}
+            </div>
+          ))}
+          <div style={{
+            fontSize: '11px', color: 'var(--fg-muted)', marginTop: '4px', // inline-ok
+            fontStyle: 'italic',
+          }}>
+            {UI_STRINGS.CHAT_INPUT_TOOL_APPROVAL_HINT}
+          </div>
         </div>
       )}
 

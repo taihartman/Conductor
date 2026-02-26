@@ -172,8 +172,10 @@ describe('SessionTracker replay detection', () => {
 
   it('preserves active status for session with recent timestamps', () => {
     const recentTimestamp = new Date().toISOString(); // right now
+    // Use stop_reason: null to simulate streaming/mid-generation (working state).
+    // stop_reason: "tool_use" now correctly produces "waiting" (tool approval).
     const records = JsonlParser.parseString(
-      `{"type":"assistant","slug":"live-session","sessionId":"live1","timestamp":"${recentTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
+      `{"type":"assistant","slug":"live-session","sessionId":"live1","timestamp":"${recentTimestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`
     );
 
     feedRecords(tracker, 'live1', records);
@@ -468,7 +470,9 @@ describe('SessionTracker inactivity timeout', () => {
   }
 
   function makeToolUseRecord(sessionId: string, timestamp: string): string {
-    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+    // Use stop_reason: null (streaming) to produce "working" status.
+    // stop_reason: "tool_use" now correctly produces "waiting" (tool approval).
+    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
   }
 
   function makeWaitingRecord(sessionId: string, timestamp: string): string {
@@ -703,7 +707,8 @@ describe('SessionTracker per-session activity storage', () => {
   });
 
   function makeToolUseRecord(sessionId: string, timestamp: string, toolId: string): string {
-    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg-${toolId}","type":"message","role":"assistant","content":[{"type":"tool_use","id":"${toolId}","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
+    // Use stop_reason: null (streaming) to produce "working" status.
+    return `{"type":"assistant","slug":"${sessionId}","sessionId":"${sessionId}","timestamp":"${timestamp}","message":{"model":"claude-sonnet-4-6","id":"msg-${toolId}","type":"message","role":"assistant","content":[{"type":"tool_use","id":"${toolId}","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":null,"stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":50}}}`;
   }
 
   it('per-session activity storage prevents cross-session eviction', () => {
@@ -1165,5 +1170,141 @@ describe('SessionTracker auto-naming', () => {
     // pendingPlanCheck should have been set to true then consumed by handleRecords
     // After handleRecords, planTitleChecked should be true (the async check was triggered)
     expect(session.planTitleChecked).toBe(true);
+  });
+});
+
+describe('SessionTracker artifact detection', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  it('marks episodic memory session as artifact', () => {
+    const now = new Date().toISOString();
+
+    // Feed a user record with "Context: " prefix (episodic memory pattern)
+    feedRecords(
+      tracker,
+      'episodic-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"episodic-1","slug":"episodic-1","timestamp":"${now}","message":{"role":"user","content":"Context: This summary will be shown to Claude in future conversations..."}}`
+      )
+    );
+    // Feed an assistant record to get the session into a completed state
+    feedRecords(
+      tracker,
+      'episodic-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"episodic-1","slug":"episodic-1","timestamp":"${now}","message":{"model":"claude-haiku-4-5-20251001","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Done"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}}}`
+      )
+    );
+    // Feed turn_duration to mark it as done
+    feedRecords(
+      tracker,
+      'episodic-1',
+      JsonlParser.parseString(
+        `{"type":"system","subtype":"turn_duration","durationMs":500,"timestamp":"${now}"}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'episodic-1');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(true);
+  });
+
+  it('marks empty completed session as artifact', () => {
+    // Just create the file, no records at all — session stays idle with 0 turns/tokens
+    const sessionFile = {
+      sessionId: 'empty-1',
+      filePath: '/tmp/test/empty-1.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'empty-1');
+    expect(session).toBeDefined();
+    // idle status + 0 turns + 0 tokens = artifact
+    expect(session!.isArtifact).toBe(true);
+  });
+
+  it('does not mark normal session as artifact', () => {
+    const now = new Date().toISOString();
+
+    feedRecords(
+      tracker,
+      'normal-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"normal-1","slug":"normal-1","timestamp":"${now}","message":{"role":"user","content":"Help me fix the bug"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'normal-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"normal-1","slug":"normal-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"I'll help you fix that bug."}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":200,"output_tokens":100}}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'normal-1',
+      JsonlParser.parseString(
+        `{"type":"system","subtype":"turn_duration","durationMs":3000,"timestamp":"${now}"}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'normal-1');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(false);
+  });
+
+  it('does not mark active empty session as artifact', () => {
+    const now = new Date().toISOString();
+
+    // Feed a user record to make it active (thinking), but no assistant response yet
+    feedRecords(
+      tracker,
+      'active-empty',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"active-empty","slug":"active-empty","timestamp":"${now}","message":{"role":"user","content":"Do something"}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'active-empty');
+    expect(session).toBeDefined();
+    // 0 turns, 0 tokens, but status is thinking (not completed) — should NOT be artifact
+    expect(session!.isArtifact).toBe(false);
+  });
+
+  it('does not mark session with tokens but 0 turns as artifact', () => {
+    const now = new Date().toISOString();
+
+    // Feed an assistant record with tokens but no turn completion
+    feedRecords(
+      tracker,
+      'tokens-no-turns',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"tokens-no-turns","slug":"tokens-no-turns","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"Read","input":{"file_path":"/test.ts"}}],"stop_reason":"tool_use","stop_sequence":null,"usage":{"input_tokens":500,"output_tokens":200}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'tokens-no-turns');
+    expect(session).toBeDefined();
+    // Has tokens, so not an empty artifact even if 0 turns
+    expect(session!.isArtifact).toBe(false);
   });
 });

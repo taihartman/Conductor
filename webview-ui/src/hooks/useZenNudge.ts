@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import type { SessionInfo } from '@shared/types';
+import { STATUS_GROUPS } from '@shared/sharedConstants';
 
 const ZEN_NUDGE_IDLE_THRESHOLD_MS = 45_000;
 const ZEN_NUDGE_CHECK_INTERVAL_MS = 5_000;
@@ -37,10 +38,8 @@ export function shouldNudge(
   thresholdMs: number,
   nowMs: number
 ): boolean {
-  const parentSessions = sessions.filter((s) => !s.isSubAgent);
-  const allBusy =
-    parentSessions.length > 0 &&
-    parentSessions.every((s) => s.status === 'working' || s.status === 'thinking');
+  // sessions already pre-filtered by ConductorDashboard (no sub-agents, no hidden artifacts)
+  const allBusy = sessions.length > 0 && sessions.every((s) => STATUS_GROUPS.ACTIVE.has(s.status));
   const idleLongEnough = nowMs - lastInteractionMs >= thresholdMs;
   return allBusy && idleLongEnough;
 }

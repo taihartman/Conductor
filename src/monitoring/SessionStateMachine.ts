@@ -148,11 +148,16 @@ export class SessionStateMachine implements ISessionStateMachine {
     let hasAskUser = false;
     let hasPlanTool = false;
     let askUserQuestion: PendingQuestion | undefined;
+    const toolBlocks: Array<{ name: string; input: Record<string, unknown> }> = [];
 
     for (const block of msg.content || []) {
       if (block.type === CONTENT_BLOCK_TYPES.TOOL_USE) {
         hasToolUse = true;
         const toolBlock = block as ToolUseContentBlock;
+        toolBlocks.push({
+          name: toolBlock.name,
+          input: (toolBlock.input ?? {}) as Record<string, unknown>,
+        });
         if (toolBlock.name === SPECIAL_NAMES.ASK_USER_QUESTION) {
           hasAskUser = true;
           const questions = toolBlock.input?.questions;
@@ -201,7 +206,26 @@ export class SessionStateMachine implements ISessionStateMachine {
         multiSelect: false,
         isPlanApproval: true,
       };
+    } else if (hasToolUse && msg.stop_reason === SPECIAL_NAMES.TOOL_USE_STOP_REASON) {
+      // Model finished, tools need permission/execution in terminal.
+      // Flickering safe: SessionTracker processes records in batches (1s polling),
+      // and the 100ms IPC debounce means same-batch tool_use+tool_result never
+      // produces a visible waiting state. Only tools pending >1s show waiting.
+      this._status = SESSION_STATUSES.WAITING;
+      const pendingTools = toolBlocks
+        .filter(
+          (t) => !USER_BLOCKING_TOOLS.has(t.name) && t.name !== SPECIAL_NAMES.ASK_USER_QUESTION
+        )
+        .map((t) => ({ toolName: t.name, inputSummary: '', input: t.input }));
+      this._pendingQuestion = {
+        question: '',
+        options: [],
+        multiSelect: false,
+        isToolApproval: true,
+        pendingTools,
+      };
     } else if (hasToolUse) {
+      // tool_use without stop_reason 'tool_use' (streaming, mid-generation) → working
       this._status = SESSION_STATUSES.WORKING;
       this._pendingQuestion = undefined;
     } else if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON) {

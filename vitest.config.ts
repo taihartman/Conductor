@@ -11,6 +11,7 @@ export default defineConfig({
   resolve: {
     alias: {
       vscode: path.resolve(__dirname, 'src/__tests__/__mocks__/vscode.ts'),
+      '@shared': path.resolve(__dirname, 'src/models'),
     },
   },
 });
