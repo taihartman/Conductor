@@ -23,9 +23,11 @@ export const LOG_PREFIX = {
   SCANNER: '[Conductor:Scanner]',
   NAME_STORE: '[Conductor:NameStore]',
   ORDER_STORE: '[Conductor:OrderStore]',
+  VISIBILITY_STORE: '[Conductor:VisibilityStore]',
   TERMINAL_BRIDGE: '[Conductor:TerminalBridge]',
   SESSION_LAUNCHER: '[Conductor:SessionLauncher]',
   PTY_BRIDGE: '[Conductor:PtyBridge]',
+  RESUME_BRIDGE: '[Conductor:ResumeBridge]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -49,6 +51,8 @@ export const TRUNCATION = {
   CONVERSATION_TEXT_MAX: 8000,
   TOOL_INPUT_MAX: 2000,
   TOOL_OUTPUT_MAX: 4000,
+  /** Max length for tool approval description in overview card. */
+  TOOL_APPROVAL_DESC_MAX: 80,
 } as const;
 
 /** Maximum conversation turns stored per session (FIFO eviction). */
@@ -71,10 +75,14 @@ export const TERMINAL_DETECTION = {
 export const PTY = {
   /** Ring buffer size in bytes for webview reconnect replay. */
   RING_BUFFER_SIZE: 102400,
-  /** Maximum time (ms) to wait for a JSONL session file after spawning claude. */
-  CORRELATION_TIMEOUT_MS: 15000,
-  /** Polling interval (ms) when waiting for the new session file to appear. */
-  CORRELATION_POLL_MS: 500,
+  /** Display name for the VS Code terminal created by SessionLauncher. */
+  TERMINAL_NAME: 'Claude (Conductor)',
+} as const;
+
+/** Configuration for `claude --resume --print` process management. */
+export const RESUME = {
+  /** Maximum time (ms) to wait for a --resume --print process before killing it. */
+  TIMEOUT_MS: 120_000,
 } as const;
 
 /** VS Code globalState keys for persistent storage. */
@@ -87,6 +95,10 @@ export const STORAGE_KEYS = {
 export const WORKSPACE_STATE_KEYS = {
   /** Ordered list of session IDs representing the user's custom card order. */
   SESSION_ORDER: 'conductor.sessionOrder',
+  /** Set of session IDs manually hidden by the user. */
+  HIDDEN_SESSIONS: 'conductor.hiddenSessions',
+  /** Set of artifact session IDs the user explicitly unhid. */
+  FORCE_SHOWN_SESSIONS: 'conductor.forceShownSessions',
 } as const;
 
 /** Timing values (ms) for session state transitions. */
@@ -98,6 +110,14 @@ export const TIMING = {
    * sequences (typically 1–4s gap), short enough to feel responsive.
    */
   INTERMISSION_MS: 5_000,
+  /**
+   * Interval for polling after a session launch to discover the JSONL file.
+   * The FileSystemWatcher usually detects it faster, but this poll is a
+   * safety net for platforms where FS events are unreliable.
+   */
+  LAUNCH_DISCOVERY_POLL_MS: 500,
+  /** Maximum number of poll attempts before giving up (500ms * 20 = 10s). */
+  LAUNCH_DISCOVERY_MAX_RETRIES: 20,
 } as const;
 
 /** Well-known record and tool names used for special-case handling. */
@@ -110,6 +130,14 @@ export const SPECIAL_NAMES = {
   END_TURN_STOP_REASON: 'end_turn',
   WRITE_TOOL: 'Write',
   TASK_TOOL: 'Task',
+  /** stop_reason value indicating model finished and tools await permission/execution. */
+  TOOL_USE_STOP_REASON: 'tool_use',
+} as const;
+
+/** Heuristics for identifying system-generated artifact sessions. */
+export const ARTIFACT_DETECTION = {
+  /** Prefix on autoName that identifies episodic-memory plugin sessions. */
+  EPISODIC_MEMORY_PREFIX: 'Context: ',
 } as const;
 
 // Re-export shared constants so extension code has a single import point.
