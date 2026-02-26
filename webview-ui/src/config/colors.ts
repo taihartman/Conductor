@@ -24,6 +24,12 @@ export const COLORS = {
   DRAG_INDICATOR: 'rgba(0, 122, 204, 0.8)',
   DRAG_INDICATOR_GLOW: 'rgba(0, 122, 204, 0.3)',
   DRAG_GHOST_BG: 'rgba(30, 30, 30, 0.85)',
+  CHAT_INPUT_BG: 'rgba(0, 0, 0, 0.15)',
+  CHAT_INPUT_BORDER: 'rgba(255, 255, 255, 0.1)',
+  QUESTION_OPTION_BG: 'rgba(255, 255, 255, 0.04)',
+  QUESTION_OPTION_HOVER_BG: 'rgba(255, 255, 255, 0.08)',
+  QUESTION_OPTION_BORDER: 'rgba(255, 255, 255, 0.1)',
+  QUESTION_OPTION_BADGE_BG: 'rgba(255, 255, 255, 0.1)',
 } as const;
 
 export const SIZES = {

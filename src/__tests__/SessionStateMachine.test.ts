@@ -114,7 +114,11 @@ describe('SessionStateMachine', () => {
     });
     const status = sm.handleAssistantRecord(record);
     expect(status).toBe('waiting');
-    expect(sm.pendingQuestion).toBe('Which approach?');
+    expect(sm.pendingQuestion).toEqual({
+      question: 'Which approach?',
+      options: [],
+      multiSelect: false,
+    });
   });
 
   // --- Tool result (non-error) → working ---
@@ -245,7 +249,11 @@ describe('SessionStateMachine', () => {
     const record = makeSystemRecord({ subtype: 'turn_duration', durationMs: 3000 });
     const status = sm.handleSystemRecord(record);
     expect(status).toBe('waiting');
-    expect(sm.pendingQuestion).toBe('Which option?');
+    expect(sm.pendingQuestion).toEqual({
+      question: 'Which option?',
+      options: [],
+      multiSelect: false,
+    });
   });
 
   // --- User input on done → working ---
@@ -425,5 +433,103 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('idle');
     sm.setStatus('done');
     expect(sm.status).toBe('done');
+  });
+
+  // --- PendingQuestion extraction ---
+
+  it('extracts question with options from AskUserQuestion', () => {
+    const record = makeAssistantRecord({
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu-q',
+            name: 'AskUserQuestion',
+            input: {
+              questions: [
+                {
+                  question: 'Which DB?',
+                  header: 'Database',
+                  options: [
+                    { label: 'PostgreSQL', description: 'Relational DB' },
+                    { label: 'MongoDB', description: 'Document store' },
+                  ],
+                  multiSelect: false,
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    sm.handleAssistantRecord(record);
+    expect(sm.pendingQuestion).toEqual({
+      question: 'Which DB?',
+      header: 'Database',
+      options: [
+        { label: 'PostgreSQL', description: 'Relational DB' },
+        { label: 'MongoDB', description: 'Document store' },
+      ],
+      multiSelect: false,
+    });
+  });
+
+  it('extracts legacy single-question format', () => {
+    const record = makeAssistantRecord({
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu-legacy',
+            name: 'AskUserQuestion',
+            input: { question: 'Pick one' },
+          },
+        ],
+      },
+    });
+    sm.handleAssistantRecord(record);
+    expect(sm.pendingQuestion).toEqual({
+      question: 'Pick one',
+      options: [],
+      multiSelect: false,
+    });
+  });
+
+  it('treats empty question string as undefined', () => {
+    const record = makeAssistantRecord({
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu-empty',
+            name: 'AskUserQuestion',
+            input: { questions: [{ question: '' }] },
+          },
+        ],
+      },
+    });
+    sm.handleAssistantRecord(record);
+    expect(sm.pendingQuestion).toBeUndefined();
+  });
+
+  it('defaults to empty options array when options field is missing', () => {
+    const record = makeAssistantRecord({
+      message: {
+        content: [
+          {
+            type: 'tool_use',
+            id: 'tu-noopts',
+            name: 'AskUserQuestion',
+            input: { questions: [{ question: 'Q' }] },
+          },
+        ],
+      },
+    });
+    sm.handleAssistantRecord(record);
+    expect(sm.pendingQuestion).toEqual({
+      question: 'Q',
+      options: [],
+      multiSelect: false,
+    });
   });
 });

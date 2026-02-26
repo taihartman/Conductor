@@ -288,6 +288,24 @@ export interface ConversationTurn {
 }
 
 // ---------------------------------------------------------------------------
+// AskUserQuestion types
+// ---------------------------------------------------------------------------
+
+/** A single option within a pending AskUserQuestion prompt. */
+export interface PendingQuestionOption {
+  label: string;
+  description: string;
+}
+
+/** Structured representation of an AskUserQuestion prompt awaiting user input. */
+export interface PendingQuestion {
+  question: string;
+  header?: string;
+  options: PendingQuestionOption[];
+  multiSelect: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Dashboard state types
 // ---------------------------------------------------------------------------
 
@@ -357,6 +375,8 @@ export interface SessionInfo {
   customName?: string;
   /** Auto-generated name from first user prompt or plan file title. */
   autoName?: string;
+  /** Whether this session was launched from within Conductor (has PTY ownership). */
+  launchedByConductor?: boolean;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
   /** Most recent tool name (for overview display). */
@@ -365,8 +385,8 @@ export interface SessionInfo {
   lastToolInput?: string;
   /** Most recent assistant text message (truncated to TEXT_MAX). */
   lastAssistantText?: string;
-  /** Question text when status is 'waiting'. */
-  pendingQuestion?: string;
+  /** Structured question when status is 'waiting'. */
+  pendingQuestion?: PendingQuestion;
 }
 
 /**

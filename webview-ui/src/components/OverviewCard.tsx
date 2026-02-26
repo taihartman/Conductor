@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { SessionInfo } from '@shared/types';
+import { SESSION_STATUSES, STATUS_GROUPS } from '@shared/sharedConstants';
 import { StatusDot } from './StatusDot';
 import { EnsembleIndicator } from './EnsembleIndicator';
 import { STATUS_CONFIG } from '../config/statusConfig';
@@ -26,29 +27,29 @@ interface OverviewCardProps {
 
 function getContextText(session: SessionInfo): string {
   switch (session.status) {
-    case 'working':
+    case SESSION_STATUSES.WORKING:
       if (session.lastToolName) {
         return session.lastToolInput
           ? `${session.lastToolName} — ${session.lastToolInput}`
           : session.lastToolName;
       }
       return UI_STRINGS.CONTEXT_WORKING;
-    case 'thinking':
+    case SESSION_STATUSES.THINKING:
       return UI_STRINGS.CONTEXT_THINKING;
-    case 'waiting':
+    case SESSION_STATUSES.WAITING:
       return session.pendingQuestion
-        ? session.pendingQuestion.length > 80
-          ? session.pendingQuestion.substring(0, 80) + '...'
-          : session.pendingQuestion
+        ? session.pendingQuestion.question.length > 80
+          ? session.pendingQuestion.question.substring(0, 80) + '...'
+          : session.pendingQuestion.question
         : UI_STRINGS.CONTEXT_WAITING;
-    case 'error':
+    case SESSION_STATUSES.ERROR:
       return UI_STRINGS.CONTEXT_ERROR;
-    case 'done':
+    case SESSION_STATUSES.DONE:
       if (session.lastAssistantText) {
         return session.lastAssistantText;
       }
       return `${UI_STRINGS.CONTEXT_DONE} \u2014 ${timeAgo(session.lastActivityAt)}`;
-    case 'idle':
+    case SESSION_STATUSES.IDLE:
       return timeAgo(session.lastActivityAt);
     default:
       return '';
@@ -66,7 +67,7 @@ export function OverviewCard({
   isDragging,
 }: OverviewCardProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
-  const isActive = session.status === 'working' || session.status === 'thinking';
+  const isActive = STATUS_GROUPS.ACTIVE.has(session.status);
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [isHovered, setIsHovered] = useState(false);
@@ -233,7 +234,7 @@ export function OverviewCard({
         style={{
           fontSize: '11px', // inline-ok
           color: isActive ? 'var(--fg-primary)' : 'var(--fg-secondary)',
-          fontFamily: session.status === 'working' ? 'var(--font-mono)' : undefined,
+          fontFamily: session.status === SESSION_STATUSES.WORKING ? 'var(--font-mono)' : undefined,
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',

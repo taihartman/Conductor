@@ -19,7 +19,9 @@ import {
   ToolResultContentBlock,
   TextContentBlock,
   normalizeUserContent,
+  PendingQuestion,
 } from '../models/types';
+import { SPECIAL_NAMES, CONTENT_BLOCK_TYPES, SESSION_STATUSES } from '../constants';
 
 /**
  * Interface for the session state machine.
@@ -29,7 +31,7 @@ export interface ISessionStateMachine {
   readonly status: SessionStatus;
   readonly lastStopReason: string | null;
   readonly lastAssistantTime: number;
-  readonly pendingQuestion: string | undefined;
+  readonly pendingQuestion: PendingQuestion | undefined;
   readonly recentErrorCount: number;
   handleAssistantRecord(record: AssistantRecord): SessionStatus;
   handleUserRecord(record: UserRecord): SessionStatus;
@@ -57,10 +59,10 @@ interface ErrorEntry {
  * Does NOT manage: session metadata, activity events, analytics.
  */
 export class SessionStateMachine implements ISessionStateMachine {
-  private _status: SessionStatus = 'idle';
+  private _status: SessionStatus = SESSION_STATUSES.IDLE;
   private _lastStopReason: string | null = null;
   private _lastAssistantTime = 0;
-  private _pendingQuestion: string | undefined;
+  private _pendingQuestion: PendingQuestion | undefined;
   private intermissionTimer?: ReturnType<typeof setTimeout>;
   private readonly recentErrors: ErrorEntry[] = [];
   private readonly onStateChanged: () => void;
@@ -101,7 +103,7 @@ export class SessionStateMachine implements ISessionStateMachine {
    *
    * @returns The question string, or `undefined` if not waiting
    */
-  get pendingQuestion(): string | undefined {
+  get pendingQuestion(): PendingQuestion | undefined {
     return this._pendingQuestion;
   }
 
@@ -138,38 +140,60 @@ export class SessionStateMachine implements ISessionStateMachine {
 
     let hasToolUse = false;
     let hasAskUser = false;
-    let askUserQuestion: string | undefined;
+    let askUserQuestion: PendingQuestion | undefined;
 
     for (const block of msg.content || []) {
-      if (block.type === 'tool_use') {
+      if (block.type === CONTENT_BLOCK_TYPES.TOOL_USE) {
         hasToolUse = true;
         const toolBlock = block as ToolUseContentBlock;
-        if (toolBlock.name === 'AskUserQuestion') {
+        if (toolBlock.name === SPECIAL_NAMES.ASK_USER_QUESTION) {
           hasAskUser = true;
           const questions = toolBlock.input?.questions;
           if (Array.isArray(questions) && questions.length > 0) {
-            askUserQuestion = String((questions[0] as Record<string, unknown>)?.question || '');
+            // TODO: Only questions[0] is extracted; multi-question support not yet implemented
+            const q = questions[0] as Record<string, unknown>;
+            const questionText = String(q.question || '').trim();
+            if (questionText) {
+              askUserQuestion = {
+                question: questionText,
+                header: q.header ? String(q.header) : undefined,
+                options: Array.isArray(q.options)
+                  ? (q.options as Array<Record<string, unknown>>).map((o) => ({
+                      label: String(o.label || ''),
+                      description: String(o.description || ''),
+                    }))
+                  : [],
+                multiSelect: Boolean(q.multiSelect),
+              };
+            }
           } else if (typeof toolBlock.input?.question === 'string') {
-            askUserQuestion = toolBlock.input.question;
+            const questionText = toolBlock.input.question.trim();
+            if (questionText) {
+              askUserQuestion = {
+                question: questionText,
+                options: [],
+                multiSelect: false,
+              };
+            }
           }
         }
       }
     }
 
     if (hasAskUser) {
-      this._status = 'waiting';
+      this._status = SESSION_STATUSES.WAITING;
       this._pendingQuestion = askUserQuestion;
     } else if (hasToolUse) {
-      this._status = 'working';
+      this._status = SESSION_STATUSES.WORKING;
       this._pendingQuestion = undefined;
-    } else if (msg.stop_reason === 'end_turn') {
+    } else if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON) {
       // Text-only end_turn: Claude finished its turn
       this._pendingQuestion = undefined;
-      this._status = 'done';
+      this._status = SESSION_STATUSES.DONE;
     } else {
       // Text-only, not end_turn: thinking
-      if (this._status !== 'working' && this._status !== 'error') {
-        this._status = 'thinking';
+      if (this._status !== SESSION_STATUSES.WORKING && this._status !== SESSION_STATUSES.ERROR) {
+        this._status = SESSION_STATUSES.THINKING;
       }
       this._pendingQuestion = undefined;
     }
@@ -194,29 +218,29 @@ export class SessionStateMachine implements ISessionStateMachine {
 
     const blocks = normalizeUserContent(msg.content);
     for (const block of blocks) {
-      if (block.type === 'tool_result') {
+      if (block.type === CONTENT_BLOCK_TYPES.TOOL_RESULT) {
         const resultBlock = block as ToolResultContentBlock;
         if (resultBlock.is_error) {
           this.recordError('unknown');
           if (this.recentErrorCount >= ERROR_THRESHOLD) {
-            this._status = 'error';
+            this._status = SESSION_STATUSES.ERROR;
           } else {
-            this._status = 'working';
+            this._status = SESSION_STATUSES.WORKING;
           }
         } else {
           // Non-error result clears error state
-          if (this._status === 'error') {
+          if (this._status === SESSION_STATUSES.ERROR) {
             this.recentErrors.length = 0;
           }
-          this._status = 'working';
+          this._status = SESSION_STATUSES.WORKING;
         }
         this._pendingQuestion = undefined;
-      } else if (block.type === 'text') {
+      } else if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
           // User text input resets error tracking
           this.recentErrors.length = 0;
-          this._status = 'working';
+          this._status = SESSION_STATUSES.WORKING;
           this._pendingQuestion = undefined;
         }
       }
@@ -232,11 +256,11 @@ export class SessionStateMachine implements ISessionStateMachine {
    * @returns The new session status after processing
    */
   handleSystemRecord(record: SystemRecord): SessionStatus {
-    if (record.subtype === 'turn_duration') {
+    if (record.subtype === SPECIAL_NAMES.TURN_DURATION_SUBTYPE) {
       this.cancelTimers();
       // Turn finished — only mark done if not already waiting for AskUserQuestion
-      if (this._status !== 'waiting') {
-        this._status = 'done';
+      if (this._status !== SESSION_STATUSES.WAITING) {
+        this._status = SESSION_STATUSES.DONE;
       }
     }
     return this._status;
@@ -250,8 +274,8 @@ export class SessionStateMachine implements ISessionStateMachine {
    */
   handleProgressRecord(_record: ProgressRecord): SessionStatus {
     this.cancelTimers();
-    if (this._status !== 'working') {
-      this._status = 'thinking';
+    if (this._status !== SESSION_STATUSES.WORKING) {
+      this._status = SESSION_STATUSES.THINKING;
     }
     return this._status;
   }
