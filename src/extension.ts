@@ -3,6 +3,10 @@ import { DashboardPanel } from './DashboardPanel';
 import { SessionTracker } from './monitoring/SessionTracker';
 import { SessionNameStore } from './persistence/SessionNameStore';
 import { SessionOrderStore } from './persistence/SessionOrderStore';
+import { SessionVisibilityStore } from './persistence/SessionVisibilityStore';
+import { ResumeBridge } from './terminal/ResumeBridge';
+import { SessionLauncher } from './terminal/SessionLauncher';
+import { PtyBridge } from './terminal/PtyBridge';
 import {
   OUTPUT_CHANNEL_NAME,
   STATUS_BAR_TEXT,
@@ -35,9 +39,30 @@ export function activate(context: vscode.ExtensionContext): void {
   const orderStore = new SessionOrderStore(context.workspaceState, outputChannel);
   context.subscriptions.push(orderStore);
 
+  const visibilityStore = new SessionVisibilityStore(context.workspaceState, outputChannel);
+  context.subscriptions.push(visibilityStore);
+
+  const resumeBridge = new ResumeBridge(outputChannel);
+  context.subscriptions.push(resumeBridge);
+
+  const sessionLauncher = new SessionLauncher(outputChannel);
+  context.subscriptions.push(sessionLauncher);
+
+  const ptyBridge = new PtyBridge();
+  context.subscriptions.push(ptyBridge);
+
   const openCommand = vscode.commands.registerCommand(COMMANDS.OPEN, () => {
     console.log(`${LOG_PREFIX.EXTENSION} Open command invoked`);
-    DashboardPanel.createOrShow(context, sessionTracker!, nameStore, orderStore);
+    DashboardPanel.createOrShow(
+      context,
+      sessionTracker!,
+      nameStore,
+      orderStore,
+      visibilityStore,
+      resumeBridge,
+      sessionLauncher,
+      ptyBridge
+    );
   });
 
   const refreshCommand = vscode.commands.registerCommand(COMMANDS.REFRESH, () => {
@@ -46,7 +71,22 @@ export function activate(context: vscode.ExtensionContext): void {
     DashboardPanel.currentPanel?.postFullState();
   });
 
-  context.subscriptions.push(openCommand, refreshCommand);
+  const launchCommand = vscode.commands.registerCommand(COMMANDS.LAUNCH_SESSION, () => {
+    console.log(`${LOG_PREFIX.EXTENSION} Launch session command invoked`);
+    sessionLauncher
+      .launch()
+      .then((sessionId) => {
+        console.log(`${LOG_PREFIX.EXTENSION} Session launched: ${sessionId}`);
+        // Delegate to DashboardPanel if open — it handles PtyBridge, status, and polling
+        DashboardPanel.currentPanel?.notifySessionLaunched(sessionId);
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.EXTENSION} Failed to launch session: ${err}`);
+        vscode.window.showErrorMessage(`Failed to launch Claude session: ${err}`);
+      });
+  });
+
+  context.subscriptions.push(openCommand, refreshCommand, launchCommand);
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = STATUS_BAR_TEXT;

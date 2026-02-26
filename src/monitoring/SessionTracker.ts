@@ -38,6 +38,7 @@ import {
   TRUNCATION,
   SPECIAL_NAMES,
   SETTINGS,
+  ARTIFACT_DETECTION,
   CONTENT_BLOCK_TYPES,
   RECORD_TYPES,
   ACTIVITY_TYPES,
@@ -386,6 +387,32 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
+   * Determine whether a session is a system artifact that should be hidden by default.
+   *
+   * @param session - The session to evaluate.
+   * @returns `true` if the session is detected as an artifact.
+   *
+   * @remarks
+   * Detects two categories:
+   * - Episodic memory sessions: autoName starts with {@link ARTIFACT_DETECTION.EPISODIC_MEMORY_PREFIX}
+   * - Empty sessions: 0 turns, 0 tokens, and a completed status (done/idle)
+   */
+  private isSessionArtifact(session: SessionInfo): boolean {
+    if (session.autoName?.startsWith(ARTIFACT_DETECTION.EPISODIC_MEMORY_PREFIX)) {
+      return true;
+    }
+    if (
+      session.turnCount === 0 &&
+      session.totalInputTokens === 0 &&
+      session.totalOutputTokens === 0 &&
+      STATUS_GROUPS.COMPLETED.has(session.status)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * Build the hierarchical session list with continuation merging,
    * parent-child grouping, and chronological sorting.
    *
@@ -456,7 +483,13 @@ export class SessionTracker implements vscode.Disposable {
       // Attach child agents (from all continuation members)
       sessionInfo.childAgents = childrenByParent.get(primaryId) || [];
 
+      sessionInfo.isArtifact = this.isSessionArtifact(sessionInfo);
       parentSessions.push(sessionInfo);
+    }
+
+    // Compute artifact flag for orphaned agents
+    for (const agent of orphanedAgents) {
+      agent.isArtifact = this.isSessionArtifact(agent);
     }
 
     return [...parentSessions, ...orphanedAgents].sort((a, b) => {
@@ -558,6 +591,7 @@ export class SessionTracker implements vscode.Disposable {
           totalCacheReadTokens: 0,
           totalCacheCreationTokens: 0,
           isSubAgent: file.isSubAgent,
+          isArtifact: false,
           parentSessionId: file.parentSessionId,
           filePath: file.filePath,
         },
@@ -762,6 +796,20 @@ export class SessionTracker implements vscode.Disposable {
     // Sync pendingQuestion from state machine
     session.info.pendingQuestion = session.stateMachine.pendingQuestion;
 
+    // Apply tool input summarization for tool approval display
+    if (session.info.pendingQuestion?.isToolApproval && session.info.pendingQuestion.pendingTools) {
+      session.info.pendingQuestion = {
+        ...session.info.pendingQuestion,
+        pendingTools: session.info.pendingQuestion.pendingTools.map((t) => ({
+          toolName: t.toolName,
+          inputSummary: summarizeToolInput(
+            t.toolName,
+            (t as unknown as { input: Record<string, unknown> }).input ?? {}
+          ),
+        })),
+      };
+    }
+
     // Track turn count on end_turn with no tool_use
     const hasToolUse = (msg.content || []).some((b) => b.type === CONTENT_BLOCK_TYPES.TOOL_USE);
     if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON && !hasToolUse) {
@@ -855,6 +903,9 @@ export class SessionTracker implements vscode.Disposable {
     // Delegate status transition to state machine
     session.stateMachine.handleUserRecord(record);
 
+    // Sync pendingQuestion from state machine (tool_result clears tool approval)
+    session.info.pendingQuestion = session.stateMachine.pendingQuestion;
+
     this.conversationBuilder.processUser(session.info.sessionId, record);
   }
 
@@ -916,6 +967,27 @@ export class SessionTracker implements vscode.Disposable {
     this.continuationGrouper.ensureFresh(this.sessions);
     const primaryId = this.continuationGrouper.getPrimaryId(sessionId);
     return this.continuationGrouper.getMostRecentMember(primaryId, this.sessions);
+  }
+
+  /**
+   * Get all session IDs that are members of continuation groups.
+   * Used by DashboardPanel to include member IDs as "live" during stale ID pruning,
+   * preventing incorrect removal of hidden IDs that map to merged-away members.
+   *
+   * @returns Set of all continuation group member IDs
+   */
+  getContinuationMemberIds(): Set<string> {
+    this.continuationGrouper.ensureFresh(this.sessions);
+    const memberIds = new Set<string>();
+    for (const session of this.sessions.values()) {
+      if (session.info.isSubAgent) continue;
+      const primaryId = this.continuationGrouper.getPrimaryId(session.info.sessionId);
+      const members = this.continuationGrouper.getGroupMembers(primaryId);
+      for (const memberId of members) {
+        memberIds.add(memberId);
+      }
+    }
+    return memberIds;
   }
 
   /**
@@ -990,6 +1062,7 @@ export class SessionTracker implements vscode.Disposable {
       totalCacheReadTokens,
       totalCacheCreationTokens,
       isSubAgent: false,
+      isArtifact: false, // computed in assembleSessionList() after merge
       filePath: primary.info.filePath,
       autoName,
       customName,
