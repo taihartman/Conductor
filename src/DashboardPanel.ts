@@ -20,7 +20,7 @@ import { ISessionOrderStore } from './persistence/ISessionOrderStore';
 import { ISessionVisibilityStore } from './persistence/ISessionVisibilityStore';
 import { ISessionLauncher } from './terminal/ISessionLauncher';
 import { IPtyBridge } from './terminal/IPtyBridge';
-import { PANEL_TITLE, LOG_PREFIX, TIMING } from './constants';
+import { PANEL_TITLE, LOG_PREFIX, TIMING, PTY } from './constants';
 
 /**
  * Singleton webview panel for the Conductor.
@@ -361,7 +361,7 @@ export class DashboardPanel implements vscode.Disposable {
     if (this.sessionLauncher.isLaunchedSession(targetId)) {
       // Path A: targetId itself owns a terminal
       console.log(`${LOG_PREFIX.PANEL} Input → direct write to ${targetId}`);
-      this.sessionLauncher.writeInput(targetId, text + '\n');
+      this.sessionLauncher.writeInput(targetId, text + PTY.INPUT_SUBMIT);
       this.postInputStatus(sessionId, 'sent');
       return;
     }
@@ -372,7 +372,7 @@ export class DashboardPanel implements vscode.Disposable {
       console.log(
         `${LOG_PREFIX.PANEL} Input → group member write via ${launchedMember} (target was ${targetId})`
       );
-      this.sessionLauncher.writeInput(launchedMember, text + '\n');
+      this.sessionLauncher.writeInput(launchedMember, text + PTY.INPUT_SUBMIT);
       this.postInputStatus(sessionId, 'sent');
       return;
     }

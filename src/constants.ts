@@ -77,6 +77,12 @@ export const PTY = {
   TERMINAL_NAME: 'Claude (Conductor)',
   /** Display name for VS Code terminals created by adopting an external session. */
   RESUMED_TERMINAL_NAME: 'Claude (Resumed)',
+  /**
+   * Carriage return sent after user input to simulate pressing Enter.
+   * PTYs expect `\r` (CR) — NOT `\n` (LF). Using `\n` appends a line feed
+   * that the terminal won't interpret as "submit".
+   */
+  INPUT_SUBMIT: '\r',
 } as const;
 
 /** VS Code globalState keys for persistent storage. */

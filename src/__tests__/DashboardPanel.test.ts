@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { PTY } from '../constants';
 
 // --- Mock vscode ---
 let messageHandler: ((msg: any) => void) | undefined;
@@ -182,7 +183,7 @@ describe('DashboardPanel message routing', () => {
 
       sendMessage({ type: 'user:send-input', sessionId: 'session-abc', text: 'hello' });
 
-      expect(launcher.writeInput).toHaveBeenCalledWith('session-abc', 'hello\n');
+      expect(launcher.writeInput).toHaveBeenCalledWith('session-abc', `hello${PTY.INPUT_SUBMIT}`);
       const status = lastPosted('user:input-status');
       expect(status).toEqual({
         type: 'user:input-status',
@@ -201,7 +202,7 @@ describe('DashboardPanel message routing', () => {
 
       sendMessage({ type: 'user:send-input', sessionId: 'merged-id', text: 'hello' });
 
-      expect(launcher.writeInput).toHaveBeenCalledWith('cont-1', 'hello\n');
+      expect(launcher.writeInput).toHaveBeenCalledWith('cont-1', `hello${PTY.INPUT_SUBMIT}`);
       const status = lastPosted('user:input-status');
       expect(status.status).toBe('sent');
     });
