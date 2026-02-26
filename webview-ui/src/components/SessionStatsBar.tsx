@@ -17,6 +17,11 @@ interface SessionStatsBarProps {
   onToggleExpand: () => void;
   onToggleAnalytics?: () => void;
   analyticsOpen?: boolean;
+  isTerminalMode?: boolean;
+  isAdopting?: boolean;
+  /** True when adoption is permanently blocked (e.g. nested Claude session). */
+  isAdoptDisabled?: boolean;
+  onToggleView?: () => void;
 }
 
 export function SessionStatsBar({
@@ -26,6 +31,10 @@ export function SessionStatsBar({
   onToggleExpand,
   onToggleAnalytics,
   analyticsOpen,
+  isTerminalMode,
+  isAdopting,
+  isAdoptDisabled,
+  onToggleView,
 }: SessionStatsBarProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
 
@@ -104,6 +113,32 @@ export function SessionStatsBar({
       )}
 
       <span style={{ flex: 1 }} />
+
+      {onToggleView && (
+        <button
+          onClick={onToggleView}
+          disabled={isAdopting || isAdoptDisabled}
+          title={isAdoptDisabled ? UI_STRINGS.NESTED_SESSION_TOOLTIP : UI_STRINGS.TERMINAL_TOGGLE_TOOLTIP}
+          style={{
+            padding: '2px 6px',
+            fontSize: '11px', // inline-ok
+            borderRadius: '3px',
+            border: `1px solid ${isTerminalMode ? 'var(--accent)' : 'var(--border)'}`,
+            backgroundColor: isTerminalMode ? 'var(--accent, #007acc)' : 'var(--bg-card)', // inline-ok
+            color: isTerminalMode ? '#fff' : 'var(--fg-secondary)', // inline-ok: button text
+            cursor: isAdopting ? 'wait' : isAdoptDisabled ? 'not-allowed' : 'pointer',
+            fontFamily: 'inherit',
+            lineHeight: 1,
+            opacity: isAdopting || isAdoptDisabled ? 0.5 : 1, // inline-ok: disabled state
+          }}
+        >
+          {isAdopting
+            ? UI_STRINGS.CHAT_INPUT_ADOPTING
+            : isTerminalMode
+              ? UI_STRINGS.CONVERSATION_VIEW_TOGGLE
+              : UI_STRINGS.TERMINAL_VIEW_TOGGLE}
+        </button>
+      )}
 
       {onToggleAnalytics && (
         <button

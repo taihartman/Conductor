@@ -41,6 +41,17 @@
       {
         "command": "conductor.launchSession",
         "title": "Conductor: Launch Claude Session"
+      },
+      {
+        "command": "conductor.quickPickSession",
+        "title": "Conductor: Switch Session"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "conductor.quickPickSession",
+        "key": "ctrl+shift+;",
+        "mac": "cmd+shift+;"
       }
     ],
     "configuration": {
@@ -60,6 +71,13 @@
           "default": "claude",
           "scope": "window",
           "markdownDescription": "Shell command used to launch Claude Code sessions from Conductor. Change this if `claude` is not in your PATH or you use a custom wrapper."
+        },
+        "conductor.autoHidePatterns": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": [],
+          "scope": "window",
+          "markdownDescription": "Substring patterns matched against session names (case-insensitive). Matching sessions are auto-hidden as artifacts."
         }
       }
     }
@@ -76,6 +94,7 @@
     "lint": "tsc --noEmit",
     "lint:eslint": "eslint \"src/**/*.ts\"",
     "lint:all": "npm run lint && npm run lint:eslint",
+    "postinstall": "node -e \"const fs=require('fs'),p=require('path'),d=p.join(__dirname,'node_modules/node-pty/prebuilds',process.platform+'-'+process.arch,'spawn-helper');try{fs.chmodSync(d,0o755);console.log('Fixed spawn-helper permissions')}catch(e){}\"",
     "prepare": "[ -d .git ] && git config core.hooksPath .githooks || true",
     "docs": "typedoc",
     "format": "prettier --write \"src/**/*.ts\"",
@@ -94,5 +113,8 @@
     "typescript": "^5.3.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^1.2.0"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
   }
 }

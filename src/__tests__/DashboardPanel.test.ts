@@ -1,9 +1,28 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PTY } from '../constants';
+import { PTY, LAUNCH_MODES, WORKSPACE_STATE_KEYS } from '../constants';
+import type { LaunchMode } from '../constants';
 
 // --- Mock vscode ---
 let messageHandler: ((msg: any) => void) | undefined;
 const postedMessages: any[] = [];
+
+const mockConfigValues: Record<string, unknown> = {};
+const mockConfigUpdate = vi.fn(() => Promise.resolve());
+
+/** In-memory mock for vscode.Memento (workspaceState / globalState). */
+const mockWorkspaceStateStore: Record<string, unknown> = {};
+function createMockMemento(): any {
+  return {
+    get: vi.fn((key: string, defaultValue?: unknown) => {
+      return key in mockWorkspaceStateStore ? mockWorkspaceStateStore[key] : defaultValue;
+    }),
+    update: vi.fn((key: string, value: unknown) => {
+      mockWorkspaceStateStore[key] = value;
+      return Promise.resolve();
+    }),
+    keys: vi.fn(() => Object.keys(mockWorkspaceStateStore)),
+  };
+}
 
 vi.mock('vscode', () => ({
   Uri: {
@@ -35,6 +54,7 @@ vi.mock('vscode', () => ({
     activeTextEditor: undefined,
   },
   ViewColumn: { One: 1 },
+  ConfigurationTarget: { Global: 1, Workspace: 2 },
   EventEmitter: class MockEmitter {
     private listeners: Function[] = [];
     event = (listener: Function) => {
@@ -47,6 +67,14 @@ vi.mock('vscode', () => ({
     dispose() {
       this.listeners = [];
     }
+  },
+  workspace: {
+    getConfiguration: vi.fn(() => ({
+      get: vi.fn((key: string, defaultValue?: unknown) => {
+        return key in mockConfigValues ? mockConfigValues[key] : defaultValue;
+      }),
+      update: mockConfigUpdate,
+    })),
   },
 }));
 
@@ -82,10 +110,18 @@ function createMockNameStore(): any {
 }
 
 function createMockOrderStore(): any {
+  let order: string[] = [];
   return {
     onOrderChanged: vi.fn(() => ({ dispose: vi.fn() })),
-    getOrder: vi.fn(() => []),
-    setOrder: vi.fn(() => Promise.resolve()),
+    getOrder: vi.fn(() => order),
+    setOrder: vi.fn((newOrder: string[]) => {
+      order = newOrder;
+      return Promise.resolve();
+    }),
+    /** Test helper: set internal order without going through setOrder mock */
+    _setOrderDirect(newOrder: string[]): void {
+      order = newOrder;
+    },
   };
 }
 
@@ -111,21 +147,44 @@ function createMockSessionLauncher(): any {
     resize: vi.fn(),
     launch: vi.fn(() => Promise.resolve('new-session-id')),
     resume: vi.fn(() => Promise.resolve()),
+    transfer: vi.fn(() => Promise.resolve()),
+    setPreSpawnCallback: vi.fn(),
     dispose: vi.fn(),
   };
 }
 
 function createMockPtyBridge(): any {
+  const buffers = new Map<string, string>();
   return {
-    registerSession: vi.fn(),
-    unregisterSession: vi.fn(),
-    pushData: vi.fn(),
+    registerSession: vi.fn((id: string) => {
+      if (!buffers.has(id)) buffers.set(id, '');
+    }),
+    unregisterSession: vi.fn((id: string) => {
+      buffers.delete(id);
+    }),
+    pushData: vi.fn((id: string, data: string) => {
+      buffers.set(id, (buffers.get(id) ?? '') + data);
+    }),
+    getBufferedData: vi.fn((id: string) => buffers.get(id) ?? ''),
+    getRegisteredSessionIds: vi.fn(() => new Set(buffers.keys())),
+    hasSession: vi.fn((id: string) => buffers.has(id)),
+  };
+}
+
+function createMockLaunchedSessionStore(): any {
+  return {
+    getAll: vi.fn(() => []),
+    save: vi.fn(() => Promise.resolve()),
+    remove: vi.fn(() => Promise.resolve()),
+    prune: vi.fn(() => Promise.resolve()),
+    dispose: vi.fn(),
   };
 }
 
 function createMockContext(): any {
   return {
     extensionUri: { fsPath: '/ext', scheme: 'file', path: '/ext' },
+    workspaceState: createMockMemento(),
   };
 }
 
@@ -153,6 +212,11 @@ describe('DashboardPanel message routing', () => {
     postedMessages.length = 0;
     messageHandler = undefined;
 
+    // Reset workspace state store between tests
+    for (const key of Object.keys(mockWorkspaceStateStore)) {
+      delete mockWorkspaceStateStore[key];
+    }
+
     tracker = createMockSessionTracker();
     launcher = createMockSessionLauncher();
     ptyBridge = createMockPtyBridge();
@@ -164,7 +228,8 @@ describe('DashboardPanel message routing', () => {
       createMockOrderStore(),
       createMockVisibilityStore(),
       launcher,
-      ptyBridge
+      ptyBridge,
+      createMockLaunchedSessionStore()
     );
 
     // Clear the initial state:full post from createOrShow
@@ -214,8 +279,8 @@ describe('DashboardPanel message routing', () => {
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
       launcher.isLaunchedSession.mockReturnValue(false);
 
-      const resumePromise = Promise.resolve();
-      launcher.resume.mockReturnValue(resumePromise);
+      const transferPromise = Promise.resolve();
+      launcher.transfer.mockReturnValue(transferPromise);
 
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'hi' });
 
@@ -226,8 +291,8 @@ describe('DashboardPanel message routing', () => {
       expect(adopting).toBeDefined();
       expect(adopting.sessionId).toBe('ext-session');
 
-      // Wait for resume to complete
-      await resumePromise;
+      // Wait for transfer to complete
+      await transferPromise;
       // Flush microtask queue for .then()
       await vi.waitFor(() => {
         const sent = postedMessages.find(
@@ -236,7 +301,7 @@ describe('DashboardPanel message routing', () => {
         expect(sent).toBeDefined();
       });
 
-      expect(launcher.resume).toHaveBeenCalledWith('ext-session', 'hi', undefined);
+      expect(launcher.transfer).toHaveBeenCalledWith('ext-session', 'hi', undefined);
       expect(ptyBridge.registerSession).toHaveBeenCalledWith('ext-session');
     });
 
@@ -245,8 +310,8 @@ describe('DashboardPanel message routing', () => {
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
       launcher.isLaunchedSession.mockReturnValue(false);
 
-      const resumePromise = Promise.reject(new Error('spawn failed'));
-      launcher.resume.mockReturnValue(resumePromise);
+      const transferPromise = Promise.reject(new Error('spawn failed'));
+      launcher.transfer.mockReturnValue(transferPromise);
 
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'hi' });
 
@@ -265,15 +330,15 @@ describe('DashboardPanel message routing', () => {
       launcher.isLaunchedSession.mockReturnValue(false);
 
       // Never-resolving promise to keep adoption in-flight
-      launcher.resume.mockReturnValue(new Promise(() => {}));
+      launcher.transfer.mockReturnValue(new Promise(() => {}));
 
       // First send — triggers adoption
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'first' });
-      expect(launcher.resume).toHaveBeenCalledTimes(1);
+      expect(launcher.transfer).toHaveBeenCalledTimes(1);
 
       // Second send — same session, should be deduped
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'second' });
-      expect(launcher.resume).toHaveBeenCalledTimes(1); // NOT 2
+      expect(launcher.transfer).toHaveBeenCalledTimes(1); // NOT 2
 
       const sentMessages = postedMessages.filter(
         (m) => m.type === 'user:input-status' && m.status === 'sent'
@@ -286,7 +351,7 @@ describe('DashboardPanel message routing', () => {
     it('posts adopted status on success', async () => {
       tracker.getMostRecentContinuationMember.mockReturnValue('ext-session');
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
-      launcher.resume.mockResolvedValue(undefined);
+      launcher.transfer.mockResolvedValue(undefined);
 
       sendMessage({ type: 'session:adopt', sessionId: 'ext-session' });
 
@@ -304,7 +369,7 @@ describe('DashboardPanel message routing', () => {
     it('posts error status on failure', async () => {
       tracker.getMostRecentContinuationMember.mockReturnValue('ext-session');
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
-      launcher.resume.mockRejectedValue(new Error('no claude'));
+      launcher.transfer.mockRejectedValue(new Error('no claude'));
 
       sendMessage({ type: 'session:adopt', sessionId: 'ext-session' });
 
@@ -316,5 +381,436 @@ describe('DashboardPanel message routing', () => {
         expect(error.error).toContain('no claude');
       });
     });
+  });
+
+  describe('PTY buffer replay on ready', () => {
+    it('sends pty:buffers on ready when buffers exist', () => {
+      // Pre-populate the mock PtyBridge with buffered data
+      ptyBridge.registerSession('s1');
+      ptyBridge.pushData('s1', 'hello world');
+
+      // Session must be in tracker so it doesn't get pruned as orphan
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 's1', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      sendMessage({ type: 'ready' });
+
+      const bufferMsg = lastPosted('pty:buffers');
+      expect(bufferMsg).toBeDefined();
+      expect(bufferMsg.buffers).toEqual({ s1: 'hello world' });
+    });
+
+    it('does not send pty:buffers on ready when no buffers exist', () => {
+      sendMessage({ type: 'ready' });
+
+      const bufferMsg = postedMessages.find((m) => m.type === 'pty:buffers');
+      expect(bufferMsg).toBeUndefined();
+    });
+
+    it('replays buffers for multiple sessions', () => {
+      ptyBridge.registerSession('s1');
+      ptyBridge.pushData('s1', 'output-1');
+      ptyBridge.registerSession('s2');
+      ptyBridge.pushData('s2', 'output-2');
+
+      // Both sessions must be in tracker
+      tracker.getState.mockReturnValue({
+        sessions: [
+          { sessionId: 's1', startedAt: '2026-01-01' },
+          { sessionId: 's2', startedAt: '2026-01-01' },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      sendMessage({ type: 'ready' });
+
+      const bufferMsg = lastPosted('pty:buffers');
+      expect(bufferMsg).toBeDefined();
+      expect(bufferMsg.buffers).toEqual({ s1: 'output-1', s2: 'output-2' });
+    });
+  });
+
+  describe('onSessionExit does NOT unregister PtyBridge', () => {
+    it('does not call unregisterSession when session exits', () => {
+      // Get the onSessionExit callback registered in the constructor
+      const exitCallback = launcher.onSessionExit.mock.calls[0]?.[0];
+
+      // If onSessionExit was registered (it was removed), the callback would unregister.
+      // Since we removed it, onSessionExit should either not be registered or the callback
+      // should not call unregisterSession.
+      if (exitCallback) {
+        ptyBridge.unregisterSession.mockClear();
+        exitCallback({ sessionId: 'exited-session' });
+        expect(ptyBridge.unregisterSession).not.toHaveBeenCalled();
+      }
+      // If no callback was registered at all, that also satisfies the requirement
+    });
+  });
+
+  describe('launchedByConductor persistence via conductorLaunchedIds', () => {
+    it('marks session as launchedByConductor after launch even when isLaunchedSession returns false', () => {
+      // Simulate a launched session by calling notifySessionLaunched
+      const panel = DashboardPanel.currentPanel!;
+      panel.notifySessionLaunched('launched-1');
+      postedMessages.length = 0;
+
+      // isLaunchedSession returns false (session exited, removed from SessionLauncher)
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      // Set up tracker to return the session
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'launched-1', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      expect(stateMsg).toBeDefined();
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'launched-1');
+      expect(session?.launchedByConductor).toBe(true);
+    });
+  });
+
+  describe('pruning orphaned PTY buffers', () => {
+    it('removes buffers for sessions not in SessionTracker', () => {
+      // Register and populate a buffer for a session
+      ptyBridge.registerSession('orphan-1');
+      ptyBridge.pushData('orphan-1', 'stale data');
+
+      // SessionTracker returns no sessions — orphan-1 should be pruned
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      expect(ptyBridge.unregisterSession).toHaveBeenCalledWith('orphan-1');
+    });
+
+    it('retains buffers for sessions still tracked', () => {
+      ptyBridge.registerSession('active-1');
+      ptyBridge.pushData('active-1', 'keep this');
+
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'active-1', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      ptyBridge.unregisterSession.mockClear();
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      // unregisterSession should NOT have been called for active-1
+      const unregisterCalls = ptyBridge.unregisterSession.mock.calls.map((c: any[]) => c[0]);
+      expect(unregisterCalls).not.toContain('active-1');
+    });
+  });
+
+  describe('settings IPC', () => {
+    beforeEach(() => {
+      // Reset config values between tests
+      for (const key of Object.keys(mockConfigValues)) {
+        delete mockConfigValues[key];
+      }
+      mockConfigUpdate.mockClear();
+    });
+
+    it('responds to settings:get with settings:current', () => {
+      mockConfigValues['conductor.autoHidePatterns'] = ['test-pattern', 'other'];
+
+      sendMessage({ type: 'settings:get' });
+
+      const settingsMsg = lastPosted('settings:current');
+      expect(settingsMsg).toBeDefined();
+      expect(settingsMsg.autoHidePatterns).toEqual(['test-pattern', 'other']);
+    });
+
+    it('sends settings:current on ready', () => {
+      mockConfigValues['conductor.autoHidePatterns'] = ['pattern-a'];
+
+      sendMessage({ type: 'ready' });
+
+      const settingsMsg = lastPosted('settings:current');
+      expect(settingsMsg).toBeDefined();
+      expect(settingsMsg.autoHidePatterns).toEqual(['pattern-a']);
+    });
+
+    it('defaults to empty array when no patterns configured', () => {
+      // mockConfigValues has no entry for autoHidePatterns → get returns undefined → ?? []
+
+      sendMessage({ type: 'settings:get' });
+
+      const settingsMsg = lastPosted('settings:current');
+      expect(settingsMsg).toBeDefined();
+      expect(settingsMsg.autoHidePatterns).toEqual([]);
+    });
+
+    it('writes to config and responds on settings:update', async () => {
+      sendMessage({ type: 'settings:update', autoHidePatterns: ['new-pattern'] });
+
+      expect(mockConfigUpdate).toHaveBeenCalledWith(
+        'conductor.autoHidePatterns',
+        ['new-pattern'],
+        1 // ConfigurationTarget.Global
+      );
+
+      // Wait for the promise chain (.then) to complete
+      await vi.waitFor(() => {
+        const settingsMsg = lastPosted('settings:current');
+        expect(settingsMsg).toBeDefined();
+      });
+    });
+  });
+
+  describe('launch mode forwarding', () => {
+    it('forwards mode from session:launch IPC to sessionLauncher.launch()', async () => {
+      launcher.launch.mockResolvedValue('yolo-session-id');
+
+      sendMessage({ type: 'session:launch', mode: 'yolo' });
+
+      expect(launcher.launch).toHaveBeenCalledWith(undefined, 'yolo');
+    });
+
+    it('forwards cwd and mode together from session:launch', async () => {
+      launcher.launch.mockResolvedValue('new-session-id');
+
+      sendMessage({ type: 'session:launch', cwd: '/home/user/project', mode: 'normal' });
+
+      expect(launcher.launch).toHaveBeenCalledWith('/home/user/project', 'normal');
+    });
+
+    it('defaults to normal mode when mode is omitted from session:launch', async () => {
+      launcher.launch.mockResolvedValue('normal-session-id');
+
+      sendMessage({ type: 'session:launch' });
+
+      expect(launcher.launch).toHaveBeenCalledWith(undefined, LAUNCH_MODES.NORMAL);
+    });
+  });
+
+  describe('launch mode persistence (session:set-launch-mode)', () => {
+    it('persists launch mode to workspace state on session:set-launch-mode', () => {
+      sendMessage({ type: 'session:set-launch-mode', mode: 'yolo' });
+
+      expect(mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.LAUNCH_MODE]).toBe('yolo');
+    });
+
+    it('sends launch-mode:current on ready with persisted mode', () => {
+      // Pre-set the persisted mode
+      mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.LAUNCH_MODE] = 'yolo';
+
+      sendMessage({ type: 'ready' });
+
+      const modeMsg = lastPosted('launch-mode:current');
+      expect(modeMsg).toBeDefined();
+      expect(modeMsg.mode).toBe('yolo');
+    });
+
+    it('sends launch-mode:current with normal as default when no mode persisted', () => {
+      sendMessage({ type: 'ready' });
+
+      const modeMsg = lastPosted('launch-mode:current');
+      expect(modeMsg).toBeDefined();
+      expect(modeMsg.mode).toBe('normal');
+    });
+  });
+
+  describe('launchMode injection into SessionInfo', () => {
+    it('injects launchMode into SessionInfo for sessions launched with yolo mode', async () => {
+      launcher.launch.mockResolvedValue('yolo-session-id');
+
+      sendMessage({ type: 'session:launch', mode: 'yolo' });
+
+      // Wait for the .then() callback to complete (posts session:launch-status)
+      await vi.waitFor(() => {
+        const launchStatus = postedMessages.find((m) => m.type === 'session:launch-status');
+        expect(launchStatus).toBeDefined();
+      });
+
+      // Set up tracker to return the launched session
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'yolo-session-id', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      postedMessages.length = 0;
+      DashboardPanel.currentPanel!.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'yolo-session-id');
+      expect(session?.launchMode).toBe('yolo');
+    });
+
+    it('does not inject launchMode for sessions launched with normal mode', async () => {
+      launcher.launch.mockResolvedValue('normal-session-id');
+
+      sendMessage({ type: 'session:launch', mode: 'normal' });
+
+      // Wait for the .then() callback to complete
+      await vi.waitFor(() => {
+        const launchStatus = postedMessages.find((m) => m.type === 'session:launch-status');
+        expect(launchStatus).toBeDefined();
+      });
+
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'normal-session-id', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      postedMessages.length = 0;
+      DashboardPanel.currentPanel!.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'normal-session-id');
+      // Normal mode sessions should not have launchMode set (or it should be undefined)
+      expect(session?.launchMode).toBeUndefined();
+    });
+  });
+});
+
+describe('DashboardPanel session ordering', () => {
+  let tracker: ReturnType<typeof createMockSessionTracker>;
+  let orderStore: ReturnType<typeof createMockOrderStore>;
+
+  /** Helper to create a minimal SessionInfo stub */
+  function makeSession(id: string, startedAt = '2026-01-01T00:00:00Z'): any {
+    return { sessionId: id, startedAt };
+  }
+
+  beforeEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+
+    postedMessages.length = 0;
+    messageHandler = undefined;
+
+    tracker = createMockSessionTracker();
+    orderStore = createMockOrderStore();
+
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      tracker,
+      createMockNameStore(),
+      orderStore,
+      createMockVisibilityStore(),
+      createMockSessionLauncher(),
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore()
+    );
+
+    postedMessages.length = 0;
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  it('returns all sessions when cachedOrder is empty (fresh install)', () => {
+    tracker.getState.mockReturnValue({
+      sessions: [makeSession('a'), makeSession('b'), makeSession('c')],
+      activities: [],
+      conversation: [],
+      toolStats: [],
+      tokenSummaries: [],
+    });
+
+    sendMessage({ type: 'ready' });
+
+    const stateMsg = lastPosted('state:full');
+    const ids = stateMsg.sessions.map((s: any) => s.sessionId);
+    expect(ids).toContain('a');
+    expect(ids).toContain('b');
+    expect(ids).toContain('c');
+    expect(ids).toHaveLength(3);
+  });
+
+  it('returns all sessions when cachedOrder is partial (primary bug)', () => {
+    // Simulate a stored order that only knows about 'a' and 'b'
+    orderStore._setOrderDirect(['a', 'b']);
+
+    tracker.getState.mockReturnValue({
+      sessions: [makeSession('a'), makeSession('b'), makeSession('c'), makeSession('d')],
+      activities: [],
+      conversation: [],
+      toolStats: [],
+      tokenSummaries: [],
+    });
+
+    sendMessage({ type: 'ready' });
+
+    const stateMsg = lastPosted('state:full');
+    const ids = stateMsg.sessions.map((s: any) => s.sessionId);
+    // All 4 sessions must be present — 'c' and 'd' appended, not dropped
+    expect(ids).toHaveLength(4);
+    expect(ids).toContain('a');
+    expect(ids).toContain('b');
+    expect(ids).toContain('c');
+    expect(ids).toContain('d');
+    // 'a' and 'b' should come first (from order)
+    expect(ids.indexOf('a')).toBeLessThan(ids.indexOf('c'));
+    expect(ids.indexOf('b')).toBeLessThan(ids.indexOf('d'));
+  });
+
+  it('session:reorder merges with existing order (preserves hidden IDs)', () => {
+    // Start with 3 sessions in stored order
+    orderStore._setOrderDirect(['a', 'b', 'c']);
+
+    // Webview sends reorder with only visible sessions (b is hidden)
+    sendMessage({ type: 'session:reorder', sessionIds: ['c', 'a'] });
+
+    // setOrder should have been called with merged order preserving 'b'
+    expect(orderStore.setOrder).toHaveBeenCalled();
+    const savedOrder = orderStore.setOrder.mock.calls[0][0];
+    expect(savedOrder).toEqual(['c', 'a', 'b']);
+  });
+
+  it('new sessions are appended when not yet in stored order', () => {
+    // Only 'a' and 'b' are in stored order
+    orderStore._setOrderDirect(['a', 'b']);
+
+    tracker.getState.mockReturnValue({
+      sessions: [makeSession('a'), makeSession('b'), makeSession('new-1')],
+      activities: [],
+      conversation: [],
+      toolStats: [],
+      tokenSummaries: [],
+    });
+
+    const panel = DashboardPanel.currentPanel!;
+    panel.postFullState();
+
+    const stateMsg = lastPosted('state:full');
+    const ids = stateMsg.sessions.map((s: any) => s.sessionId);
+    expect(ids).toHaveLength(3);
+    expect(ids).toContain('new-1');
+    // new-1 should be at the end
+    expect(ids.indexOf('new-1')).toBe(2);
   });
 });

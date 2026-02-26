@@ -17,53 +17,62 @@ export function UserTurn({ turn }: UserTurnProps): React.ReactElement {
   return (
     <div
       style={{
-        padding: 'var(--spacing-sm) var(--spacing-md)',
-        backgroundColor: COLORS.USER_INPUT_ROW_BG,
-        borderLeft: '3px solid var(--accent)', // inline-ok
+        padding: '8px 20px', // inline-ok
       }}
     >
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--spacing-sm)',
-          marginBottom: '4px', // inline-ok
+          display: 'inline-block',
+          maxWidth: '100%',
+          backgroundColor: COLORS.USER_TURN_BG,
+          border: `1px solid ${COLORS.USER_TURN_BORDER}`,
+          borderRadius: '6px', // inline-ok
+          padding: 'var(--spacing-sm) var(--spacing-md)',
         }}
       >
-        <span
-          style={{
-            fontSize: '11px', // inline-ok
-            fontWeight: 700,
-            color: 'var(--accent)',
-            textTransform: 'uppercase',
-            letterSpacing: '0.5px',
-          }}
-        >
-          {UI_STRINGS.CONVERSATION_USER_LABEL}
-        </span>
-        <span
-          style={{
-            fontSize: '10px', // inline-ok
-            color: 'var(--fg-muted)',
-            fontFamily: 'var(--font-mono)',
-          }}
-        >
-          {formatTime(turn.timestamp)}
-        </span>
-      </div>
-
-      {turn.text && (
         <div
           style={{
-            fontSize: '13px', // inline-ok
-            color: 'var(--fg-primary)',
-            lineHeight: 1.5,
-            wordBreak: 'break-word',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 'var(--spacing-sm)',
+            marginBottom: '4px', // inline-ok
           }}
         >
-          <MarkdownContent content={turn.text} />
+          <span
+            style={{
+              fontSize: '11px', // inline-ok
+              fontWeight: 700,
+              color: 'var(--fg-primary)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.5px',
+            }}
+          >
+            {UI_STRINGS.CONVERSATION_USER_LABEL}
+          </span>
+          <span
+            style={{
+              fontSize: '10px', // inline-ok
+              color: 'var(--fg-muted)',
+              fontFamily: 'var(--font-mono)',
+            }}
+          >
+            {formatTime(turn.timestamp)}
+          </span>
         </div>
-      )}
+
+        {turn.text && (
+          <div
+            style={{
+              fontSize: '13px', // inline-ok
+              color: 'var(--fg-primary)',
+              lineHeight: 1.5,
+              wordBreak: 'break-word',
+            }}
+          >
+            <MarkdownContent content={turn.text} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }

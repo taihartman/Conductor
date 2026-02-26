@@ -7,6 +7,7 @@ webview-ui/tsconfig.json
 webview-ui/vite.config.ts
 webview-ui/index.html
 node_modules/**
+!node_modules/node-pty/**
 .gitignore
 *.map
 src/__tests__/**

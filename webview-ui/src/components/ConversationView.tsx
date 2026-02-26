@@ -85,7 +85,7 @@ export function ConversationView({ conversation, continuationTotal }: Conversati
                       display: 'flex',
                       alignItems: 'center',
                       gap: '8px',
-                      padding: '8px 16px', // inline-ok
+                      padding: '8px 20px', // inline-ok
                       margin: '4px 0', // inline-ok
                     }}
                   >

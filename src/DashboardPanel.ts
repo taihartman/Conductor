@@ -20,7 +20,18 @@ import { ISessionOrderStore } from './persistence/ISessionOrderStore';
 import { ISessionVisibilityStore } from './persistence/ISessionVisibilityStore';
 import { ISessionLauncher } from './terminal/ISessionLauncher';
 import { IPtyBridge } from './terminal/IPtyBridge';
-import { PANEL_TITLE, LOG_PREFIX, TIMING, PTY } from './constants';
+import { ILaunchedSessionStore } from './persistence/ILaunchedSessionStore';
+import {
+  PANEL_TITLE,
+  LOG_PREFIX,
+  TIMING,
+  PTY,
+  SETTINGS,
+  LAUNCH_MODES,
+  WORKSPACE_STATE_KEYS,
+} from './constants';
+import type { LaunchMode } from './constants';
+import { isInsideClaudeSession } from './terminal/SessionLauncher';
 
 /**
  * Singleton webview panel for the Conductor.
@@ -42,8 +53,15 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly visibilityStore: ISessionVisibilityStore;
   private readonly sessionLauncher: ISessionLauncher;
   private readonly ptyBridge: IPtyBridge;
+  // TODO: Extract dependency bag object when parameter count exceeds 10
+  private readonly launchedSessionStore: ILaunchedSessionStore;
+  private readonly workspaceState: vscode.Memento;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingAdoptions = new Set<string>();
+  /** Session IDs ever launched/adopted by Conductor — survives session exit for launchedByConductor flag persistence. */
+  private readonly conductorLaunchedIds: Set<string>;
+  /** sessionId → LaunchMode for Conductor-launched sessions. Persisted to workspaceState. */
+  private readonly launchedSessionModes = new Map<string, LaunchMode>();
   private focusedSessionId: string | null = null;
   private lastSessionIdSet: string = '';
   private cachedOrder: string[] = [];
@@ -64,6 +82,7 @@ export class DashboardPanel implements vscode.Disposable {
    * @param visibilityStore - Persistence layer for session visibility (hidden/force-shown)
    * @param sessionLauncher - Launches Claude Code sessions from within Conductor
    * @param ptyBridge - Relays PTY I/O for Conductor-launched sessions
+   * @param launchedSessionStore - Persistence layer for Conductor-launched session IDs
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
@@ -73,7 +92,8 @@ export class DashboardPanel implements vscode.Disposable {
     orderStore: ISessionOrderStore,
     visibilityStore: ISessionVisibilityStore,
     sessionLauncher: ISessionLauncher,
-    ptyBridge: IPtyBridge
+    ptyBridge: IPtyBridge,
+    launchedSessionStore: ILaunchedSessionStore
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -103,7 +123,9 @@ export class DashboardPanel implements vscode.Disposable {
       orderStore,
       visibilityStore,
       sessionLauncher,
-      ptyBridge
+      ptyBridge,
+      launchedSessionStore,
+      context.workspaceState
     );
 
     return DashboardPanel.currentPanel;
@@ -117,7 +139,9 @@ export class DashboardPanel implements vscode.Disposable {
     orderStore: ISessionOrderStore,
     visibilityStore: ISessionVisibilityStore,
     sessionLauncher: ISessionLauncher,
-    ptyBridge: IPtyBridge
+    ptyBridge: IPtyBridge,
+    launchedSessionStore: ILaunchedSessionStore,
+    workspaceState: vscode.Memento
   ) {
     this.panel = panel;
     this.extensionUri = extensionUri;
@@ -127,6 +151,13 @@ export class DashboardPanel implements vscode.Disposable {
     this.visibilityStore = visibilityStore;
     this.sessionLauncher = sessionLauncher;
     this.ptyBridge = ptyBridge;
+    this.launchedSessionStore = launchedSessionStore;
+    this.workspaceState = workspaceState;
+    this.conductorLaunchedIds = new Set(this.launchedSessionStore.getAll());
+    this.restoreLaunchedSessionModes();
+
+    // Register PtyBridge before spawn to prevent data loss race condition
+    this.sessionLauncher.setPreSpawnCallback((sid) => this.ptyBridge.registerSession(sid));
 
     this.panel.webview.html = this.getHtml();
 
@@ -144,6 +175,11 @@ export class DashboardPanel implements vscode.Disposable {
     this.orderStore.onOrderChanged(
       () => {
         this.cachedOrder = this.orderStore.getOrder();
+        // Invalidate hash so reconcileOrderIfNeeded() runs on next postFullState().
+        // This may cause reconcile to call setOrder() again if it prunes stale IDs,
+        // triggering one more onOrderChanged cycle — but the system converges because
+        // the hash will match on the subsequent pass.
+        this.lastSessionIdSet = '';
         this.postFullState();
       },
       null,
@@ -162,14 +198,8 @@ export class DashboardPanel implements vscode.Disposable {
       this.disposables
     );
 
-    // Clean up PtyBridge on session exit
-    this.sessionLauncher.onSessionExit(
-      ({ sessionId }) => {
-        this.ptyBridge.unregisterSession(sessionId);
-      },
-      null,
-      this.disposables
-    );
+    // NOTE: We intentionally do NOT unregister PtyBridge buffers on session exit.
+    // Buffers are retained for replay on webview reload. Orphans are pruned in postFullState().
   }
 
   /**
@@ -196,7 +226,30 @@ export class DashboardPanel implements vscode.Disposable {
       conversation: state.conversation,
       toolStats: state.toolStats,
       tokenSummaries: state.tokenSummaries,
+      isNestedSession: isInsideClaudeSession(),
     });
+
+    // Prune PTY buffers for sessions that SessionTracker no longer knows about
+    const knownIds = new Set(state.sessions.map((s) => s.sessionId));
+    this.pruneOrphanedPtyBuffers(knownIds);
+  }
+
+  /**
+   * Programmatically focus a session from the extension side.
+   *
+   * @remarks
+   * Sets the focused session, sends filtered activities/conversation to the webview,
+   * and notifies the webview to update its selection state via `session:focus-command`.
+   * Used by the Quick Pick session switcher.
+   *
+   * @param sessionId - The session ID to focus
+   */
+  public focusSession(sessionId: string): void {
+    console.log(`${LOG_PREFIX.PANEL} Focusing session from extension: ${sessionId}`);
+    this.focusedSessionId = sessionId;
+    this.postActivities();
+    this.postConversation();
+    this.postMessage({ type: 'session:focus-command', sessionId });
   }
 
   /**
@@ -206,6 +259,10 @@ export class DashboardPanel implements vscode.Disposable {
    * @param sessionId - The launched session's UUID
    */
   public notifySessionLaunched(sessionId: string): void {
+    this.conductorLaunchedIds.add(sessionId);
+    this.launchedSessionStore.save(sessionId).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to persist launched session: ${err}`);
+    });
     this.ptyBridge.registerSession(sessionId);
     this.postMessage({
       type: 'session:launch-status',
@@ -254,6 +311,26 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   /**
+   * Send all buffered PTY data to the webview as a single bulk replay message.
+   * Called on `ready` so the webview can restore terminal output after reload.
+   */
+  private replayPtyBuffers(): void {
+    const buffers: Record<string, string> = {};
+    for (const sessionId of this.ptyBridge.getRegisteredSessionIds()) {
+      const data = this.ptyBridge.getBufferedData(sessionId);
+      if (data) {
+        buffers[sessionId] = data;
+      }
+    }
+    if (Object.keys(buffers).length > 0) {
+      console.log(
+        `${LOG_PREFIX.PANEL} Replaying PTY buffers for ${Object.keys(buffers).length} session(s)`
+      );
+      this.postMessage({ type: 'pty:buffers', buffers });
+    }
+  }
+
+  /**
    * Send only the conversation transcript to the webview.
    *
    * @remarks
@@ -270,6 +347,9 @@ export class DashboardPanel implements vscode.Disposable {
     switch (message.type) {
       case 'ready':
         this.postFullState();
+        this.replayPtyBuffers();
+        this.postCurrentSettings();
+        this.postCurrentLaunchMode();
         break;
       case 'session:focus':
         this.focusedSessionId = message.sessionId;
@@ -290,7 +370,10 @@ export class DashboardPanel implements vscode.Disposable {
         this.handleSendInput(message.sessionId, message.text);
         break;
       case 'session:launch':
-        this.handleLaunch(message.cwd);
+        this.handleLaunch(message.cwd, message.mode);
+        break;
+      case 'session:set-launch-mode':
+        this.handleSetLaunchMode(message.mode);
         break;
       case 'session:hide':
         this.handleHide(message.sessionId);
@@ -306,6 +389,12 @@ export class DashboardPanel implements vscode.Disposable {
         break;
       case 'pty:resize':
         this.sessionLauncher.resize(message.sessionId, message.cols, message.rows);
+        break;
+      case 'settings:get':
+        this.postCurrentSettings();
+        break;
+      case 'settings:update':
+        this.handleSettingsUpdate(message.autoHidePatterns);
         break;
     }
   }
@@ -348,8 +437,16 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   private handleReorder(sessionIds: string[]): void {
-    console.log(`${LOG_PREFIX.PANEL} Reordering sessions: ${sessionIds.length} session(s)`);
-    this.orderStore.setOrder(sessionIds).catch((err: unknown) => {
+    const reorderedSet = new Set(sessionIds);
+    const existingOrder = this.orderStore.getOrder();
+    const unlisted = existingOrder.filter((id) => !reorderedSet.has(id));
+    const mergedOrder = [...sessionIds, ...unlisted];
+
+    console.log(
+      `${LOG_PREFIX.PANEL} Reordering sessions: ${sessionIds.length} reordered, ${unlisted.length} preserved, ${mergedOrder.length} total`
+    );
+
+    this.orderStore.setOrder(mergedOrder).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.PANEL} Failed to persist session order: ${err}`);
     });
   }
@@ -398,12 +495,17 @@ export class DashboardPanel implements vscode.Disposable {
       });
   }
 
-  private handleLaunch(cwd?: string): void {
-    console.log(`${LOG_PREFIX.PANEL} Launching new session`);
+  private handleLaunch(cwd?: string, mode?: LaunchMode): void {
+    const launchMode = mode ?? LAUNCH_MODES.NORMAL;
+    console.log(`${LOG_PREFIX.PANEL} Launching new session (mode: ${launchMode})`);
     this.sessionLauncher
-      .launch(cwd)
+      .launch(cwd, launchMode)
       .then((launchedId) => {
         console.log(`${LOG_PREFIX.PANEL} Session launched: ${launchedId}`);
+        if (launchMode !== LAUNCH_MODES.NORMAL) {
+          this.launchedSessionModes.set(launchedId, launchMode);
+          this.persistLaunchedSessionModes();
+        }
         this.notifySessionLaunched(launchedId);
       })
       .catch((err: unknown) => {
@@ -465,16 +567,121 @@ export class DashboardPanel implements vscode.Disposable {
       });
   }
 
+  // ── Settings helpers ─────────────────────────────────────────────────
+
+  /** Read the current auto-hide patterns from VS Code settings and post to the webview. */
+  private postCurrentSettings(): void {
+    const config = vscode.workspace.getConfiguration();
+    const autoHidePatterns = config.get<string[]>(SETTINGS.AUTO_HIDE_PATTERNS) ?? [];
+    this.postMessage({ type: 'settings:current', autoHidePatterns });
+  }
+
+  /**
+   * Persist updated auto-hide patterns to VS Code settings and echo back to webview.
+   * @param autoHidePatterns - Updated list of auto-hide substring patterns
+   */
+  private handleSettingsUpdate(autoHidePatterns: string[]): void {
+    console.log(
+      `${LOG_PREFIX.PANEL} Updating autoHidePatterns: ${autoHidePatterns.length} pattern(s)`
+    );
+    const config = vscode.workspace.getConfiguration();
+    Promise.resolve(
+      config.update(
+        SETTINGS.AUTO_HIDE_PATTERNS,
+        autoHidePatterns,
+        vscode.ConfigurationTarget.Global
+      )
+    )
+      .then(() => {
+        this.postCurrentSettings();
+        // Re-emit full state so artifact flags are re-evaluated with the new patterns
+        this.postFullState();
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to update settings: ${err}`);
+      });
+  }
+
+  // ── Launch mode helpers ─────────────────────────────────────────────
+
+  /** Send the persisted launch mode preference to the webview. */
+  private postCurrentLaunchMode(): void {
+    const mode = this.workspaceState.get<LaunchMode>(
+      WORKSPACE_STATE_KEYS.LAUNCH_MODE,
+      LAUNCH_MODES.NORMAL
+    );
+    this.postMessage({ type: 'launch-mode:current', mode });
+  }
+
+  /**
+   * Persist the user's launch mode preference from the webview dropdown.
+   * @param mode - The launch mode to persist
+   */
+  private handleSetLaunchMode(mode: LaunchMode): void {
+    console.log(`${LOG_PREFIX.PANEL} Setting launch mode: ${mode}`);
+    Promise.resolve(this.workspaceState.update(WORKSPACE_STATE_KEYS.LAUNCH_MODE, mode)).catch(
+      (err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to persist launch mode: ${err}`);
+      }
+    );
+  }
+
+  /** Restore launchedSessionModes from workspace state on construction. */
+  private restoreLaunchedSessionModes(): void {
+    const stored = this.workspaceState.get<Record<string, string>>(
+      WORKSPACE_STATE_KEYS.LAUNCHED_SESSION_MODES,
+      {}
+    );
+    for (const [sessionId, mode] of Object.entries(stored)) {
+      this.launchedSessionModes.set(sessionId, mode as LaunchMode);
+    }
+  }
+
+  /** Persist launchedSessionModes to workspace state. */
+  private persistLaunchedSessionModes(): void {
+    const record: Record<string, string> = {};
+    for (const [sessionId, mode] of this.launchedSessionModes) {
+      record[sessionId] = mode;
+    }
+    Promise.resolve(
+      this.workspaceState.update(WORKSPACE_STATE_KEYS.LAUNCHED_SESSION_MODES, record)
+    ).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to persist launched session modes: ${err}`);
+    });
+  }
+
   /**
    * Pure sort: reorder sessions according to the cached order. No side effects.
+   * Sessions not present in `order` are appended at the end to ensure no session
+   * is ever silently dropped.
    *
    * @param sessions - Sessions to sort
    * @param order - Ordered session IDs
-   * @returns Sessions reordered by the given ID order
+   * @returns Sessions reordered by the given ID order, with unlisted sessions appended
    */
   private sortByOrder(sessions: SessionInfo[], order: string[]): SessionInfo[] {
+    if (order.length === 0) return [...sessions];
+
     const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
-    return order.filter((id) => sessionMap.has(id)).map((id) => sessionMap.get(id)!);
+    const seen = new Set<string>();
+    const result: SessionInfo[] = [];
+
+    for (const id of order) {
+      const session = sessionMap.get(id);
+      if (session) {
+        result.push(session);
+        seen.add(id);
+      }
+    }
+
+    // Append sessions not in the order array so they're never silently dropped
+    for (const session of sessions) {
+      if (!seen.has(session.sessionId)) {
+        result.push(session);
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -566,7 +773,11 @@ export class DashboardPanel implements vscode.Disposable {
     const sessionCwd = state.sessions.find((s) => s.sessionId === targetId)?.cwd;
 
     try {
-      await this.sessionLauncher.resume(targetId, text, sessionCwd);
+      await this.sessionLauncher.transfer(targetId, text, sessionCwd);
+      this.conductorLaunchedIds.add(targetId);
+      this.launchedSessionStore.save(targetId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to persist adopted session: ${err}`);
+      });
       this.ptyBridge.registerSession(targetId);
     } finally {
       this.pendingAdoptions.delete(primaryId);
@@ -584,6 +795,37 @@ export class DashboardPanel implements vscode.Disposable {
     return members.find((id) => this.sessionLauncher.isLaunchedSession(id));
   }
 
+  /**
+   * Remove PtyBridge buffers and conductorLaunchedIds entries for sessions
+   * no longer tracked by SessionTracker.
+   * @param knownSessionIds - Set of currently tracked session IDs
+   */
+  private pruneOrphanedPtyBuffers(knownSessionIds: Set<string>): void {
+    const toRemove: string[] = [];
+    for (const sessionId of this.ptyBridge.getRegisteredSessionIds()) {
+      if (!knownSessionIds.has(sessionId)) {
+        toRemove.push(sessionId);
+      }
+    }
+    let modesChanged = false;
+    for (const sessionId of toRemove) {
+      this.ptyBridge.unregisterSession(sessionId);
+      this.conductorLaunchedIds.delete(sessionId);
+      if (this.launchedSessionModes.delete(sessionId)) {
+        modesChanged = true;
+      }
+      this.launchedSessionStore.remove(sessionId).catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to remove pruned session from store: ${err}`);
+      });
+    }
+    if (modesChanged) {
+      this.persistLaunchedSessionModes();
+    }
+    if (toRemove.length > 0) {
+      console.log(`${LOG_PREFIX.PANEL} Pruned ${toRemove.length} orphaned PTY buffer(s)`);
+    }
+  }
+
   private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {
     return sessions.map((session) => {
       // Check primary ID first, then fall through to continuation member IDs
@@ -595,12 +837,16 @@ export class DashboardPanel implements vscode.Disposable {
         }
       }
 
-      const launchedByConductor = this.sessionLauncher.isLaunchedSession(session.sessionId);
-      if (customName || launchedByConductor) {
+      const launchedByConductor =
+        this.sessionLauncher.isLaunchedSession(session.sessionId) ||
+        this.conductorLaunchedIds.has(session.sessionId);
+      const launchMode = this.launchedSessionModes.get(session.sessionId);
+      if (customName || launchedByConductor || launchMode) {
         return {
           ...session,
           ...(customName ? { customName } : {}),
           ...(launchedByConductor ? { launchedByConductor: true } : {}),
+          ...(launchMode ? { launchMode } : {}),
         };
       }
       return session;

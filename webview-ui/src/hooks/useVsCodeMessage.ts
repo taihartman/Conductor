@@ -9,9 +9,13 @@ export function useVsCodeMessage(): void {
     setConversation,
     setInputStatus,
     appendPtyBuffer,
+    setPtyBuffers,
     setPendingLaunchSession,
     removePendingAdoption,
     setViewMode,
+    setAutoHidePatterns,
+    setFocusedSession,
+    setLaunchMode,
   } = useDashboardStore();
 
   useEffect(() => {
@@ -25,7 +29,8 @@ export function useVsCodeMessage(): void {
             message.activities,
             message.conversation,
             message.toolStats,
-            message.tokenSummaries
+            message.tokenSummaries,
+            message.isNestedSession
           );
           break;
         case 'activity:full':
@@ -40,6 +45,9 @@ export function useVsCodeMessage(): void {
         case 'pty:data':
           appendPtyBuffer(message.sessionId, message.data);
           break;
+        case 'pty:buffers':
+          setPtyBuffers(message.buffers);
+          break;
         case 'session:launch-status':
           if (message.status === 'launched' && message.sessionId) {
             setPendingLaunchSession(message.sessionId);
@@ -53,6 +61,15 @@ export function useVsCodeMessage(): void {
             setViewMode(message.sessionId, 'terminal');
           }
           break;
+        case 'settings:current':
+          setAutoHidePatterns(message.autoHidePatterns);
+          break;
+        case 'launch-mode:current':
+          setLaunchMode(message.mode);
+          break;
+        case 'session:focus-command':
+          setFocusedSession(message.sessionId);
+          break;
       }
     }
 
@@ -64,8 +81,12 @@ export function useVsCodeMessage(): void {
     setConversation,
     setInputStatus,
     appendPtyBuffer,
+    setPtyBuffers,
     setPendingLaunchSession,
     removePendingAdoption,
     setViewMode,
+    setAutoHidePatterns,
+    setFocusedSession,
+    setLaunchMode,
   ]);
 }

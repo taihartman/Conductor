@@ -88,6 +88,24 @@ export const SYSTEM_EVENTS = {
 // Input values for terminal responses
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Launch mode discriminators
+// ---------------------------------------------------------------------------
+
+/** Launch mode discriminators for the split button session launcher. */
+export const LAUNCH_MODES = {
+  NORMAL: 'normal',
+  YOLO: 'yolo',
+  REMOTE: 'remote',
+} as const;
+
+/** Union type of all launch mode string literals. */
+export type LaunchMode = (typeof LAUNCH_MODES)[keyof typeof LAUNCH_MODES];
+
+// ---------------------------------------------------------------------------
+// Input values for terminal responses
+// ---------------------------------------------------------------------------
+
 /** Terminal input values for tool approval responses. */
 export const TOOL_APPROVAL_INPUTS = {
   ALLOW: '1',

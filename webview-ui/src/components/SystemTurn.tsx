@@ -1,6 +1,5 @@
 import React from 'react';
 import type { ConversationTurn } from '@shared/types';
-import { COLORS } from '../config/colors';
 import { UI_STRINGS } from '../config/strings';
 import { formatDuration } from '../utils/formatters';
 
@@ -22,11 +21,11 @@ export function SystemTurn({ turn }: SystemTurnProps): React.ReactElement {
         display: 'flex',
         alignItems: 'center',
         gap: 'var(--spacing-sm)',
-        padding: '4px var(--spacing-md)', // inline-ok
+        padding: '4px 20px', // inline-ok
         fontSize: '11px', // inline-ok
         color: 'var(--fg-muted)',
-        borderTop: `1px solid ${COLORS.SYSTEM_TURN_BORDER}`,
-        borderBottom: `1px solid ${COLORS.SYSTEM_TURN_BORDER}`,
+        fontStyle: 'italic',
+        opacity: 0.8, // inline-ok
       }}
     >
       <span style={{ opacity: 0.6 }}>{'—'}</span>

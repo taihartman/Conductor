@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import { STATUS_GROUPS } from '@shared/sharedConstants';
+import type { LaunchMode } from '@shared/sharedConstants';
 import { useDashboardStore, DETAIL_VIEW_MODES } from '../store/dashboardStore';
 import { ConductorHeader } from './ConductorHeader';
 import { OverviewPanel } from './OverviewPanel';
@@ -8,6 +9,7 @@ import { DetailPanel } from './DetailPanel';
 import { CollapsedBar } from './CollapsedBar';
 import { EmptyState } from './EmptyState';
 import { ZenModeScene } from './ZenModeScene';
+import { SettingsDrawer } from './SettingsDrawer';
 import { useZenNudge } from '../hooks/useZenNudge';
 import { useCompletionDetector } from '../hooks/useCompletionDetector';
 import { matchesSearchQuery } from '../utils/sessionFilter';
@@ -40,6 +42,12 @@ export function ConductorDashboard(): React.ReactElement {
   const exitZenMode = useDashboardStore((s) => s.exitZenMode);
   const activeTab = useDashboardStore((s) => s.activeTab);
   const setActiveTab = useDashboardStore((s) => s.setActiveTab);
+  const isNestedSession = useDashboardStore((s) => s.isNestedSession);
+  const settingsDrawerOpen = useDashboardStore((s) => s.settingsDrawerOpen);
+  const toggleSettingsDrawer = useDashboardStore((s) => s.toggleSettingsDrawer);
+  const autoHidePatterns = useDashboardStore((s) => s.autoHidePatterns);
+  const launchMode = useDashboardStore((s) => s.launchMode);
+  const setLaunchMode = useDashboardStore((s) => s.setLaunchMode);
 
   // Tab-based filtering: main sessions vs hidden sessions
   const mainSessions = sessions.filter((s) => !s.isSubAgent && !s.isHidden);
@@ -112,8 +120,17 @@ export function ConductorDashboard(): React.ReactElement {
     vscode.postMessage({ type: 'session:unhide', sessionId });
   }
 
-  function handleLaunchSession(): void {
-    vscode.postMessage({ type: 'session:launch' });
+  function handleLaunchSession(mode: LaunchMode): void {
+    vscode.postMessage({ type: 'session:launch', mode });
+  }
+
+  function handleLaunchModeChange(mode: LaunchMode): void {
+    setLaunchMode(mode);
+    vscode.postMessage({ type: 'session:set-launch-mode', mode });
+  }
+
+  function handleUpdatePatterns(patterns: string[]): void {
+    vscode.postMessage({ type: 'settings:update', autoHidePatterns: patterns });
   }
 
   const handleZenExit = useCallback(() => {
@@ -170,6 +187,8 @@ export function ConductorDashboard(): React.ReactElement {
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
           onLaunchSession={handleLaunchSession}
+          onLaunchModeChange={handleLaunchModeChange}
+          launchMode={launchMode}
           nudgeActive={false}
           onMascotClick={enterZenMode}
           mascotButtonRef={mascotButtonRef}
@@ -178,9 +197,19 @@ export function ConductorDashboard(): React.ReactElement {
           activeTab={activeTab}
           onTabChange={setActiveTab}
           hiddenCount={hiddenSessions.length}
+          isNestedSession={isNestedSession}
+          onToggleSettings={toggleSettingsDrawer}
         />
-        <div style={{ flex: 1, overflow: 'auto' }}>
-          <EmptyState />
+        <div style={{ flex: 1, overflow: 'auto', display: 'flex' }}>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <EmptyState />
+          </div>
+          <SettingsDrawer
+            open={settingsDrawerOpen}
+            onClose={toggleSettingsDrawer}
+            autoHidePatterns={autoHidePatterns}
+            onUpdatePatterns={handleUpdatePatterns}
+          />
         </div>
       </div>
     );
@@ -200,6 +229,8 @@ export function ConductorDashboard(): React.ReactElement {
         tokenSummaries={tokenSummaries}
         onRefresh={handleRefresh}
         onLaunchSession={handleLaunchSession}
+        onLaunchModeChange={handleLaunchModeChange}
+        launchMode={launchMode}
         nudgeActive={nudgeActive}
         onMascotClick={enterZenMode}
         mascotButtonRef={mascotButtonRef}
@@ -211,11 +242,14 @@ export function ConductorDashboard(): React.ReactElement {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         hiddenCount={hiddenSessions.length}
+        isNestedSession={isNestedSession}
+        onToggleSettings={toggleSettingsDrawer}
       />
 
       {zenModeActive ? (
         <ZenModeScene completionCount={completionCount} onExit={handleZenExit} />
       ) : (
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minHeight: 0 }}>
         <div
           style={{
             flex: 1,
@@ -332,6 +366,13 @@ export function ConductorDashboard(): React.ReactElement {
               />
             </div>
           )}
+        </div>
+        <SettingsDrawer
+          open={settingsDrawerOpen}
+          onClose={toggleSettingsDrawer}
+          autoHidePatterns={autoHidePatterns}
+          onUpdatePatterns={handleUpdatePatterns}
+        />
         </div>
       )}
     </div>

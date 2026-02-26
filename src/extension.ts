@@ -5,7 +5,10 @@ import { SessionNameStore } from './persistence/SessionNameStore';
 import { SessionOrderStore } from './persistence/SessionOrderStore';
 import { SessionVisibilityStore } from './persistence/SessionVisibilityStore';
 import { SessionLauncher } from './terminal/SessionLauncher';
+import { ProcessDiscovery } from './terminal/ProcessDiscovery';
 import { PtyBridge } from './terminal/PtyBridge';
+import { LaunchedSessionStore } from './persistence/LaunchedSessionStore';
+import { AutoReconnectService } from './terminal/AutoReconnectService';
 import {
   OUTPUT_CHANNEL_NAME,
   STATUS_BAR_TEXT,
@@ -13,7 +16,9 @@ import {
   COMMANDS,
   LOG_PREFIX,
   SETTINGS,
+  LAUNCH_MODES,
 } from './constants';
+import { quickPickSession } from './commands/quickPickSession';
 
 let sessionTracker: SessionTracker | undefined;
 
@@ -41,11 +46,24 @@ export function activate(context: vscode.ExtensionContext): void {
   const visibilityStore = new SessionVisibilityStore(context.workspaceState, outputChannel);
   context.subscriptions.push(visibilityStore);
 
-  const sessionLauncher = new SessionLauncher(outputChannel);
+  const processDiscovery = new ProcessDiscovery();
+  const sessionLauncher = new SessionLauncher(outputChannel, processDiscovery);
   context.subscriptions.push(sessionLauncher);
 
   const ptyBridge = new PtyBridge();
   context.subscriptions.push(ptyBridge);
+
+  const launchedSessionStore = new LaunchedSessionStore(context.workspaceState, outputChannel);
+  context.subscriptions.push(launchedSessionStore);
+
+  const autoReconnect = new AutoReconnectService(
+    sessionTracker,
+    sessionLauncher,
+    launchedSessionStore,
+    ptyBridge,
+    outputChannel
+  );
+  context.subscriptions.push(autoReconnect);
 
   const openCommand = vscode.commands.registerCommand(COMMANDS.OPEN, () => {
     console.log(`${LOG_PREFIX.EXTENSION} Open command invoked`);
@@ -56,7 +74,8 @@ export function activate(context: vscode.ExtensionContext): void {
       orderStore,
       visibilityStore,
       sessionLauncher,
-      ptyBridge
+      ptyBridge,
+      launchedSessionStore
     );
   });
 
@@ -69,10 +88,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const launchCommand = vscode.commands.registerCommand(COMMANDS.LAUNCH_SESSION, () => {
     console.log(`${LOG_PREFIX.EXTENSION} Launch session command invoked`);
     sessionLauncher
-      .launch()
+      .launch(undefined, LAUNCH_MODES.NORMAL)
       .then((sessionId) => {
         console.log(`${LOG_PREFIX.EXTENSION} Session launched: ${sessionId}`);
-        // Delegate to DashboardPanel if open — it handles PtyBridge, status, and polling
+        launchedSessionStore.save(sessionId).catch((err: unknown) => {
+          console.log(`${LOG_PREFIX.EXTENSION} Failed to persist launched session: ${err}`);
+        });
         DashboardPanel.currentPanel?.notifySessionLaunched(sessionId);
       })
       .catch((err: unknown) => {
@@ -81,7 +102,19 @@ export function activate(context: vscode.ExtensionContext): void {
       });
   });
 
-  context.subscriptions.push(openCommand, refreshCommand, launchCommand);
+  const quickPickCommand = vscode.commands.registerCommand(COMMANDS.QUICK_PICK_SESSION, () => {
+    console.log(`${LOG_PREFIX.EXTENSION} Quick Pick session command invoked`);
+    quickPickSession(context, sessionTracker!, nameStore, visibilityStore, {
+      orderStore,
+      sessionLauncher,
+      ptyBridge,
+      launchedSessionStore,
+    }).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.EXTENSION} Quick Pick failed: ${err}`);
+    });
+  });
+
+  context.subscriptions.push(openCommand, refreshCommand, launchCommand, quickPickCommand);
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = STATUS_BAR_TEXT;
@@ -91,6 +124,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(statusBarItem);
 
   sessionTracker.start();
+  autoReconnect.start();
 
   const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration(SETTINGS.ADDITIONAL_WORKSPACES)) {

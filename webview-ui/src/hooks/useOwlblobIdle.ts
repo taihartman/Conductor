@@ -11,6 +11,8 @@ export interface OwlblobIdleRefs {
   wingLeft: React.RefObject<SVGEllipseElement | null>;
   wingRight: React.RefObject<SVGEllipseElement | null>;
   root: React.RefObject<SVGGElement | null>;
+  footLeft?: React.RefObject<SVGGElement | null>;
+  footRight?: React.RefObject<SVGGElement | null>;
 }
 
 export interface OwlblobIdleConfig {
@@ -29,6 +31,8 @@ const OB_EAR_TWITCH_DURATION_MS = 450;
 const OB_SETTLE_DURATION_MS = 1200;
 const OB_WING_RUFFLE_DURATION_MS = 650;
 const OB_HEAD_BOB_DURATION_MS = 550;
+const OB_TOE_WIGGLE_DURATION_MS = 600;
+const OB_FOOT_TAP_DURATION_MS = 500;
 
 /* ── Behavior definitions ─────────────────────────────────────── */
 
@@ -102,6 +106,31 @@ const BEHAVIORS: IdleBehavior[] = [
     durationMs: OB_HEAD_BOB_DURATION_MS,
     className: 'ob-anim--head-bob',
     apply: (refs) => (refs.head.current ? [refs.head.current] : []),
+  },
+  {
+    name: 'toe-wiggle',
+    weight: 1,
+    durationMs: OB_TOE_WIGGLE_DURATION_MS,
+    className: 'ob-anim--toe-wiggle',
+    apply: (refs) => {
+      const els: Element[] = [];
+      if (refs.footLeft?.current) els.push(refs.footLeft.current);
+      if (refs.footRight?.current) els.push(refs.footRight.current);
+      return els;
+    },
+  },
+  {
+    name: 'foot-tap',
+    weight: 1,
+    durationMs: OB_FOOT_TAP_DURATION_MS,
+    className: 'ob-anim--foot-tap',
+    apply: (refs) => {
+      const candidates: Element[] = [];
+      if (refs.footLeft?.current) candidates.push(refs.footLeft.current);
+      if (refs.footRight?.current) candidates.push(refs.footRight.current);
+      if (candidates.length === 0) return [];
+      return [candidates[Math.floor(Math.random() * candidates.length)]];
+    },
   },
 ];
 

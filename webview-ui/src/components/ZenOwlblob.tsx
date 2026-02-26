@@ -58,7 +58,7 @@ export function ZenOwlblob({
           opacity="0.5"
         />
 
-        {/* Head group — no hat */}
+        {/* Head group */}
         <g>
           {/* Ears — slightly drooped */}
           <g transform="rotate(5, 58, 98)">
@@ -104,51 +104,64 @@ export function ZenOwlblob({
           />
 
           {/* Cheek blush — slightly more visible in zen */}
-          <circle cx="68" cy="130" r="8" fill="#e8a0c8" opacity="0.35" />
-          <circle cx="152" cy="130" r="8" fill="#e8a0c8" opacity="0.35" />
+          <circle cx="68" cy="130" r="8" fill="#e8a0c8" opacity="0.35" />{/* inline-ok: svg artwork */}
+          <circle cx="152" cy="130" r="8" fill="#e8a0c8" opacity="0.35" />{/* inline-ok: svg artwork */}
+
+          {/* Top hat (matches OwlblobMascot) */}
+          <ellipse cx="110" cy="82" rx="30" ry="7" fill="#2d2d44" />{/* inline-ok: svg artwork */}
+          <rect x="84" y="60" width="52" height="22" rx="4" fill="#2d2d44" />{/* inline-ok: svg artwork */}
+          <rect x="88" y="55" width="44" height="9" rx="3" fill="#2d2d44" />{/* inline-ok: svg artwork */}
+          <rect x="84" y="76" width="52" height="4" fill="#b8a0d8" />{/* inline-ok: svg artwork */}
         </g>
 
-        {/* Wings — resting lower and flatter */}
+        {/* Wings — resting lower and flatter, animated with CSS */}
         <ellipse
+          className="zen-wing-left"
           cx="40"
           cy="162"
           rx="14"
           ry="10"
           fill="#5c4a6a"
-          transform="rotate(-10 40 162)"
         />
         <ellipse
+          className="zen-wing-right"
           cx="180"
           cy="162"
           rx="14"
           ry="10"
           fill="#5c4a6a"
-          transform="rotate(10 180 162)"
         />
 
-        {/* Crossed legs */}
-        <path
-          d="M 88 218 Q 100 228 110 220 Q 120 228 132 218"
-          stroke="#e8a838"
-          strokeWidth="2.5"
-          fill="none"
-          strokeLinecap="round"
-        />
-        {/* Toes */}
-        <path
-          d="M 86 218 L 80 222 M 86 218 L 86 223 M 86 218 L 92 222"
-          stroke="#e8a838"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-        />
-        <path
-          d="M 134 218 L 128 222 M 134 218 L 134 223 M 134 218 L 140 222"
-          stroke="#e8a838"
-          strokeWidth="2"
-          fill="none"
-          strokeLinecap="round"
-        />
+        {/* Crossed legs + toes with gentle sway */}
+        <g className="zen-legs-sway">
+          <path
+            d="M 88 218 Q 100 228 110 220 Q 120 228 132 218"
+            stroke="#e8a838"
+            strokeWidth="2.5"
+            fill="none"
+            strokeLinecap="round"
+          />
+          {/* Left toes */}
+          <g className="zen-toes-wiggle">
+            <path
+              d="M 86 218 L 80 222 M 86 218 L 86 223 M 86 218 L 92 222"
+              stroke="#e8a838"
+              strokeWidth="2"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </g>
+          {/* Right toes */}
+          <g className="zen-toes-wiggle zen-toes-wiggle--right">
+            <path
+              d="M 134 218 L 128 222 M 134 218 L 134 223 M 134 218 L 140 222"
+              stroke="#e8a838"
+              strokeWidth="2"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </g>
+        </g>
       </g>
     </svg>
   );

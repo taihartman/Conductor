@@ -27,7 +27,14 @@ export const window = {
     appendLine: () => {},
     dispose: () => {},
   }),
+  showQuickPick: vi.fn(),
 };
+
+/** Mirrors the VS Code QuickPickItemKind enum. Separator = -1. */
+export enum QuickPickItemKind {
+  Separator = -1,
+  Default = 0,
+}
 
 export class RelativePattern {
   constructor(

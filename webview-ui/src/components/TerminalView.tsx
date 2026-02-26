@@ -71,12 +71,15 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
 
-    // Fit after opening
-    try {
-      fitAddon.fit();
-    } catch {
-      // Container might not have dimensions yet
-    }
+    // Defer initial fit — useEffect runs before browser layout is complete.
+    // requestAnimationFrame ensures flex dimensions are computed before measuring.
+    const rafId = requestAnimationFrame(() => {
+      try {
+        fitAddon.fit();
+      } catch {
+        // Container might not have dimensions yet
+      }
+    });
 
     // Send keystrokes to extension
     terminal.onData((data) => {
@@ -107,6 +110,7 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
     resizeObserver.observe(containerRef.current);
 
     return () => {
+      cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
       terminal.dispose();
       terminalRef.current = null;

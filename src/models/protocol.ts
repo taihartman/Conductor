@@ -13,6 +13,7 @@
  */
 
 import { SessionInfo, ActivityEvent, ConversationTurn, ToolStatEntry, TokenSummary } from './types';
+import type { LaunchMode } from './sharedConstants';
 
 /** Result of attempting to send user input to a Claude Code terminal. */
 export type InputSendStatus = 'sent' | 'no-terminal' | 'error' | 'adopting';
@@ -39,6 +40,8 @@ export type ExtensionToWebviewMessage =
       conversation: ConversationTurn[];
       toolStats: ToolStatEntry[];
       tokenSummaries: TokenSummary[];
+      /** True when the extension host is running inside a Claude Code session. */
+      isNestedSession: boolean;
     }
   | { type: 'activity:full'; events: ActivityEvent[] }
   | { type: 'conversation:full'; turns: ConversationTurn[] }
@@ -46,10 +49,18 @@ export type ExtensionToWebviewMessage =
   | { type: 'user:input-status'; sessionId: string; status: InputSendStatus; error?: string }
   /** PTY output data for a Conductor-launched session's embedded terminal. */
   | { type: 'pty:data'; sessionId: string; data: string }
+  /** Bulk PTY buffer replay on webview reconnect. Uses replace semantics (not append). */
+  | { type: 'pty:buffers'; buffers: Record<string, string> }
   /** Result of a session launch attempt (success with sessionId, or error). */
   | { type: 'session:launch-status'; sessionId?: string; status: LaunchStatus; error?: string }
   /** Result of adopting an external session for terminal mode. */
-  | { type: 'session:adopt-status'; sessionId: string; status: AdoptStatus; error?: string };
+  | { type: 'session:adopt-status'; sessionId: string; status: AdoptStatus; error?: string }
+  /** Current settings values pushed to the webview. Sent on `ready` and after `settings:update`. */
+  | { type: 'settings:current'; autoHidePatterns: string[] }
+  /** Persisted launch mode preference pushed to the webview on `ready`. */
+  | { type: 'launch-mode:current'; mode: LaunchMode }
+  /** Extension-initiated session focus (e.g. from Quick Pick). Webview should update its selection. */
+  | { type: 'session:focus-command'; sessionId: string };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -70,7 +81,7 @@ export type WebviewToExtensionMessage =
   /** User typed a message to send to the active Claude Code terminal. */
   | { type: 'user:send-input'; sessionId: string; text: string }
   /** Request to launch a new Claude Code session from within Conductor. */
-  | { type: 'session:launch'; cwd?: string }
+  | { type: 'session:launch'; cwd?: string; mode?: LaunchMode }
   /** Raw PTY input (keystrokes) from the webview xterm.js terminal. */
   | { type: 'pty:input'; sessionId: string; data: string }
   /** Resize event from the webview xterm.js terminal. */
@@ -80,4 +91,10 @@ export type WebviewToExtensionMessage =
   /** User unhides a session from the Hidden tab. */
   | { type: 'session:unhide'; sessionId: string }
   /** Sent when user toggles to terminal mode on an external (non-Conductor) session. */
-  | { type: 'session:adopt'; sessionId: string };
+  | { type: 'session:adopt'; sessionId: string }
+  /** Webview requests current settings values. */
+  | { type: 'settings:get' }
+  /** Webview updates auto-hide patterns (persisted to VS Code settings). */
+  | { type: 'settings:update'; autoHidePatterns: string[] }
+  /** User changed the launch mode preference in the split button dropdown. */
+  | { type: 'session:set-launch-mode'; mode: LaunchMode };

@@ -399,6 +399,8 @@ export interface SessionInfo {
   autoName?: string;
   /** Whether this session was launched from within Conductor (has PTY ownership). */
   launchedByConductor?: boolean;
+  /** Launch mode used when this session was started by Conductor. */
+  launchMode?: import('./sharedConstants').LaunchMode;
   /** Nested sub-agent sessions spawned by this parent. */
   childAgents?: SubAgentInfo[];
   /** All member session IDs when this session is a merged continuation group (2+ members). */

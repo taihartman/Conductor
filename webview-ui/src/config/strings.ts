@@ -72,6 +72,7 @@ export const UI_STRINGS = {
   LAUNCH_SESSION_BUTTON: '+',
   LAUNCH_SESSION_TOOLTIP: 'Launch a new Claude Code session',
   LAUNCH_SESSION_ERROR: 'Failed to launch session',
+  NESTED_SESSION_TOOLTIP: 'Cannot launch or adopt sessions from inside Claude Code',
   CONTEXT_ENTER_PLAN_APPROVAL: 'Asking to enter plan mode',
   CONTEXT_EXIT_PLAN_APPROVAL: 'Plan ready for approval',
   CONTEXT_TOOL_APPROVAL: 'Waiting for tool approval',
@@ -99,6 +100,40 @@ export const UI_STRINGS = {
   /** Segment divider label between continuations. Use with template: `Context cleared — continuation {n} of {total}`. */
   CONTINUATION_DIVIDER: 'Context cleared — continuation {n} of {total}',
   /** Placeholder shown in TerminalView when no PTY data has been received yet. */
-  TERMINAL_NO_PTY_DATA:
-    'Terminal output is displayed in the VS Code terminal panel. Embedded view coming soon.',
+  TERMINAL_NO_PTY_DATA: 'Waiting for terminal output...',
+  SETTINGS_DRAWER_TITLE: 'Settings',
+  SETTINGS_GEAR_TOOLTIP: 'Open settings',
+  SETTINGS_AUTO_HIDE_HEADING: 'Auto-hide Patterns',
+  SETTINGS_AUTO_HIDE_DESCRIPTION:
+    'Sessions whose name contains any of these patterns will be auto-hidden.',
+  SETTINGS_AUTO_HIDE_PLACEHOLDER: 'Enter pattern...',
+  SETTINGS_AUTO_HIDE_ADD: 'Add',
+  SETTINGS_AUTO_HIDE_EMPTY: 'No custom patterns configured.',
+  SETTINGS_CLOSE_LABEL: 'Close settings',
+  /** Primary button label when in Normal launch mode. */
+  LAUNCH_MODE_NORMAL: 'New Session',
+  /** Primary button label when in YOLO (bypass permissions) launch mode. */
+  LAUNCH_MODE_YOLO: 'Bypass Permissions',
+  /** Dropdown label for Remote Control mode. */
+  LAUNCH_MODE_REMOTE: 'Remote Control',
+  /** Greyed-out dropdown label for Remote Control (not yet implemented). */
+  LAUNCH_MODE_REMOTE_COMING_SOON: 'Remote Control (coming soon)',
+  /** Micro-badge text for YOLO sessions in session cards. */
+  YOLO_BADGE: 'YOLO',
+  /** Tooltip/warning text shown in the YOLO dropdown item. */
+  YOLO_DROPDOWN_WARNING: 'Skips all permission prompts',
+  /** ARIA label for the split button chevron/dropdown trigger. */
+  SPLIT_BUTTON_CHEVRON_LABEL: 'Select launch mode',
+  /** ARIA label for the dropdown menu container. */
+  SPLIT_BUTTON_DROPDOWN_LABEL: 'Launch mode options',
+  /** Kanban board column labels */
+  KANBAN_COL_PERFORMING: 'Performing',
+  KANBAN_COL_AWAITING_INPUT: 'Awaiting Input',
+  KANBAN_COL_NEEDS_ATTENTION: 'Needs Attention',
+  KANBAN_COL_COMPLETED: 'Completed',
+  /** Kanban board empty column placeholder */
+  KANBAN_EMPTY_COLUMN: 'No sessions',
+  /** Toggle button tooltips */
+  KANBAN_TOGGLE_BOARD: 'Switch to board view',
+  KANBAN_TOGGLE_LIST: 'Switch to list view',
 } as const;

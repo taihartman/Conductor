@@ -77,6 +77,33 @@ describe('DashboardStore — activeTab', () => {
   });
 });
 
+describe('DashboardStore — overviewMode', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('initializes overviewMode as "list"', () => {
+    expect(useDashboardStore.getState().overviewMode).toBe('list');
+  });
+
+  it('setOverviewMode switches to "board"', () => {
+    useDashboardStore.getState().setOverviewMode('board');
+    expect(useDashboardStore.getState().overviewMode).toBe('board');
+  });
+
+  it('setOverviewMode switches back to "list"', () => {
+    useDashboardStore.getState().setOverviewMode('board');
+    useDashboardStore.getState().setOverviewMode('list');
+    expect(useDashboardStore.getState().overviewMode).toBe('list');
+  });
+
+  it('clearFocus does not reset overviewMode', () => {
+    useDashboardStore.getState().setOverviewMode('board');
+    useDashboardStore.getState().clearFocus();
+    expect(useDashboardStore.getState().overviewMode).toBe('board');
+  });
+});
+
 describe('DashboardStore — pendingLaunchSessionId', () => {
   beforeEach(() => {
     resetStore();

@@ -1,17 +1,21 @@
 import React, { useRef } from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
+import type { LaunchMode } from '@shared/sharedConstants';
 import { SESSION_STATUSES, STATUS_GROUPS } from '@shared/sharedConstants';
 import { LAYOUT_ORIENTATIONS } from '../store/dashboardStore';
 import type { LayoutOrientation } from '../store/dashboardStore';
 import { formatCost } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { OwlblobMascot } from './OwlblobMascot';
+import { SplitButton } from './SplitButton';
 
 interface ConductorHeaderProps {
   sessions: SessionInfo[];
   tokenSummaries: TokenSummary[];
   onRefresh: () => void;
-  onLaunchSession: () => void;
+  onLaunchSession: (mode: LaunchMode) => void;
+  onLaunchModeChange: (mode: LaunchMode) => void;
+  launchMode: LaunchMode;
   nudgeActive: boolean;
   onMascotClick: () => void;
   mascotButtonRef?: React.Ref<HTMLButtonElement>;
@@ -23,6 +27,8 @@ interface ConductorHeaderProps {
   activeTab?: 'sessions' | 'hidden';
   onTabChange?: (tab: 'sessions' | 'hidden') => void;
   hiddenCount?: number;
+  isNestedSession?: boolean;
+  onToggleSettings?: () => void;
 }
 
 export function ConductorHeader({
@@ -30,6 +36,8 @@ export function ConductorHeader({
   tokenSummaries,
   onRefresh,
   onLaunchSession,
+  onLaunchModeChange,
+  launchMode,
   nudgeActive,
   onMascotClick,
   mascotButtonRef,
@@ -41,6 +49,8 @@ export function ConductorHeader({
   activeTab,
   onTabChange,
   hiddenCount,
+  isNestedSession,
+  onToggleSettings,
 }: ConductorHeaderProps): React.ReactElement {
   // sessions already pre-filtered by ConductorDashboard (no sub-agents, optionally no artifacts)
   const workingCount = sessions.filter(
@@ -139,24 +149,12 @@ export function ConductorHeader({
       </div>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
-        <button
-          onClick={onLaunchSession}
-          style={{
-            padding: '3px 10px', // inline-ok
-            fontSize: '13px', // inline-ok
-            fontWeight: 700,
-            borderRadius: '3px',
-            border: '1px solid var(--border)',
-            backgroundColor: 'var(--bg-card)',
-            color: 'var(--fg-secondary)',
-            cursor: 'pointer',
-            fontFamily: 'inherit',
-          }}
-          title={UI_STRINGS.LAUNCH_SESSION_TOOLTIP}
-          aria-label={UI_STRINGS.LAUNCH_SESSION_TOOLTIP}
-        >
-          {UI_STRINGS.LAUNCH_SESSION_BUTTON}
-        </button>
+        <SplitButton
+          currentMode={launchMode}
+          onLaunch={onLaunchSession}
+          onModeChange={onLaunchModeChange}
+          disabled={isNestedSession}
+        />
         <SearchInput query={searchQuery} onChange={onSearchChange} />
         {showOrientationToggle && onToggleOrientation && (
           <button
@@ -195,6 +193,25 @@ export function ConductorHeader({
         >
           {UI_STRINGS.REFRESH_BUTTON}
         </button>
+        {onToggleSettings && (
+          <button
+            onClick={onToggleSettings}
+            style={{
+              padding: '3px 10px', // inline-ok
+              fontSize: '13px', // inline-ok
+              borderRadius: '3px',
+              border: '1px solid var(--border)',
+              backgroundColor: 'var(--bg-card)',
+              color: 'var(--fg-secondary)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+            }}
+            title={UI_STRINGS.SETTINGS_GEAR_TOOLTIP}
+            aria-label={UI_STRINGS.SETTINGS_GEAR_TOOLTIP}
+          >
+            {'\u2699'}
+          </button>
+        )}
       </div>
     </div>
   );

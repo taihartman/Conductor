@@ -1,6 +1,5 @@
 import React from 'react';
 import type { ConversationTurn } from '@shared/types';
-import { COLORS } from '../config/colors';
 import { UI_STRINGS } from '../config/strings';
 import { formatModel } from '../utils/formatters';
 import { ToolBlock } from './ToolBlock';
@@ -22,8 +21,7 @@ export function AssistantTurn({ turn }: AssistantTurnProps): React.ReactElement 
   return (
     <div
       style={{
-        padding: 'var(--spacing-sm) var(--spacing-md)',
-        backgroundColor: COLORS.ASSISTANT_TURN_BG,
+        padding: '8px 20px', // inline-ok
       }}
     >
       {/* Header */}

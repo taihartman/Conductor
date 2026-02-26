@@ -27,7 +27,7 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
     <div
       style={{
         borderRadius: '4px', // inline-ok
-        backgroundColor: COLORS.TOOL_BLOCK_BG,
+        border: `0.5px solid ${COLORS.TOOL_BLOCK_BORDER}`,
         overflow: 'hidden',
         marginBottom: '4px', // inline-ok
       }}
@@ -57,11 +57,8 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
 
         <span
           style={{
-            display: 'inline-block',
-            padding: '0 4px', // inline-ok
-            borderRadius: '3px', // inline-ok
-            backgroundColor: COLORS.TOOL_BADGE_BG,
-            color: 'var(--accent)',
+            fontWeight: 700,
+            color: 'var(--fg-primary)',
             fontSize: '11px', // inline-ok
             whiteSpace: 'nowrap',
           }}
@@ -76,7 +73,8 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
             color: 'var(--fg-muted)',
-            fontSize: '11px', // inline-ok
+            fontSize: '0.85em', // inline-ok
+            fontFamily: 'var(--font-mono)',
           }}
         >
           {tool.inputSummary}
@@ -84,8 +82,8 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
 
         <span
           style={{
-            width: '6px', // inline-ok
-            height: '6px', // inline-ok
+            width: SIZES.TOOL_STATUS_DOT,
+            height: SIZES.TOOL_STATUS_DOT,
             borderRadius: '50%',
             backgroundColor: status.color,
             flexShrink: 0,
@@ -99,7 +97,7 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
         <div
           style={{
             padding: '6px 8px', // inline-ok
-            borderTop: '1px solid var(--border)',
+            borderTop: `0.5px solid ${COLORS.TOOL_BLOCK_BORDER}`,
             fontSize: '11px', // inline-ok
             fontFamily: 'var(--font-mono)',
             lineHeight: 1.4,
@@ -107,8 +105,15 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
         >
           {tool.inputJson && (
             <div style={{ marginBottom: '6px' /* inline-ok */ }}>
-              <div style={{ color: 'var(--fg-muted)', marginBottom: '2px', fontSize: '10px' /* inline-ok */ }}>
-                {UI_STRINGS.TOOL_BLOCK_INPUT_LABEL}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'auto 1fr',
+                gap: '4px 8px', // inline-ok
+              }}>
+                <div style={{ color: 'var(--fg-muted)', fontSize: '0.85em', opacity: 0.5 /* inline-ok */ }}>
+                  {UI_STRINGS.TOOL_BLOCK_INPUT_LABEL}
+                </div>
+                <div />
               </div>
               <CodeBlock maxHeight={SIZES.TOOL_INPUT_MAX_HEIGHT}>
                 {formatJson(tool.inputJson)}
@@ -122,7 +127,8 @@ export function ToolBlock({ tool }: ToolBlockProps): React.ReactElement {
                 style={{
                   color: tool.isError ? 'var(--status-error)' : 'var(--fg-muted)',
                   marginBottom: '2px', // inline-ok
-                  fontSize: '10px', // inline-ok
+                  fontSize: '0.85em', // inline-ok
+                  opacity: tool.isError ? 1 : 0.5, // inline-ok
                 }}
               >
                 {tool.isError ? UI_STRINGS.TOOL_BLOCK_ERROR_OUTPUT_LABEL : UI_STRINGS.TOOL_BLOCK_OUTPUT_LABEL}

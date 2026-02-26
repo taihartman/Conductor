@@ -173,8 +173,8 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
                 borderRadius: '4px',
                 border: 'none',
                 cursor: sending ? 'default' : 'pointer',
-                background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
-                color: '#fff', // inline-ok: button text color
+                background: COLORS.PRIMARY_ACTION_BG,
+                color: COLORS.PRIMARY_ACTION_COLOR,
                 opacity: sending ? 0.5 : 1, // inline-ok
               }}
             >
@@ -234,8 +234,8 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
               borderRadius: '4px',
               border: 'none',
               cursor: sending ? 'default' : 'pointer',
-              background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
-              color: '#fff', // inline-ok: button text color
+              background: COLORS.PRIMARY_ACTION_BG,
+              color: COLORS.PRIMARY_ACTION_COLOR,
               opacity: sending ? 0.5 : 1, // inline-ok
             }}
           >
@@ -275,8 +275,8 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
                 borderRadius: '4px',
                 border: 'none',
                 cursor: sending ? 'default' : 'pointer',
-                background: 'var(--accent, #007acc)', // inline-ok: CSS var with fallback
-                color: '#fff', // inline-ok: button text color
+                background: COLORS.PRIMARY_ACTION_BG,
+                color: COLORS.PRIMARY_ACTION_COLOR,
                 opacity: sending ? 0.5 : 1, // inline-ok
               }}
             >
@@ -329,6 +329,7 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
       <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-end' }}>
         <textarea
           ref={textareaRef}
+          className="chat-textarea"
           value={text}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
@@ -337,10 +338,10 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
           style={{
             flex: 1,
             resize: 'none',
-            background: 'var(--input-bg, rgba(0, 0, 0, 0.2))', // inline-ok: CSS var with fallback
+            background: COLORS.CHAT_INPUT_BG,
             border: `1px solid ${COLORS.CHAT_INPUT_BORDER}`,
             borderRadius: '4px',
-            color: 'var(--text-primary)',
+            color: 'var(--fg-primary)',
             padding: '6px 8px',
             fontSize: '13px', // inline-ok
             fontFamily: 'inherit',
@@ -359,8 +360,8 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
             borderRadius: '4px',
             border: 'none',
             cursor: canSend ? 'pointer' : 'default',
-            background: canSend ? 'var(--accent, #007acc)' : 'rgba(255, 255, 255, 0.05)', // inline-ok: CSS var with fallback
-            color: canSend ? '#fff' : 'var(--text-secondary)', // inline-ok: button text color
+            background: canSend ? COLORS.SEND_BUTTON_BG : COLORS.SEND_BUTTON_DISABLED_BG,
+            color: canSend ? COLORS.SEND_BUTTON_COLOR : 'var(--fg-secondary)',
             opacity: canSend ? 1 : 0.5,
             flexShrink: 0,
           }}
@@ -373,7 +374,7 @@ export function ChatInput({ sessionId, session, subAgentSession }: ChatInputProp
         <div
           style={{
             fontSize: '11px', // inline-ok
-            color: 'var(--text-secondary)',
+            color: 'var(--fg-secondary)',
             marginTop: '4px',
           }}
         >

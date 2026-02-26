@@ -515,18 +515,37 @@ describe('SessionTracker inactivity timeout', () => {
     expect(state.sessions.find((s) => s.sessionId === 'think-1')!.status).toBe('done');
   });
 
-  it('transitions waiting session to done after inactivity timeout', () => {
+  it('does NOT transition waiting session to done after 10 min inactivity', () => {
     const now = new Date().toISOString();
     feedRecords(tracker, 'wait-1', JsonlParser.parseString(makeWaitingRecord('wait-1', now)));
 
     let state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('waiting');
 
+    // 11 minutes of inactivity — below the 2-hour waiting threshold
     setLastActivity('wait-1', new Date(Date.now() - 11 * 60 * 1000).toISOString());
     (tracker as any).cleanupStaleSessions();
 
     state = tracker.getState();
-    expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('done');
+    expect(state.sessions.find((s) => s.sessionId === 'wait-1')!.status).toBe('waiting');
+  });
+
+  it('transitions waiting session to done after 2 hours', () => {
+    const now = new Date().toISOString();
+    feedRecords(tracker, 'wait-2h', JsonlParser.parseString(makeWaitingRecord('wait-2h', now)));
+
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'wait-2h')!.status).toBe('waiting');
+
+    // 2 hours + 1 minute of inactivity — above the waiting threshold
+    setLastActivity(
+      'wait-2h',
+      new Date(Date.now() - (2 * 60 * 60 * 1000 + 60 * 1000)).toISOString()
+    );
+    (tracker as any).cleanupStaleSessions();
+
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'wait-2h')!.status).toBe('done');
   });
 
   it('does NOT transition working session that is still recent', () => {
@@ -541,7 +560,7 @@ describe('SessionTracker inactivity timeout', () => {
     expect(state.sessions.find((s) => s.sessionId === 'work-2')!.status).toBe('working');
   });
 
-  it('removes session done by inactivity after stale threshold', () => {
+  it('removes session done by inactivity after stale threshold (4 hours)', () => {
     const now = new Date().toISOString();
     feedRecords(
       tracker,
@@ -555,11 +574,37 @@ describe('SessionTracker inactivity timeout', () => {
     let state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'stale-done-1')!.status).toBe('done');
 
-    // Second: stale removal (31 min) → removed from memory
-    setLastActivity('stale-done-1', new Date(Date.now() - 31 * 60 * 1000).toISOString());
+    // Second: stale removal (4h + 1 min) → removed from memory
+    setLastActivity(
+      'stale-done-1',
+      new Date(Date.now() - (4 * 60 * 60 * 1000 + 60 * 1000)).toISOString()
+    );
     (tracker as any).cleanupStaleSessions();
     state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'stale-done-1')).toBeUndefined();
+  });
+
+  it('does not remove session freshly transitioned in same cleanup cycle', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      tracker,
+      'fresh-trans',
+      JsonlParser.parseString(makeToolUseRecord('fresh-trans', now))
+    );
+
+    // Set lastActivity to >10 min (triggers Pass 1 transition to done)
+    // AND >4 hours (would normally trigger Pass 2 removal)
+    setLastActivity(
+      'fresh-trans',
+      new Date(Date.now() - (4 * 60 * 60 * 1000 + 60 * 1000)).toISOString()
+    );
+    (tracker as any).cleanupStaleSessions();
+
+    // Session should be transitioned to done but NOT removed in the same cycle
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'fresh-trans');
+    expect(session).toBeDefined();
+    expect(session!.status).toBe('done');
   });
 
   it('emits state change when Pass 1 transitions but Pass 2 removes nothing', () => {
@@ -610,6 +655,24 @@ describe('SessionTracker inactivity timeout', () => {
 
     state = tracker.getState();
     expect(state.sessions.find((s) => s.sessionId === 'heal-1')!.status).toBe('working');
+  });
+
+  it('does not remove done session at 31 min (below 4-hour stale threshold)', () => {
+    const now = new Date().toISOString();
+    feedRecords(tracker, 'not-stale', JsonlParser.parseString(makeToolUseRecord('not-stale', now)));
+
+    // Inactivity timeout → done
+    setLastActivity('not-stale', new Date(Date.now() - 11 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+    let state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'not-stale')!.status).toBe('done');
+
+    // 31 min — used to trigger removal, but now below the 4-hour threshold
+    setLastActivity('not-stale', new Date(Date.now() - 31 * 60 * 1000).toISOString());
+    (tracker as any).cleanupStaleSessions();
+    state = tracker.getState();
+    expect(state.sessions.find((s) => s.sessionId === 'not-stale')).toBeDefined();
+    expect(state.sessions.find((s) => s.sessionId === 'not-stale')!.status).toBe('done');
   });
 });
 
@@ -798,7 +861,7 @@ describe('SessionTracker per-session activity storage', () => {
     const t = tracker as any;
     expect(t.activitiesBySession.has('stale-act')).toBe(true);
 
-    // Trigger cleanup — session is done (replay detection) + stale (>30 min)
+    // Trigger cleanup — session is done (replay detection) + stale (>4 hours)
     t.cleanupStaleSessions();
 
     // Activity buffer should be cleaned up too
@@ -1306,5 +1369,173 @@ describe('SessionTracker artifact detection', () => {
     expect(session).toBeDefined();
     // Has tokens, so not an empty artifact even if 0 turns
     expect(session!.isArtifact).toBe(false);
+  });
+
+  it('marks local-command-caveat session as artifact', () => {
+    const now = new Date().toISOString();
+
+    feedRecords(
+      tracker,
+      'caveat-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"caveat-1","slug":"caveat-1","timestamp":"${now}","message":{"role":"user","content":"local-command-caveat: some system message about local commands"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'caveat-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"caveat-1","slug":"caveat-1","timestamp":"${now}","message":{"model":"claude-haiku-4-5-20251001","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"Acknowledged"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":50,"output_tokens":10}}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'caveat-1',
+      JsonlParser.parseString(
+        `{"type":"system","subtype":"turn_duration","durationMs":200,"timestamp":"${now}"}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'caveat-1');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(true);
+  });
+
+  it('marks session matching user-defined auto-hide pattern as artifact', () => {
+    const now = new Date().toISOString();
+    const mockGet = vi.fn((key: string, defaultValue?: unknown) => {
+      if (key === 'conductor.autoHidePatterns') return ['secret-project'];
+      return defaultValue;
+    });
+    (vscode.workspace.getConfiguration as any).mockReturnValue({ get: mockGet });
+
+    feedRecords(
+      tracker,
+      'pattern-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"pattern-1","slug":"pattern-1","timestamp":"${now}","message":{"role":"user","content":"Working on secret-project feature X"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'pattern-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"pattern-1","slug":"pattern-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'pattern-1');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(true);
+
+    // Reset mock
+    (vscode.workspace.getConfiguration as any).mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  it('matches user patterns case-insensitively', () => {
+    const now = new Date().toISOString();
+    const mockGet = vi.fn((key: string, defaultValue?: unknown) => {
+      if (key === 'conductor.autoHidePatterns') return ['SECRET'];
+      return defaultValue;
+    });
+    (vscode.workspace.getConfiguration as any).mockReturnValue({ get: mockGet });
+
+    feedRecords(
+      tracker,
+      'case-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"case-1","slug":"case-1","timestamp":"${now}","message":{"role":"user","content":"Working on secret project"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'case-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"case-1","slug":"case-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'case-1');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(true);
+
+    // Reset mock
+    (vscode.workspace.getConfiguration as any).mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  it('does not mark sessions when autoHidePatterns is empty', () => {
+    const now = new Date().toISOString();
+    const mockGet = vi.fn((key: string, defaultValue?: unknown) => {
+      if (key === 'conductor.autoHidePatterns') return [];
+      return defaultValue;
+    });
+    (vscode.workspace.getConfiguration as any).mockReturnValue({ get: mockGet });
+
+    feedRecords(
+      tracker,
+      'no-match',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"no-match","slug":"no-match","timestamp":"${now}","message":{"role":"user","content":"Normal session content"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'no-match',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"no-match","slug":"no-match","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'no-match');
+    expect(session).toBeDefined();
+    expect(session!.isArtifact).toBe(false);
+
+    // Reset mock
+    (vscode.workspace.getConfiguration as any).mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  it('ignores empty-string patterns in autoHidePatterns', () => {
+    const now = new Date().toISOString();
+    const mockGet = vi.fn((key: string, defaultValue?: unknown) => {
+      if (key === 'conductor.autoHidePatterns') return ['', '  ', ''];
+      return defaultValue;
+    });
+    (vscode.workspace.getConfiguration as any).mockReturnValue({ get: mockGet });
+
+    feedRecords(
+      tracker,
+      'whitespace-1',
+      JsonlParser.parseString(
+        `{"type":"user","sessionId":"whitespace-1","slug":"whitespace-1","timestamp":"${now}","message":{"role":"user","content":"Normal session"}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'whitespace-1',
+      JsonlParser.parseString(
+        `{"type":"assistant","sessionId":"whitespace-1","slug":"whitespace-1","timestamp":"${now}","message":{"model":"claude-sonnet-4-6","id":"msg1","type":"message","role":"assistant","content":[{"type":"text","text":"OK"}],"stop_reason":"end_turn","stop_sequence":null,"usage":{"input_tokens":100,"output_tokens":10}}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'whitespace-1');
+    expect(session).toBeDefined();
+    // Empty/whitespace-only patterns should be filtered out, not match everything
+    expect(session!.isArtifact).toBe(false);
+
+    // Reset mock
+    (vscode.workspace.getConfiguration as any).mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
   });
 });

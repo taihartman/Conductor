@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import type { SessionInfo } from '@shared/types';
-import { SESSION_STATUSES, STATUS_GROUPS } from '@shared/sharedConstants';
+import { SESSION_STATUSES, STATUS_GROUPS, LAUNCH_MODES } from '@shared/sharedConstants';
 import { StatusDot } from './StatusDot';
 import { EnsembleIndicator } from './EnsembleIndicator';
 import { ContextMenu } from './ContextMenu';
@@ -16,6 +16,7 @@ import {
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
 import { useLongPress } from '../hooks/useLongPress';
+import { getContextText } from '../utils/sessionContext';
 
 interface OverviewCardProps {
   session: SessionInfo;
@@ -29,54 +30,6 @@ interface OverviewCardProps {
   onHide?: (sessionId: string) => void;
   onUnhide?: (sessionId: string) => void;
   isHiddenTab?: boolean;
-}
-
-function getContextText(session: SessionInfo): string {
-  switch (session.status) {
-    case SESSION_STATUSES.WORKING:
-      if (session.lastToolName) {
-        return session.lastToolInput
-          ? `${session.lastToolName} — ${session.lastToolInput}`
-          : session.lastToolName;
-      }
-      return UI_STRINGS.CONTEXT_WORKING;
-    case SESSION_STATUSES.THINKING:
-      return UI_STRINGS.CONTEXT_THINKING;
-    case SESSION_STATUSES.WAITING:
-      if (session.pendingQuestion?.isToolApproval) {
-        const tools = session.pendingQuestion.pendingTools;
-        if (tools && tools.length > 0) {
-          const desc = tools
-            .map((t) => (t.inputSummary ? `${t.toolName} — ${t.inputSummary}` : t.toolName))
-            .join(', ');
-          const maxLen = 80; // inline-ok: matches TRUNCATION.TOOL_APPROVAL_DESC_MAX
-          const truncated = desc.length > maxLen ? desc.substring(0, maxLen) + '...' : desc;
-          return `${UI_STRINGS.CONTEXT_TOOL_APPROVAL}: ${truncated}`;
-        }
-        return UI_STRINGS.CONTEXT_TOOL_APPROVAL;
-      }
-      if (session.pendingQuestion?.isPlanApproval) {
-        return session.pendingQuestion.planMode === 'enter'
-          ? UI_STRINGS.CONTEXT_ENTER_PLAN_APPROVAL
-          : UI_STRINGS.CONTEXT_EXIT_PLAN_APPROVAL;
-      }
-      return session.pendingQuestion
-        ? session.pendingQuestion.question.length > 80
-          ? session.pendingQuestion.question.substring(0, 80) + '...'
-          : session.pendingQuestion.question
-        : UI_STRINGS.CONTEXT_WAITING;
-    case SESSION_STATUSES.ERROR:
-      return UI_STRINGS.CONTEXT_ERROR;
-    case SESSION_STATUSES.DONE:
-      if (session.lastAssistantText) {
-        return session.lastAssistantText;
-      }
-      return `${UI_STRINGS.CONTEXT_DONE} \u2014 ${timeAgo(session.lastActivityAt)}`;
-    case SESSION_STATUSES.IDLE:
-      return timeAgo(session.lastActivityAt);
-    default:
-      return '';
-  }
 }
 
 export function OverviewCard({
@@ -302,6 +255,22 @@ export function OverviewCard({
               '{count}',
               String(session.continuationCount + 1)
             )}
+          </span>
+        )}
+        {session.launchMode === LAUNCH_MODES.YOLO && (
+          <span
+            style={{
+              fontSize: '9px', // inline-ok
+              fontWeight: 600,
+              color: 'var(--status-waiting)',
+              backgroundColor: COLORS.YOLO_BADGE_BG,
+              borderRadius: '3px',
+              padding: '1px 5px', // inline-ok
+              whiteSpace: 'nowrap',
+              flexShrink: 0,
+            }}
+          >
+            {UI_STRINGS.YOLO_BADGE}
           </span>
         )}
         <span style={{ flex: 1 }} />

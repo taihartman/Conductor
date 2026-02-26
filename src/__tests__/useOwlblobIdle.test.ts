@@ -58,6 +58,8 @@ function createMockRefs(): {
   const wingLeft = createMockElement();
   const wingRight = createMockElement();
   const root = createMockElement();
+  const footLeft = createMockElement();
+  const footRight = createMockElement();
 
   return {
     refs: {
@@ -69,6 +71,8 @@ function createMockRefs(): {
       wingLeft: wingLeft.el,
       wingRight: wingRight.el,
       root: root.el,
+      footLeft: footLeft.el,
+      footRight: footRight.el,
     },
     mocks: {
       head: head.classList,
@@ -79,6 +83,8 @@ function createMockRefs(): {
       wingLeft: wingLeft.classList,
       wingRight: wingRight.classList,
       root: root.classList,
+      footLeft: footLeft.classList,
+      footRight: footRight.classList,
     },
   };
 }
@@ -117,9 +123,53 @@ describe('pickBehavior', () => {
       counts[b.name] = (counts[b.name] || 0) + 1;
     }
 
-    // Blink (weight 4/15 ≈ 26.7%) should appear far more than settle (weight 1/15 ≈ 6.7%)
+    // Blink (weight 4/17 ≈ 23.5%) should appear far more than settle (weight 1/17 ≈ 5.9%)
     expect(counts['blink']).toBeGreaterThan((counts['settle'] ?? 0) * 2);
     expect(counts['blink']).toBeGreaterThan((counts['head-bob'] ?? 0) * 2);
+  });
+
+  it('toe-wiggle and foot-tap behaviors appear in distribution', () => {
+    const counts: Record<string, number> = {};
+    const iterations = 10000;
+
+    for (let i = 0; i < iterations; i++) {
+      const b = pickBehavior();
+      counts[b.name] = (counts[b.name] || 0) + 1;
+    }
+
+    expect(counts['toe-wiggle']).toBeGreaterThan(0);
+    expect(counts['foot-tap']).toBeGreaterThan(0);
+  });
+
+  it('toe-wiggle targets both feet', () => {
+    const { refs } = createMockRefs();
+    // Find the toe-wiggle behavior via picking
+    let toeWiggle: ReturnType<typeof pickBehavior> | null = null;
+    for (let i = 0; i < 500; i++) {
+      const b = pickBehavior();
+      if (b.name === 'toe-wiggle') {
+        toeWiggle = b;
+        break;
+      }
+    }
+    expect(toeWiggle).not.toBeNull();
+    const elements = toeWiggle!.apply(refs as never);
+    expect(elements.length).toBe(2);
+  });
+
+  it('foot-tap targets exactly one foot', () => {
+    const { refs } = createMockRefs();
+    let footTap: ReturnType<typeof pickBehavior> | null = null;
+    for (let i = 0; i < 500; i++) {
+      const b = pickBehavior();
+      if (b.name === 'foot-tap') {
+        footTap = b;
+        break;
+      }
+    }
+    expect(footTap).not.toBeNull();
+    const elements = footTap!.apply(refs as never);
+    expect(elements.length).toBe(1);
   });
 });
 

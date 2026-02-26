@@ -21,4 +21,7 @@ export interface IPtyBridge extends vscode.Disposable {
 
   /** Whether a session is registered with this bridge. */
   hasSession(sessionId: string): boolean;
+
+  /** Return the set of registered session IDs (for replay iteration). */
+  getRegisteredSessionIds(): ReadonlySet<string>;
 }

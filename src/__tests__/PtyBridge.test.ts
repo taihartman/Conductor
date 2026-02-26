@@ -115,6 +115,34 @@ describe('PtyBridge', () => {
     });
   });
 
+  describe('getRegisteredSessionIds', () => {
+    it('returns empty set when no sessions registered', () => {
+      const ids = bridge.getRegisteredSessionIds();
+      expect(ids.size).toBe(0);
+    });
+
+    it('returns correct set after registering sessions', () => {
+      bridge.registerSession('s1');
+      bridge.registerSession('s2');
+
+      const ids = bridge.getRegisteredSessionIds();
+      expect(ids.size).toBe(2);
+      expect(ids.has('s1')).toBe(true);
+      expect(ids.has('s2')).toBe(true);
+    });
+
+    it('reflects unregistered sessions', () => {
+      bridge.registerSession('s1');
+      bridge.registerSession('s2');
+      bridge.unregisterSession('s1');
+
+      const ids = bridge.getRegisteredSessionIds();
+      expect(ids.size).toBe(1);
+      expect(ids.has('s1')).toBe(false);
+      expect(ids.has('s2')).toBe(true);
+    });
+  });
+
   describe('dispose', () => {
     it('clears all sessions and buffers', () => {
       bridge.registerSession('s1');

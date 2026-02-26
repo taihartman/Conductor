@@ -209,11 +209,14 @@ export class SessionStateMachine implements ISessionStateMachine {
         isPlanApproval: true,
         planMode: planToolName === SPECIAL_NAMES.ENTER_PLAN_MODE ? 'enter' : 'exit',
       };
-    } else if (hasToolUse && msg.stop_reason === SPECIAL_NAMES.TOOL_USE_STOP_REASON) {
-      // Model finished, tools need permission/execution in terminal.
-      // Flickering safe: SessionTracker processes records in batches (1s polling),
-      // and the 100ms IPC debounce means same-batch tool_use+tool_result never
-      // produces a visible waiting state. Only tools pending >1s show waiting.
+    } else if (hasToolUse) {
+      // Tool call detected — always set WAITING with tool approval.
+      // Auto-approved tools: tool_result arrives in the same polling batch (1s),
+      // and the 100ms IPC debounce means the webview never sees the transient state.
+      // Approval-needed tools: tool_result is delayed, so WAITING persists and
+      // ChatInput renders Allow/Always/Deny buttons.
+      // Edge: slow auto-approved tools (>1s) may briefly show WAITING — acceptable
+      // trade-off vs. Pattern B sessions (null stop_reason) never showing buttons.
       this._status = SESSION_STATUSES.WAITING;
       const pendingTools = toolBlocks
         .filter(
@@ -227,10 +230,6 @@ export class SessionStateMachine implements ISessionStateMachine {
         isToolApproval: true,
         pendingTools,
       };
-    } else if (hasToolUse) {
-      // tool_use without stop_reason 'tool_use' (streaming, mid-generation) → working
-      this._status = SESSION_STATUSES.WORKING;
-      this._pendingQuestion = undefined;
     } else if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON) {
       // Text-only end_turn: Claude finished its turn
       this._pendingQuestion = undefined;
@@ -324,8 +323,9 @@ export class SessionStateMachine implements ISessionStateMachine {
    */
   handleProgressRecord(_record: ProgressRecord): SessionStatus {
     this.cancelTimers();
-    if (this._status !== SESSION_STATUSES.WORKING) {
+    if (this._status !== SESSION_STATUSES.WORKING && this._status !== SESSION_STATUSES.WAITING) {
       this._status = SESSION_STATUSES.THINKING;
+      this.startIntermissionTimer();
     }
     return this._status;
   }

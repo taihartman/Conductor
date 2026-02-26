@@ -12,10 +12,12 @@
  * **Key behaviors:**
  * - Debounced updates: state changes are batched and emitted after 100ms of quiet
  * - Replay detection: records older than 5 minutes on first file read are marked historical
- * - Inactivity timeout: active sessions (working/thinking/waiting) with no new records
+ * - Inactivity timeout: active sessions (working/thinking) with no new records
  *   for {@link INACTIVITY_TIMEOUT_MS} (10 min) are transitioned to 'done'
+ * - Waiting timeout: waiting sessions with no new records for
+ *   {@link WAITING_INACTIVITY_TIMEOUT_MS} (2 hours) are transitioned to 'done'
  * - Stale cleanup: terminal-state sessions (idle/done/error) older than
- *   {@link STALE_SESSION_MS} (30 min) are removed every {@link CLEANUP_INTERVAL_MS} (5 min)
+ *   {@link STALE_SESSION_MS} (4 hours) are removed every {@link CLEANUP_INTERVAL_MS} (5 min)
  * - Activity buffer: per-session storage capped at {@link MAX_ACTIVITIES_PER_SESSION} (200) entries with FIFO eviction
  */
 
@@ -101,13 +103,19 @@ export interface DashboardState {
 /** Maximum activity events stored per session (FIFO eviction). */
 const MAX_ACTIVITIES_PER_SESSION = 200;
 /**
- * Active sessions (working/thinking/waiting) with no new records for this
+ * Active sessions (working/thinking) with no new records for this
  * duration are transitioned to 'done'. 10 minutes covers virtually all tool
  * executions; the rare edge case self-heals when a late record arrives.
  */
 const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1000;
+/**
+ * Waiting sessions with no new records for this duration are transitioned
+ * to 'done'. 2 hours allows ample time for the user to respond, while
+ * preventing indefinite accumulation of abandoned waiting sessions.
+ */
+const WAITING_INACTIVITY_TIMEOUT_MS = 2 * 60 * 60 * 1000;
 /** Terminal-state sessions (idle/done/error) older than this are removed from memory. */
-const STALE_SESSION_MS = 30 * 60 * 1000;
+const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
 /** Interval for the stale session cleanup sweep (5 minutes). */
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 /** Records older than this on first file read are considered historical replay. */
@@ -116,8 +124,8 @@ const REPLAY_STALE_THRESHOLD_MS = 5 * 60 * 1000;
 const DEBOUNCE_MS = 100;
 /** Maximum activity events sent to the webview in a single state snapshot. */
 const MAX_ACTIVITIES_FOR_WEBVIEW = 200;
-/** Maximum age of session files considered during manual refresh (1 hour — matches watcher's MAX_AGE_MS). */
-const REFRESH_WINDOW_MS = 1 * 60 * 60 * 1000;
+/** Maximum age of session files considered during manual refresh — matches {@link STALE_SESSION_MS}. */
+const REFRESH_WINDOW_MS = 4 * 60 * 60 * 1000;
 /** Interval for retrying scope resolution when scoped but empty (30 seconds). */
 const SCOPE_RETRY_INTERVAL_MS = 30_000;
 
@@ -387,18 +395,25 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
-   * Determine whether a session is a system artifact that should be hidden by default.
-   *
-   * @param session - The session to evaluate.
-   * @returns `true` if the session is detected as an artifact.
+   * Determine whether a session is a system-generated artifact that should
+   * be auto-hidden by default.
    *
    * @remarks
-   * Detects two categories:
-   * - Episodic memory sessions: autoName starts with {@link ARTIFACT_DETECTION.EPISODIC_MEMORY_PREFIX}
-   * - Empty sessions: 0 turns, 0 tokens, and a completed status (done/idle)
+   * Detection categories (any match → artifact):
+   * 1. Episodic-memory plugin sessions (autoName starts with `EPISODIC_MEMORY_PREFIX`)
+   * 2. Local-command-caveat system messages (autoName contains `LOCAL_COMMAND_CAVEAT`)
+   * 3. Empty completed sessions (0 turns, 0 tokens, terminal status)
+   * 4. User-defined patterns from `conductor.autoHidePatterns` (case-insensitive substring)
+   *
+   * @param session - The session to evaluate
+   * @param userPatterns - Pre-filtered, lowercased user patterns from settings
+   * @returns `true` if the session is detected as an artifact
    */
-  private isSessionArtifact(session: SessionInfo): boolean {
+  private isSessionArtifact(session: SessionInfo, userPatterns: string[]): boolean {
     if (session.autoName?.startsWith(ARTIFACT_DETECTION.EPISODIC_MEMORY_PREFIX)) {
+      return true;
+    }
+    if (session.autoName?.includes(ARTIFACT_DETECTION.LOCAL_COMMAND_CAVEAT)) {
       return true;
     }
     if (
@@ -408,6 +423,12 @@ export class SessionTracker implements vscode.Disposable {
       STATUS_GROUPS.COMPLETED.has(session.status)
     ) {
       return true;
+    }
+    if (userPatterns.length > 0 && session.autoName) {
+      const nameLower = session.autoName.toLowerCase();
+      if (userPatterns.some((p) => nameLower.includes(p))) {
+        return true;
+      }
     }
     return false;
   }
@@ -425,6 +446,11 @@ export class SessionTracker implements vscode.Disposable {
    * @returns Sorted session list for the webview
    */
   private assembleSessionList(): SessionInfo[] {
+    // Read user-defined auto-hide patterns once per assembly (not per-session)
+    const rawPatterns: string[] =
+      vscode.workspace.getConfiguration().get<string[]>(SETTINGS.AUTO_HIDE_PATTERNS) ?? [];
+    const userPatterns = rawPatterns.map((p) => p.trim().toLowerCase()).filter((p) => p.length > 0);
+
     // Ensure continuation groups are fresh
     this.continuationGrouper.ensureFresh(this.sessions);
 
@@ -483,13 +509,13 @@ export class SessionTracker implements vscode.Disposable {
       // Attach child agents (from all continuation members)
       sessionInfo.childAgents = childrenByParent.get(primaryId) || [];
 
-      sessionInfo.isArtifact = this.isSessionArtifact(sessionInfo);
+      sessionInfo.isArtifact = this.isSessionArtifact(sessionInfo, userPatterns);
       parentSessions.push(sessionInfo);
     }
 
     // Compute artifact flag for orphaned agents
     for (const agent of orphanedAgents) {
-      agent.isArtifact = this.isSessionArtifact(agent);
+      agent.isArtifact = this.isSessionArtifact(agent, userPatterns);
     }
 
     return [...parentSessions, ...orphanedAgents].sort((a, b) => {
@@ -1124,20 +1150,43 @@ export class SessionTracker implements vscode.Disposable {
     const now = Date.now();
     let changed = false;
 
-    // Pass 1: Inactivity timeout — transition stale active sessions to 'done'.
-    // Sessions in 'error' are excluded: they go straight to 30-min removal in Pass 2
+    // Pass 1: Inactivity timeout — transition stale working/thinking sessions to 'done'.
+    // Only STATUS_GROUPS.ACTIVE (working, thinking) — NOT waiting. Waiting sessions
+    // are legitimately alive (Claude is asking the user a question) and get their own
+    // longer timeout in Pass 1b.
+    // Sessions in 'error' are excluded: they go straight to removal in Pass 2
     // so the error state remains visible in the dashboard until then.
+    const freshlyTransitioned = new Set<string>();
     for (const [id, session] of this.sessions) {
       const status = session.stateMachine.status;
       if (
-        STATUS_GROUPS.ACTIVE_FILTER.has(status) &&
+        STATUS_GROUPS.ACTIVE.has(status) &&
         now - new Date(session.info.lastActivityAt).getTime() > INACTIVITY_TIMEOUT_MS
       ) {
         session.stateMachine.setStatus(SESSION_STATUSES.DONE);
         session.info.status = SESSION_STATUSES.DONE;
+        freshlyTransitioned.add(id);
         console.log(`${LOG_PREFIX.SESSION_TRACKER} Inactivity timeout: ${id} → done`);
         this.outputChannel.appendLine(
-          `Session ${session.info.slug} marked done (inactive for >10 min)`
+          `Session ${session.info.slug} marked done (working/thinking inactive for >10 min)`
+        );
+        changed = true;
+      }
+    }
+
+    // Pass 1b: Stale waiting sessions — waiting sessions abandoned for >2 hours.
+    // Without this, waiting sessions that are never answered would accumulate forever.
+    for (const [id, session] of this.sessions) {
+      if (
+        session.stateMachine.status === SESSION_STATUSES.WAITING &&
+        now - new Date(session.info.lastActivityAt).getTime() > WAITING_INACTIVITY_TIMEOUT_MS
+      ) {
+        session.stateMachine.setStatus(SESSION_STATUSES.DONE);
+        session.info.status = SESSION_STATUSES.DONE;
+        freshlyTransitioned.add(id);
+        console.log(`${LOG_PREFIX.SESSION_TRACKER} Waiting timeout: ${id} → done`);
+        this.outputChannel.appendLine(
+          `Session ${session.info.slug} marked done (waiting inactive for >2 hours)`
         );
         changed = true;
       }
@@ -1149,6 +1198,9 @@ export class SessionTracker implements vscode.Disposable {
 
     const toRemove = new Set<string>();
     for (const [id, session] of this.sessions) {
+      // Guard: never remove sessions freshly transitioned in this same cycle
+      if (freshlyTransitioned.has(id)) continue;
+
       const status = session.stateMachine.status;
       if (
         (STATUS_GROUPS.COMPLETED.has(status) || status === SESSION_STATUSES.ERROR) &&

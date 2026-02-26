@@ -24,6 +24,8 @@ export function OwlblobMascot({
   const wingLeftRef = useRef<SVGEllipseElement>(null);
   const wingRightRef = useRef<SVGEllipseElement>(null);
   const rootRef = useRef<SVGGElement>(null);
+  const footLeftRef = useRef<SVGGElement>(null);
+  const footRightRef = useRef<SVGGElement>(null);
 
   const refs: OwlblobIdleRefs = {
     head: headRef,
@@ -34,6 +36,8 @@ export function OwlblobMascot({
     wingLeft: wingLeftRef,
     wingRight: wingRightRef,
     root: rootRef,
+    footLeft: footLeftRef,
+    footRight: footRightRef,
   };
 
   useOwlblobIdle(refs, { enabled: animated });
@@ -178,20 +182,24 @@ export function OwlblobMascot({
           />
 
           {/* Feet */}
-          <path
-            d="M 90 220 L 82 228 M 90 220 L 90 229 M 90 220 L 98 228"
-            stroke="#e8a838"
-            strokeWidth="2.5"
-            fill="none"
-            strokeLinecap="round"
-          />
-          <path
-            d="M 130 220 L 122 228 M 130 220 L 130 229 M 130 220 L 138 228"
-            stroke="#e8a838"
-            strokeWidth="2.5"
-            fill="none"
-            strokeLinecap="round"
-          />
+          <g ref={footLeftRef} data-ob-foot-left>
+            <path
+              d="M 90 220 L 82 228 M 90 220 L 90 229 M 90 220 L 98 228"
+              stroke="#e8a838"
+              strokeWidth="2.5"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </g>
+          <g ref={footRightRef} data-ob-foot-right>
+            <path
+              d="M 130 220 L 122 228 M 130 220 L 130 229 M 130 220 L 138 228"
+              stroke="#e8a838"
+              strokeWidth="2.5"
+              fill="none"
+              strokeLinecap="round"
+            />
+          </g>
         </g>
       </g>
     </svg>

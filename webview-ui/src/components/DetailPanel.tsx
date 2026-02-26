@@ -8,7 +8,6 @@ import { ConversationView } from './ConversationView';
 import { AnalyticsDrawer } from './AnalyticsDrawer';
 import { ChatInput } from './ChatInput';
 import { TerminalView } from './TerminalView';
-import { UI_STRINGS } from '../config/strings';
 import { vscode } from '../vscode';
 
 interface DetailPanelProps {
@@ -31,11 +30,14 @@ export function DetailPanel({
   const toggleAnalyticsDrawer = useDashboardStore((s) => s.toggleAnalyticsDrawer);
   const sessions = useDashboardStore((s) => s.sessions);
   const viewMode = useDashboardStore(
-    (s) => s.viewModes.get(session.sessionId) ?? 'conversation'
+    (s) =>
+      s.viewModes.get(session.sessionId) ??
+      (session.launchedByConductor ? 'terminal' : 'conversation')
   );
   const toggleViewMode = useDashboardStore((s) => s.toggleViewMode);
   const addPendingAdoption = useDashboardStore((s) => s.addPendingAdoption);
   const isAdopting = useDashboardStore((s) => s.pendingAdoptions.has(session.sessionId));
+  const isNestedSession = useDashboardStore((s) => s.isNestedSession);
 
   // Resolve the sub-agent's full SessionInfo for ChatInput approval buttons.
   // Priority: filtered sub-agent > any waiting child agent > none.
@@ -61,12 +63,15 @@ export function DetailPanel({
     } else if (session.launchedByConductor) {
       // Conductor-launched: toggle locally (terminal already exists)
       toggleViewMode(session.sessionId);
+    } else if (isNestedSession) {
+      // Nested session: cannot adopt — SessionLauncher would reject it
+      return;
     } else {
       // External session: adopt first, then toggle on success
       addPendingAdoption(session.sessionId);
       vscode.postMessage({ type: 'session:adopt', sessionId: session.sessionId });
     }
-  }, [toggleViewMode, addPendingAdoption, session.sessionId, session.launchedByConductor, isTerminalMode]);
+  }, [toggleViewMode, addPendingAdoption, session.sessionId, session.launchedByConductor, isTerminalMode, isNestedSession]);
 
   // Get cost from token summaries
   const tokenSummary = tokenSummaries.find((t) => t.sessionId === session.sessionId);
@@ -98,42 +103,11 @@ export function DetailPanel({
         onToggleExpand={onToggleExpand}
         onToggleAnalytics={toggleAnalyticsDrawer}
         analyticsOpen={analyticsDrawerOpen}
+        isTerminalMode={isTerminalMode}
+        isAdopting={isAdopting}
+        isAdoptDisabled={isNestedSession && !session.launchedByConductor && !isTerminalMode}
+        onToggleView={handleToggleView}
       />
-
-      {/* View mode toggle bar */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 'var(--spacing-sm)',
-          padding: '4px var(--spacing-md)', // inline-ok
-          borderBottom: '1px solid var(--border)',
-          flexShrink: 0,
-        }}
-      >
-        <button
-          onClick={handleToggleView}
-          disabled={isAdopting}
-          title={UI_STRINGS.TERMINAL_TOGGLE_TOOLTIP}
-          style={{
-            padding: '2px 8px', // inline-ok
-            fontSize: '11px', // inline-ok
-            borderRadius: '3px',
-            border: '1px solid var(--border)',
-            backgroundColor: isTerminalMode ? 'var(--accent, #007acc)' : 'var(--bg-card)',
-            color: isTerminalMode ? '#fff' : 'var(--fg-secondary)', // inline-ok: button text
-            cursor: isAdopting ? 'wait' : 'pointer',
-            fontFamily: 'inherit',
-            opacity: isAdopting ? 0.7 : 1, // inline-ok: disabled state
-          }}
-        >
-          {isAdopting
-            ? UI_STRINGS.CHAT_INPUT_ADOPTING
-            : isTerminalMode
-              ? UI_STRINGS.CONVERSATION_VIEW_TOGGLE
-              : UI_STRINGS.TERMINAL_VIEW_TOGGLE}
-        </button>
-      </div>
 
       <div
         style={{
@@ -191,14 +165,12 @@ export function DetailPanel({
         )}
 
         {/* Right: Analytics drawer */}
-        {!isTerminalMode && (
-          <AnalyticsDrawer
-            open={analyticsDrawerOpen}
-            onClose={toggleAnalyticsDrawer}
-            toolStats={toolStats}
-            tokenSummaries={sessionTokenSummaries}
-          />
-        )}
+        <AnalyticsDrawer
+          open={analyticsDrawerOpen}
+          onClose={toggleAnalyticsDrawer}
+          toolStats={toolStats}
+          tokenSummaries={sessionTokenSummaries}
+        />
       </div>
     </div>
   );

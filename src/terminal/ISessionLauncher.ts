@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import type { LaunchMode } from '../models/sharedConstants';
 
 /**
  * Launches Claude Code sessions from within Conductor and manages PTY ownership.
@@ -12,9 +13,10 @@ export interface ISessionLauncher extends vscode.Disposable {
    * Launch a new Claude Code session.
    *
    * @param cwd - Working directory for the session (defaults to workspace root)
+   * @param mode - Launch mode: normal (default), yolo, or remote
    * @returns The session ID (pre-assigned UUID), or throws on failure
    */
-  launch(cwd?: string): Promise<string>;
+  launch(cwd?: string, mode?: LaunchMode): Promise<string>;
 
   /**
    * Resume an existing external session by opening a new terminal with `claude --resume`.
@@ -25,6 +27,18 @@ export interface ISessionLauncher extends vscode.Disposable {
    * @param cwd - Working directory for the terminal (defaults to workspace root)
    */
   resume(sessionId: string, text: string, cwd?: string): Promise<void>;
+
+  /**
+   * Transfer a running session from an external terminal into Conductor's PTY.
+   * Finds the VS Code terminal running the session, closes it, waits for the
+   * Claude process to exit, then resumes in Conductor's PTY.
+   * Falls back to direct resume() if no owning terminal is found.
+   *
+   * @param sessionId - The session ID to transfer
+   * @param text - The user's message to deliver via `--print`
+   * @param cwd - Working directory for the terminal (defaults to workspace root)
+   */
+  transfer(sessionId: string, text: string, cwd?: string): Promise<void>;
 
   /** Whether the given session was launched by Conductor (has PTY ownership). */
   isLaunchedSession(sessionId: string): boolean;
@@ -40,4 +54,10 @@ export interface ISessionLauncher extends vscode.Disposable {
 
   /** Notify a launched session of a terminal resize. */
   resize(sessionId: string, cols: number, rows: number): void;
+
+  /**
+   * Set a callback that fires before pty.spawn() to allow pre-registration
+   * (e.g. PtyBridge.registerSession) before data starts flowing.
+   */
+  setPreSpawnCallback(cb: (sessionId: string) => void): void;
 }

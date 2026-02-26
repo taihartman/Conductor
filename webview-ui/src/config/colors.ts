@@ -29,6 +29,8 @@ export const COLORS = {
   QUESTION_OPTION_BORDER: 'rgba(255, 255, 255, 0.1)',
   QUESTION_OPTION_BADGE_BG: 'rgba(255, 255, 255, 0.1)',
   CONTINUATION_BADGE_BG: 'rgba(255, 255, 255, 0.08)',
+  /** YOLO (bypass permissions) badge background — amber tint matching split button highlight */
+  YOLO_BADGE_BG: 'rgba(240, 173, 78, 0.2)',
   CONTINUATION_DIVIDER_BORDER: 'rgba(255, 193, 7, 0.3)',
   CONTINUATION_DIVIDER_TEXT: 'rgba(255, 193, 7, 0.7)',
   CONTEXT_MENU_BG: 'var(--bg-card)',

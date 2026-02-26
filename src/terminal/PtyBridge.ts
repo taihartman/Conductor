@@ -113,6 +113,14 @@ export class PtyBridge implements IPtyBridge {
     return this.buffers.has(sessionId);
   }
 
+  /**
+   * Return the set of registered session IDs (for replay iteration).
+   * @returns A read-only set of session IDs with active ring buffers
+   */
+  getRegisteredSessionIds(): ReadonlySet<string> {
+    return new Set(this.buffers.keys());
+  }
+
   /** Clear all buffers and release resources. */
   dispose(): void {
     for (const [sessionId] of this.buffers) {
