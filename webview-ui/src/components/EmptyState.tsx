@@ -16,7 +16,7 @@ export function EmptyState(): React.ReactElement {
         padding: 'var(--spacing-xl)',
       }}
     >
-      <div style={{ fontSize: '48px', marginBottom: 'var(--spacing-lg)', opacity: 0.5 }}> // inline-ok
+      <div style={{ fontSize: '48px', marginBottom: 'var(--spacing-lg)', opacity: 0.5 }}>{/* inline-ok */}
         {'{ }'}
       </div>
       <h2
@@ -29,7 +29,7 @@ export function EmptyState(): React.ReactElement {
       >
         {UI_STRINGS.EMPTY_STATE_HEADING}
       </h2>
-      <p style={{ maxWidth: '400px', lineHeight: 1.6 }}> // inline-ok
+      <p style={{ maxWidth: '400px', lineHeight: 1.6 }}>{/* inline-ok */}
         {UI_STRINGS.EMPTY_STATE_DESCRIPTION}
       </p>
       <p

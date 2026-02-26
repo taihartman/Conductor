@@ -57,6 +57,24 @@ style={{ padding: '12px 16px' }}
 
 Code without `// inline-ok` on an inline literal is treated as a violation to be fixed.
 
+**JSX placement rule**: In `.tsx` files, `// inline-ok` after a closing `>` becomes rendered text, not a comment. Place it correctly:
+
+```tsx
+// WRONG — renders "// inline-ok" as visible text in the UI
+<div style={{ fontSize: '12px' }}> // inline-ok
+
+// CORRECT — inside the style object
+<div style={{ fontSize: '12px' /* inline-ok */ }}>
+
+// CORRECT — as a JSX comment between tags
+<div style={{ fontSize: '12px' }}>{/* inline-ok */}
+
+// CORRECT — on a JSX prop (before the closing >)
+<div
+  style={{ fontSize: '12px' }} // inline-ok
+>
+```
+
 ### Naming
 
 - Module-level constants: `UPPER_SNAKE_CASE` (`IDLE_TIMEOUT_MS`, `MAX_ACTIVITIES`).

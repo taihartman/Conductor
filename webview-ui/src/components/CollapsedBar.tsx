@@ -55,7 +55,7 @@ export function CollapsedBar({ session, onExpand }: CollapsedBarProps): React.Re
         <span style={{ color: 'var(--fg-muted)' }}>{formatModel(session.model)}</span>
       )}
       <span style={{ flex: 1 }} />
-      <span style={{ color: 'var(--fg-muted)', fontSize: '11px' }}> // inline-ok
+      <span style={{ color: 'var(--fg-muted)', fontSize: '11px' /* inline-ok */ }}>
         {UI_STRINGS.COLLAPSE_HINT}
       </span>
     </div>

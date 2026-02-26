@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef } from 'react';
-import { Group, Panel, Separator } from 'react-resizable-panels';
+import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
 import { STATUS_GROUPS } from '@shared/sharedConstants';
 import { useDashboardStore, DETAIL_VIEW_MODES } from '../store/dashboardStore';
 import { ConductorHeader } from './ConductorHeader';
@@ -14,8 +14,7 @@ import { matchesSearchQuery } from '../utils/sessionFilter';
 import { vscode } from '../vscode';
 
 const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
-const PANEL_DEFAULT_OVERVIEW = '40%';
-const PANEL_DEFAULT_DETAIL = '60%';
+const PANEL_DEFAULT_LAYOUT: Layout = { overview: 40, detail: 60 };
 const PANEL_MIN_SIZE = '15%';
 const PANEL_MAX_SIZE = '85%';
 
@@ -31,30 +30,42 @@ export function ConductorDashboard(): React.ReactElement {
   const clearFocus = useDashboardStore((s) => s.clearFocus);
   const layoutOrientation = useDashboardStore((s) => s.layoutOrientation);
   const toggleLayoutOrientation = useDashboardStore((s) => s.toggleLayoutOrientation);
+  const panelLayout = useDashboardStore((s) => s.panelLayout);
+  const setPanelLayout = useDashboardStore((s) => s.setPanelLayout);
   const zenModeActive = useDashboardStore((s) => s.zenModeActive);
   const searchQuery = useDashboardStore((s) => s.searchQuery);
   const setSearchQuery = useDashboardStore((s) => s.setSearchQuery);
   const zenExitedAt = useDashboardStore((s) => s.zenExitedAt);
   const enterZenMode = useDashboardStore((s) => s.enterZenMode);
   const exitZenMode = useDashboardStore((s) => s.exitZenMode);
+  const showArtifacts = useDashboardStore((s) => s.showArtifacts);
+  const toggleShowArtifacts = useDashboardStore((s) => s.toggleShowArtifacts);
 
-  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(sessions, zenExitedAt);
-  const completionCount = useCompletionDetector(sessions);
+  // Centralized visibility filter: exclude sub-agents and (optionally) artifacts
+  const visibleSessions = sessions.filter((s) => {
+    if (s.isSubAgent) return false;
+    if (s.isArtifact && !showArtifacts) return false;
+    return true;
+  });
+  const artifactCount = sessions.filter((s) => s.isArtifact && !s.isSubAgent).length;
+
+  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(visibleSessions, zenExitedAt);
+  const completionCount = useCompletionDetector(visibleSessions);
   const mascotButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Filter sessions
+  // Filter sessions (operates on pre-filtered visibleSessions)
   const filteredSessions = (() => {
     switch (filterMode) {
       case 'active':
-        return sessions.filter(
+        return visibleSessions.filter(
           (s) => STATUS_GROUPS.ACTIVE_FILTER.has(s.status)
         );
       case 'recent': {
         const cutoff = Date.now() - RECENT_THRESHOLD_MS;
-        return sessions.filter((s) => new Date(s.lastActivityAt).getTime() > cutoff);
+        return visibleSessions.filter((s) => new Date(s.lastActivityAt).getTime() > cutoff);
       }
       default:
-        return sessions;
+        return visibleSessions;
     }
   })().filter((s) => matchesSearchQuery(s, searchQuery));
 
@@ -139,7 +150,7 @@ export function ConductorDashboard(): React.ReactElement {
         }}
       >
         <ConductorHeader
-          sessions={sessions}
+          sessions={visibleSessions}
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
           onLaunchSession={handleLaunchSession}
@@ -148,6 +159,9 @@ export function ConductorDashboard(): React.ReactElement {
           mascotButtonRef={mascotButtonRef}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
+          artifactCount={artifactCount}
+          showArtifacts={showArtifacts}
+          onToggleArtifacts={toggleShowArtifacts}
         />
         <div style={{ flex: 1, overflow: 'auto' }}>
           <EmptyState />
@@ -166,7 +180,7 @@ export function ConductorDashboard(): React.ReactElement {
       }}
     >
       <ConductorHeader
-        sessions={sessions}
+        sessions={visibleSessions}
         tokenSummaries={tokenSummaries}
         onRefresh={handleRefresh}
         onLaunchSession={handleLaunchSession}
@@ -178,6 +192,9 @@ export function ConductorDashboard(): React.ReactElement {
         layoutOrientation={layoutOrientation}
         onToggleOrientation={toggleLayoutOrientation}
         showOrientationToggle={detailViewMode === DETAIL_VIEW_MODES.SPLIT}
+        artifactCount={artifactCount}
+        showArtifacts={showArtifacts}
+        onToggleArtifacts={toggleShowArtifacts}
       />
 
       {zenModeActive ? (
@@ -221,11 +238,12 @@ export function ConductorDashboard(): React.ReactElement {
           {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && (
             <Group
               orientation={layoutOrientation}
+              defaultLayout={panelLayout ?? PANEL_DEFAULT_LAYOUT}
+              onLayoutChanged={setPanelLayout}
               style={{ flex: 1, overflow: 'hidden' }}
             >
               <Panel
                 id="overview"
-                defaultSize={PANEL_DEFAULT_OVERVIEW}
                 minSize={PANEL_MIN_SIZE}
                 maxSize={PANEL_MAX_SIZE}
                 style={{
@@ -250,7 +268,6 @@ export function ConductorDashboard(): React.ReactElement {
               <Separator />
               <Panel
                 id="detail"
-                defaultSize={PANEL_DEFAULT_DETAIL}
                 minSize={PANEL_MIN_SIZE}
                 maxSize={PANEL_MAX_SIZE}
                 style={{

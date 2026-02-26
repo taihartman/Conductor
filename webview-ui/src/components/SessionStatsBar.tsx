@@ -93,12 +93,12 @@ export function SessionStatsBar({
 
       <span style={{ color: 'var(--fg-muted)' }}>{session.turnCount} turns</span>
 
-      <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}> // inline-ok
+      <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' /* inline-ok */ }}>
         {formatTokens(session.totalInputTokens + session.totalOutputTokens)} tokens
       </span>
 
       {cost > 0 && (
-        <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' }}> // inline-ok
+        <span style={{ color: 'var(--fg-muted)', fontFamily: 'var(--font-mono)', fontSize: '11px' /* inline-ok */ }}>
           {formatCostCompact(cost)}
         </span>
       )}

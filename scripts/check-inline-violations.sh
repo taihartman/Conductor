@@ -157,6 +157,21 @@ check_magic_numbers() {
   done
 }
 
+# --- Check 4: Misplaced // inline-ok after JSX closing > (.tsx only) ---
+check_jsx_inline_ok() {
+  local file="$1"
+  case "$file" in *.tsx) ;; *) return ;; esac
+
+  local content
+  content=$(get_content "$file") || return
+
+  # Match lines where > is followed by // inline-ok — renders as visible text
+  echo "$content" | grep -nE '>[[:space:]]*//[[:space:]]*inline-ok' | while IFS=: read -r num rest; do
+    trimmed=$(echo "$rest" | sed 's/^[[:space:]]*//')
+    echo "  [JSX_TEXT_LEAK] $file:$num — '// inline-ok' after > renders as text. Use {/* inline-ok */} or place inside style object" >> "$TMPFILE"
+  done
+}
+
 # --- Process each file ---
 echo "$FILES" | while IFS= read -r file; do
   [ -z "$file" ] && continue
@@ -164,6 +179,7 @@ echo "$FILES" | while IFS= read -r file; do
   check_colors "$file"
   check_strings "$file"
   check_magic_numbers "$file"
+  check_jsx_inline_ok "$file"
 done
 
 VIOLATIONS=$(wc -l < "$TMPFILE" | tr -d ' ')

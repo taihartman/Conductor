@@ -24,7 +24,7 @@ export function EnsembleIndicator({ childAgents }: EnsembleIndicatorProps): Reac
         <StatusDot key={agent.sessionId} status={agent.status} size={5} />
       ))}
       {childAgents.length > 5 && (
-        <span style={{ fontSize: '10px' }}>+{childAgents.length - 5}</span> // inline-ok
+        <span style={{ fontSize: '10px' /* inline-ok */ }}>+{childAgents.length - 5}</span>
       )}
       <span style={{ marginLeft: '2px' }}>
         {childAgents.length} agent{childAgents.length !== 1 ? 's' : ''}

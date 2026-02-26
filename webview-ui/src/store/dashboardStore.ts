@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { Layout } from 'react-resizable-panels';
 import type {
   SessionInfo,
   ActivityEvent,
@@ -41,10 +42,14 @@ interface DashboardState {
   searchQuery: string;
   layoutOrientation: LayoutOrientation;
   lastInputStatus: { sessionId: string; status: InputSendStatus; error?: string } | null;
+  /** Persisted resizable panel layout across session focus/unfocus cycles. */
+  panelLayout: Layout | null;
   /** Per-session view mode for Conductor-launched sessions. */
   viewModes: Map<string, 'conversation' | 'terminal'>;
   /** Per-session PTY ring buffer replay data (populated on session:launch-status). */
   ptyBuffers: Map<string, string>;
+  /** Whether to show system artifact sessions (episodic memory, empty). */
+  showArtifacts: boolean;
 
   setFullState: (
     sessions: SessionInfo[],
@@ -66,9 +71,11 @@ interface DashboardState {
   setSearchQuery: (query: string) => void;
   toggleLayoutOrientation: () => void;
   setInputStatus: (status: { sessionId: string; status: InputSendStatus; error?: string }) => void;
+  setPanelLayout: (layout: Layout) => void;
   setViewMode: (sessionId: string, mode: 'conversation' | 'terminal') => void;
   toggleViewMode: (sessionId: string) => void;
   appendPtyBuffer: (sessionId: string, data: string) => void;
+  toggleShowArtifacts: () => void;
   zenModeActive: boolean;
   zenExitedAt: number | null;
   enterZenMode: () => void;
@@ -89,8 +96,10 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   searchQuery: '',
   layoutOrientation: LAYOUT_ORIENTATIONS.HORIZONTAL,
   lastInputStatus: null,
+  panelLayout: null,
   viewModes: new Map(),
   ptyBuffers: new Map(),
+  showArtifacts: false,
 
   setFullState: (sessions, activities, conversation, toolStats, tokenSummaries) =>
     set({ sessions, activities, conversation, toolStats, tokenSummaries }),
@@ -137,6 +146,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
           : LAYOUT_ORIENTATIONS.VERTICAL,
     })),
   setInputStatus: (status) => set({ lastInputStatus: status }),
+  setPanelLayout: (layout) => set({ panelLayout: layout }),
   setViewMode: (sessionId, mode) =>
     set((state) => {
       const next = new Map(state.viewModes);
@@ -150,6 +160,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       next.set(sessionId, current === 'conversation' ? 'terminal' : 'conversation');
       return { viewModes: next };
     }),
+  toggleShowArtifacts: () => set((state) => ({ showArtifacts: !state.showArtifacts })),
   appendPtyBuffer: (sessionId, data) =>
     set((state) => {
       const next = new Map(state.ptyBuffers);

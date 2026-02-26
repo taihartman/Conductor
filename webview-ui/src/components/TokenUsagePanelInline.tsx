@@ -49,7 +49,7 @@ export function TokenUsagePanelInline({
         <TokenStat label={UI_STRINGS.TOKEN_STAT_OUTPUT} value={totalOutput} />
         <TokenStat label={UI_STRINGS.TOKEN_STAT_CACHE} value={totalCacheRead} />
         <div>
-          <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}> // inline-ok
+          <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' /* inline-ok */ }}>
             {UI_STRINGS.TOKEN_STAT_COST}
           </div>
           <div
@@ -90,7 +90,7 @@ export function TokenUsagePanelInline({
           >
             {formatModel(ts.model)}
           </span>
-          <span style={{ color: 'var(--fg-muted)', fontSize: '10px' }}> // inline-ok
+          <span style={{ color: 'var(--fg-muted)', fontSize: '10px' /* inline-ok */ }}>
             {formatTokens(ts.inputTokens + ts.outputTokens)} tokens
           </span>
           <span
@@ -110,7 +110,7 @@ export function TokenUsagePanelInline({
 function TokenStat({ label, value }: { label: string; value: number }): React.ReactElement {
   return (
     <div>
-      <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' }}> // inline-ok
+      <div style={{ fontSize: '11px', color: 'var(--fg-muted)', marginBottom: '2px' /* inline-ok */ }}>
         {label}
       </div>
       <div
