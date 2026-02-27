@@ -17,6 +17,7 @@ import { vscode } from '../vscode';
 import { useDashboardStore } from '../store/dashboardStore';
 import { UI_STRINGS } from '../config/strings';
 import { TERMINAL_CONFIG } from '../config/colors';
+import { TERMINAL_KEYS } from '@shared/sharedConstants';
 
 interface TerminalViewProps {
   sessionId: string;
@@ -38,9 +39,11 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
       setShowPlaceholder(false);
       return;
     }
-    const timer = setTimeout(() => setShowPlaceholder(true), NO_PTY_DATA_DELAY_MS);
+    const timer = setTimeout(() => {
+      setShowPlaceholder(true);
+    }, NO_PTY_DATA_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [ptyBuffer]);
+  }, [ptyBuffer, sessionId]);
 
   // Initialize terminal on mount
   useEffect(() => {
@@ -71,6 +74,20 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
     terminal.loadAddon(fitAddon);
     terminal.open(containerRef.current);
 
+    // Prong 2: Intercept modified keys that reach xterm.js but need different escape sequences
+    terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
+      if (event.type !== 'keydown') return true;
+      if (event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        vscode.postMessage({ type: 'pty:input', sessionId, data: TERMINAL_KEYS.SHIFT_ENTER });
+        return false;
+      }
+      if (event.key === 'Backspace' && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey) {
+        vscode.postMessage({ type: 'pty:input', sessionId, data: TERMINAL_KEYS.CMD_BACKSPACE });
+        return false;
+      }
+      return true;
+    });
+
     // Defer initial fit — useEffect runs before browser layout is complete.
     // requestAnimationFrame ensures flex dimensions are computed before measuring.
     const rafId = requestAnimationFrame(() => {
@@ -79,6 +96,8 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
       } catch {
         // Container might not have dimensions yet
       }
+      // Auto-focus so keyboard input works immediately (e.g. after keyboard navigation)
+      terminal.focus();
     });
 
     // Send keystrokes to extension
@@ -109,9 +128,22 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
     });
     resizeObserver.observe(containerRef.current);
 
+    // Also listen for synthetic window resize events (fired by forceRelayout()
+    // when the panel transitions from hidden to visible). ResizeObserver alone
+    // doesn't fire when the container dimensions haven't technically changed.
+    const handleWindowResize = (): void => {
+      try {
+        fitAddon.fit();
+      } catch {
+        // Ignore fit errors during layout transitions
+      }
+    };
+    window.addEventListener('resize', handleWindowResize);
+
     return () => {
       cancelAnimationFrame(rafId);
       resizeObserver.disconnect();
+      window.removeEventListener('resize', handleWindowResize);
       terminal.dispose();
       terminalRef.current = null;
       fitAddonRef.current = null;
@@ -124,8 +156,14 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
   useEffect(() => {
     function handleMessage(event: MessageEvent): void {
       const msg = event.data;
-      if (msg.type === 'pty:data' && msg.sessionId === sessionId) {
-        terminalRef.current?.write(msg.data);
+      if (msg.type === 'pty:data') {
+        if (msg.sessionId === sessionId) {
+          terminalRef.current?.write(msg.data);
+        }
+      }
+      // Prong 1: Receive injected key sequences from VS Code keybindings
+      if (msg.type === 'terminal:inject-keys') {
+        vscode.postMessage({ type: 'pty:input', sessionId, data: msg.data });
       }
     }
 
