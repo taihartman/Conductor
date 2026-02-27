@@ -66,14 +66,14 @@ const STATUS_ICONS: Record<SessionStatus, string> = {
   idle: '$(circle-filled)',
 } as const;
 
-/** Human-readable group labels used as Quick Pick separators. */
+/** Human-readable group labels used as Quick Pick separators — aligned with Kanban column names. */
 const STATUS_GROUP_LABELS: Record<SessionStatus, string> = {
-  waiting: 'Waiting',
-  error: 'Error',
-  working: 'Active',
-  thinking: 'Active',
-  done: 'Done',
-  idle: 'Idle',
+  waiting: 'Awaiting Input',
+  error: 'Needs Attention',
+  working: 'Performing',
+  thinking: 'Performing',
+  done: 'Completed',
+  idle: 'Completed',
 } as const;
 
 // ---------------------------------------------------------------------------

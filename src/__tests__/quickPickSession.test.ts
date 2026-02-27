@@ -198,13 +198,13 @@ describe('buildQuickPickItems', () => {
 
     // QuickPickItemKind.Separator is -1 in the VS Code API
     const separators = items.filter((i) => i.kind === -1);
-    expect(separators.length).toBe(3); // Waiting, Active, Idle
-    expect(separators[0].label).toBe('Waiting');
-    expect(separators[1].label).toBe('Active');
-    expect(separators[2].label).toBe('Idle');
+    expect(separators.length).toBe(3); // Awaiting Input, Performing, Completed
+    expect(separators[0].label).toBe('Awaiting Input');
+    expect(separators[1].label).toBe('Performing');
+    expect(separators[2].label).toBe('Completed');
   });
 
-  it('merges thinking and working into the same Active separator', () => {
+  it('merges thinking and working into the same Performing separator', () => {
     const sessions = [
       makeSession({ status: 'working', sessionId: 'a1' }),
       makeSession({ status: 'thinking', sessionId: 'a2' }),
@@ -212,10 +212,10 @@ describe('buildQuickPickItems', () => {
 
     const items = buildQuickPickItems(sessions);
 
-    // Should be: [Active separator, working item, thinking item]
+    // Should be: [Performing separator, working item, thinking item]
     const separators = items.filter((i) => i.kind === -1);
     expect(separators.length).toBe(1);
-    expect(separators[0].label).toBe('Active');
+    expect(separators[0].label).toBe('Performing');
   });
 
   it('stores sessionId in item for selection lookup', () => {
