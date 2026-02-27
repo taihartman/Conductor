@@ -3,11 +3,35 @@ import { SESSION_STATUSES } from '@shared/sharedConstants';
 import { timeAgo } from './formatters';
 import { UI_STRINGS } from '../config/strings';
 
+/** Time window after which a launching session falls back to its real status. */
+const LAUNCHING_TIMEOUT_MS = 30_000;
+
+/**
+ * Returns true when a session was launched by Conductor but hasn't received
+ * any real activity yet (no turns, no tokens). Includes a 30-second timeout
+ * so sessions don't show "Launching..." forever if the Claude process fails.
+ */
+export function isLaunchingSession(session: SessionInfo): boolean {
+  if (
+    session.launchedByConductor !== true ||
+    session.turnCount !== 0 ||
+    session.totalInputTokens !== 0 ||
+    session.totalOutputTokens !== 0
+  ) {
+    return false;
+  }
+  const elapsed = Date.now() - new Date(session.startedAt).getTime();
+  return elapsed < LAUNCHING_TIMEOUT_MS;
+}
+
 /**
  * Returns a short context string describing what the session is currently doing.
  * Used by OverviewCard and KanbanCard for the secondary text line.
  */
 export function getContextText(session: SessionInfo): string {
+  if (isLaunchingSession(session)) {
+    return UI_STRINGS.CONTEXT_LAUNCHING;
+  }
   switch (session.status) {
     case SESSION_STATUSES.WORKING:
       if (session.lastToolName) {

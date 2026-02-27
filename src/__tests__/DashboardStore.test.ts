@@ -120,7 +120,9 @@ describe('DashboardStore — pendingLaunchSessionId', () => {
 
   it('setFullState auto-focuses when pending session appears', () => {
     useDashboardStore.getState().setPendingLaunchSession('abc-123');
-    useDashboardStore.getState().setFullState([{ sessionId: 'abc-123' } as any], [], [], [], []);
+    useDashboardStore
+      .getState()
+      .setFullState([{ sessionId: 'abc-123' } as any], [], [], [], [], false, null);
     const state = useDashboardStore.getState();
     expect(state.focusedSessionId).toBe('abc-123');
     expect(state.pendingLaunchSessionId).toBeNull();
@@ -130,14 +132,16 @@ describe('DashboardStore — pendingLaunchSessionId', () => {
     useDashboardStore.getState().setPendingLaunchSession('abc-123');
     useDashboardStore
       .getState()
-      .setFullState([{ sessionId: 'other-session' } as any], [], [], [], []);
+      .setFullState([{ sessionId: 'other-session' } as any], [], [], [], [], false, null);
     const state = useDashboardStore.getState();
     expect(state.focusedSessionId).toBeNull();
     expect(state.pendingLaunchSessionId).toBe('abc-123');
   });
 
   it('setFullState does not auto-focus when no pending session', () => {
-    useDashboardStore.getState().setFullState([{ sessionId: 'abc-123' } as any], [], [], [], []);
+    useDashboardStore
+      .getState()
+      .setFullState([{ sessionId: 'abc-123' } as any], [], [], [], [], false, null);
     expect(useDashboardStore.getState().focusedSessionId).toBeNull();
   });
 
@@ -145,5 +149,133 @@ describe('DashboardStore — pendingLaunchSessionId', () => {
     useDashboardStore.getState().setPendingLaunchSession('abc-123');
     useDashboardStore.getState().setPendingLaunchSession(null);
     expect(useDashboardStore.getState().pendingLaunchSessionId).toBeNull();
+  });
+});
+
+describe('DashboardStore — setFullState focus-match guard', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  it('applies activities and conversation when msgFocusId matches focusedSessionId', () => {
+    // Set the webview's focused session
+    useDashboardStore.getState().setFocusedSession('session-a');
+
+    const activities = [{ type: 'tool_call', tool: 'Read' }] as any[];
+    const conversation = [{ role: 'assistant', text: 'hello' }] as any[];
+
+    useDashboardStore.getState().setFullState(
+      [{ sessionId: 'session-a' } as any],
+      activities,
+      conversation,
+      [],
+      [],
+      false,
+      'session-a' // msgFocusId matches focusedSessionId
+    );
+
+    const state = useDashboardStore.getState();
+    expect(state.activities).toEqual(activities);
+    expect(state.conversation).toEqual(conversation);
+  });
+
+  it('drops activities and conversation when msgFocusId does not match focusedSessionId', () => {
+    // Set the webview's focused session to B
+    useDashboardStore.getState().setFocusedSession('session-b');
+
+    // Seed some existing activities/conversation
+    const oldActivities = [{ type: 'text', text: 'old' }] as any[];
+    useDashboardStore.setState({ activities: oldActivities, conversation: [] });
+
+    const newActivities = [{ type: 'tool_call', tool: 'Read' }] as any[];
+    const newConversation = [{ role: 'assistant', text: 'stale' }] as any[];
+
+    useDashboardStore.getState().setFullState(
+      [{ sessionId: 'session-a' } as any, { sessionId: 'session-b' } as any],
+      newActivities,
+      newConversation,
+      [],
+      [],
+      false,
+      'session-a' // msgFocusId does NOT match session-b
+    );
+
+    const state = useDashboardStore.getState();
+    // Activities/conversation should NOT have been updated
+    expect(state.activities).toEqual(oldActivities);
+    expect(state.conversation).toEqual([]);
+    // But sessions should have been updated
+    expect(state.sessions).toHaveLength(2);
+  });
+
+  it('applies activities and conversation during pendingLaunchSessionId claim even when msgFocusId does not match', () => {
+    // Set up a pending launch — the extension doesn't know about the auto-focus yet
+    useDashboardStore.getState().setPendingLaunchSession('launched-1');
+
+    const activities = [{ type: 'tool_call', tool: 'Write' }] as any[];
+    const conversation = [{ role: 'assistant', text: 'launched' }] as any[];
+
+    useDashboardStore.getState().setFullState(
+      [{ sessionId: 'launched-1' } as any],
+      activities,
+      conversation,
+      [],
+      [],
+      false,
+      null // Extension's focusedSessionId is still null
+    );
+
+    const state = useDashboardStore.getState();
+    // pendingLaunch claim should have applied the data
+    expect(state.activities).toEqual(activities);
+    expect(state.conversation).toEqual(conversation);
+    expect(state.focusedSessionId).toBe('launched-1');
+    expect(state.pendingLaunchSessionId).toBeNull();
+  });
+
+  it('applies activities/conversation when both msgFocusId and focusedSessionId are null', () => {
+    // No session focused on either side — the null === null guard should pass
+    const activities = [{ type: 'text', text: 'general' }] as any[];
+    const conversation = [{ role: 'user', text: 'hi' }] as any[];
+
+    useDashboardStore
+      .getState()
+      .setFullState(
+        [{ sessionId: 'session-x' } as any],
+        activities,
+        conversation,
+        [],
+        [],
+        false,
+        null
+      );
+
+    const state = useDashboardStore.getState();
+    expect(state.activities).toEqual(activities);
+    expect(state.conversation).toEqual(conversation);
+  });
+
+  it('always applies sessions, toolStats, and tokenSummaries regardless of focus match', () => {
+    useDashboardStore.getState().setFocusedSession('session-b');
+
+    const sessions = [{ sessionId: 'session-a' } as any];
+    const toolStats = [{ tool: 'Read', count: 5 }] as any[];
+    const tokenSummaries = [{ model: 'opus', total: 1000 }] as any[];
+
+    useDashboardStore.getState().setFullState(
+      sessions,
+      [],
+      [],
+      toolStats,
+      tokenSummaries,
+      true,
+      'session-a' // Does NOT match focused session-b
+    );
+
+    const state = useDashboardStore.getState();
+    expect(state.sessions).toEqual(sessions);
+    expect(state.toolStats).toEqual(toolStats);
+    expect(state.tokenSummaries).toEqual(tokenSummaries);
+    expect(state.isNestedSession).toBe(true);
   });
 });

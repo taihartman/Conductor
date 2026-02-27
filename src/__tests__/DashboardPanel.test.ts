@@ -48,10 +48,14 @@ vi.mock('vscode', () => ({
         }),
       },
       onDidDispose: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChangeViewState: vi.fn(() => ({ dispose: vi.fn() })),
       reveal: vi.fn(),
       dispose: vi.fn(),
     })),
     activeTextEditor: undefined,
+  },
+  commands: {
+    executeCommand: vi.fn(),
   },
   ViewColumn: { One: 1 },
   ConfigurationTarget: { Global: 1, Workspace: 2 },
@@ -199,6 +203,12 @@ function createMockSessionHistoryService(): any {
   };
 }
 
+function createMockStatsCacheReader(): any {
+  return {
+    read: vi.fn(() => Promise.resolve(null)),
+  };
+}
+
 function createMockContext(): any {
   return {
     extensionUri: { fsPath: '/ext', scheme: 'file', path: '/ext' },
@@ -249,7 +259,8 @@ describe('DashboardPanel message routing', () => {
       ptyBridge,
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
-      createMockSessionHistoryService()
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
     );
 
     // Clear the initial state:full post from createOrShow
@@ -526,6 +537,69 @@ describe('DashboardPanel message routing', () => {
     });
   });
 
+  describe('applyVisibility: conductor-launched artifact sessions', () => {
+    it('does NOT auto-hide artifact sessions launched by Conductor', () => {
+      const panel = DashboardPanel.currentPanel!;
+      panel.notifySessionLaunched('artifact-1');
+      postedMessages.length = 0;
+
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'artifact-1',
+            startedAt: '2026-01-01',
+            status: 'idle',
+            turnCount: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            isArtifact: true,
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'artifact-1');
+      expect(session?.isHidden).toBeUndefined();
+    });
+
+    it('still auto-hides artifact sessions NOT launched by Conductor', () => {
+      postedMessages.length = 0;
+
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'random-artifact',
+            startedAt: '2026-01-01',
+            status: 'idle',
+            turnCount: 0,
+            totalInputTokens: 0,
+            totalOutputTokens: 0,
+            isArtifact: true,
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'random-artifact');
+      expect(session?.isHidden).toBe(true);
+    });
+  });
+
   describe('pruning orphaned PTY buffers', () => {
     it('removes buffers for sessions not in SessionTracker', () => {
       // Register and populate a buffer for a session
@@ -766,7 +840,8 @@ describe('DashboardPanel session ordering', () => {
       createMockPtyBridge(),
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
-      createMockSessionHistoryService()
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
     );
 
     postedMessages.length = 0;
@@ -898,7 +973,8 @@ describe('DashboardPanel history support', () => {
       ptyBridge,
       launchedStore,
       historyStore,
-      historyService
+      historyService,
+      createMockStatsCacheReader()
     );
 
     postedMessages.length = 0;
@@ -929,6 +1005,70 @@ describe('DashboardPanel history support', () => {
       expect(ptyBridge.unregisterSession).toHaveBeenCalledWith('orphan-id');
       // But launchedSessionStore.remove should NOT be called
       expect(launchedStore.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('usage:request', () => {
+    it('calls statsCacheReader.read and posts usage:full', async () => {
+      const mockStats = {
+        version: 1,
+        lastComputedDate: '2026-02-27',
+        dailyActivity: [],
+        dailyModelTokens: [],
+        modelUsage: {},
+        totalSessions: 10,
+        totalMessages: 100,
+        longestSession: {
+          sessionId: 'a',
+          duration: 1000,
+          messageCount: 5,
+          timestamp: '2026-02-27T00:00:00Z',
+        },
+        firstSessionDate: '2026-01-01',
+        hourCounts: {},
+      };
+
+      // Get the statsCacheReader mock — recreate the panel with a custom reader
+      DashboardPanel.currentPanel?.dispose();
+      DashboardPanel.currentPanel = undefined;
+      postedMessages.length = 0;
+      messageHandler = undefined;
+
+      const statsCacheReader = createMockStatsCacheReader();
+      statsCacheReader.read.mockResolvedValue(mockStats);
+
+      DashboardPanel.createOrShow(
+        createMockContext(),
+        tracker,
+        createMockNameStore(),
+        createMockOrderStore(),
+        createMockVisibilityStore(),
+        launcher,
+        ptyBridge,
+        launchedStore,
+        historyStore,
+        historyService,
+        statsCacheReader
+      );
+      postedMessages.length = 0;
+
+      sendMessage({ type: 'usage:request' });
+
+      await vi.waitFor(() => {
+        const usageMsg = lastPosted('usage:full');
+        expect(usageMsg).toBeDefined();
+        expect(usageMsg.stats).toEqual(mockStats);
+      });
+    });
+
+    it('posts usage:full with null when reader returns null', async () => {
+      sendMessage({ type: 'usage:request' });
+
+      await vi.waitFor(() => {
+        const usageMsg = lastPosted('usage:full');
+        expect(usageMsg).toBeDefined();
+        expect(usageMsg.stats).toBeNull();
+      });
     });
   });
 
@@ -995,6 +1135,117 @@ describe('DashboardPanel history support', () => {
       await vi.waitFor(() => {
         expect(launcher.resume).toHaveBeenCalledWith('old-session', '', '/old/workspace');
       });
+    });
+  });
+});
+
+// ── Race condition fix tests ─────────────────────────────────────────
+
+describe('DashboardPanel race condition guards', () => {
+  let tracker: ReturnType<typeof createMockSessionTracker>;
+  let launcher: ReturnType<typeof createMockSessionLauncher>;
+
+  beforeEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+
+    postedMessages.length = 0;
+    messageHandler = undefined;
+
+    for (const key of Object.keys(mockWorkspaceStateStore)) {
+      delete mockWorkspaceStateStore[key];
+    }
+
+    tracker = createMockSessionTracker();
+    launcher = createMockSessionLauncher();
+
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      tracker,
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      launcher,
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
+    );
+
+    postedMessages.length = 0;
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  describe('activity:full includes sessionId', () => {
+    it('includes focusedSessionId in activity:full messages', () => {
+      sendMessage({ type: 'session:focus', sessionId: 'session-a' });
+
+      const activityMsg = lastPosted('activity:full');
+      expect(activityMsg).toBeDefined();
+      expect(activityMsg.sessionId).toBe('session-a');
+    });
+
+    it('includes null sessionId when no session is focused', () => {
+      sendMessage({ type: 'session:focus', sessionId: null });
+
+      const activityMsg = lastPosted('activity:full');
+      expect(activityMsg).toBeDefined();
+      expect(activityMsg.sessionId).toBeNull();
+    });
+  });
+
+  describe('conversation:full includes sessionId', () => {
+    it('includes focusedSessionId in conversation:full messages', () => {
+      sendMessage({ type: 'session:focus', sessionId: 'session-b' });
+
+      const convMsg = lastPosted('conversation:full');
+      expect(convMsg).toBeDefined();
+      expect(convMsg.sessionId).toBe('session-b');
+    });
+  });
+
+  describe('state:full includes focusedSessionId', () => {
+    it('includes focusedSessionId in state:full messages', () => {
+      // Focus a session first
+      sendMessage({ type: 'session:focus', sessionId: 'session-c' });
+      postedMessages.length = 0;
+
+      // Trigger a state:full via ready
+      sendMessage({ type: 'ready' });
+
+      const stateMsg = lastPosted('state:full');
+      expect(stateMsg).toBeDefined();
+      expect(stateMsg.focusedSessionId).toBe('session-c');
+    });
+
+    it('includes null focusedSessionId when no session is focused', () => {
+      sendMessage({ type: 'ready' });
+
+      const stateMsg = lastPosted('state:full');
+      expect(stateMsg).toBeDefined();
+      expect(stateMsg.focusedSessionId).toBeNull();
+    });
+  });
+
+  describe('focusSession sends focus-command before data messages', () => {
+    it('sends session:focus-command before activity:full and conversation:full', () => {
+      const panel = DashboardPanel.currentPanel!;
+      panel.focusSession('session-d');
+
+      const focusIdx = postedMessages.findIndex((m) => m.type === 'session:focus-command');
+      const activityIdx = postedMessages.findIndex((m) => m.type === 'activity:full');
+      const convIdx = postedMessages.findIndex((m) => m.type === 'conversation:full');
+
+      expect(focusIdx).toBeGreaterThanOrEqual(0);
+      expect(activityIdx).toBeGreaterThanOrEqual(0);
+      expect(convIdx).toBeGreaterThanOrEqual(0);
+      expect(focusIdx).toBeLessThan(activityIdx);
+      expect(focusIdx).toBeLessThan(convIdx);
     });
   });
 });

@@ -142,3 +142,18 @@ export const STATUS_GROUPS = {
     SESSION_STATUSES.WAITING,
   ]),
 } as const;
+
+// ---------------------------------------------------------------------------
+// Spatial navigation directions
+// ---------------------------------------------------------------------------
+
+/** Spatial navigation directions for keyboard nav. */
+export const NAV_DIRECTIONS = {
+  UP: 'up',
+  DOWN: 'down',
+  LEFT: 'left',
+  RIGHT: 'right',
+} as const;
+
+/** Spatial navigation direction for keyboard-driven card focus. */
+export type NavDirection = (typeof NAV_DIRECTIONS)[keyof typeof NAV_DIRECTIONS];

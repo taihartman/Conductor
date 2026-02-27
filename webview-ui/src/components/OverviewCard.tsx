@@ -15,6 +15,7 @@ import {
 } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
+import { useDashboardStore } from '../store/dashboardStore';
 import { useLongPress } from '../hooks/useLongPress';
 import { getContextText } from '../utils/sessionContext';
 
@@ -47,6 +48,9 @@ export function OverviewCard({
 }: OverviewCardProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
   const isActive = STATUS_GROUPS.ACTIVE.has(session.status);
+  const isKeyboardFocused = useDashboardStore(
+    (s) => s.keyboardFocusedSessionId === session.sessionId
+  );
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const [isHovered, setIsHovered] = useState(false);
@@ -112,6 +116,7 @@ export function OverviewCard({
           : '1px solid var(--border)',
         borderRadius: '6px',
         transition: 'background-color 0.1s, border-color 0.1s, opacity 0.15s',
+        boxShadow: isKeyboardFocused ? `0 0 0 2px ${COLORS.KEYBOARD_FOCUS_RING}` : undefined,
         display: 'flex',
         flexDirection: 'row',
         minWidth: 0,

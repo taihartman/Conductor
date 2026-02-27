@@ -4,8 +4,8 @@ import { UI_STRINGS } from '../../webview-ui/src/config/strings';
 
 describe('SettingsDrawer help data', () => {
   describe('SHORTCUTS array', () => {
-    it('contains exactly 7 shortcut entries', () => {
-      expect(SHORTCUTS).toHaveLength(7);
+    it('contains exactly 9 shortcut entries', () => {
+      expect(SHORTCUTS).toHaveLength(9);
     });
 
     it('every entry has a non-empty key and action', () => {

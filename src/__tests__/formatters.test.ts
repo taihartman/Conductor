@@ -6,6 +6,9 @@ import {
   formatCostCompact,
   timeAgo,
   formatDuration,
+  formatDurationHuman,
+  formatDateShort,
+  formatNumber,
   getSessionDisplayName,
 } from '../../webview-ui/src/utils/formatters';
 
@@ -121,6 +124,63 @@ describe('formatDuration', () => {
   it('returns seconds for longer durations', () => {
     expect(formatDuration(1500)).toBe('1.5s');
     expect(formatDuration(1000)).toBe('1.0s');
+  });
+});
+
+describe('formatDurationHuman', () => {
+  it('returns <1m for sub-minute durations', () => {
+    expect(formatDurationHuman(0)).toBe('<1m');
+    expect(formatDurationHuman(30_000)).toBe('<1m');
+    expect(formatDurationHuman(59_999)).toBe('<1m');
+  });
+
+  it('returns minutes only when under one hour', () => {
+    expect(formatDurationHuman(60_000)).toBe('1m');
+    expect(formatDurationHuman(300_000)).toBe('5m');
+    expect(formatDurationHuman(59 * 60_000)).toBe('59m');
+  });
+
+  it('returns hours and minutes', () => {
+    expect(formatDurationHuman(6 * 3_600_000 + 40 * 60_000)).toBe('6h 40m');
+  });
+
+  it('returns hours only when minutes are zero', () => {
+    expect(formatDurationHuman(2 * 3_600_000)).toBe('2h');
+  });
+
+  it('returns days and hours', () => {
+    expect(formatDurationHuman(27 * 86_400_000 + 19 * 3_600_000)).toBe('27d 19h');
+  });
+
+  it('returns days only when hours are zero', () => {
+    expect(formatDurationHuman(3 * 86_400_000)).toBe('3d');
+  });
+});
+
+describe('formatDateShort', () => {
+  it('formats ISO date as short weekday + day', () => {
+    // 2026-02-27 is a Friday
+    expect(formatDateShort('2026-02-27')).toBe('Fri 27');
+  });
+
+  it('handles single-digit days', () => {
+    // 2026-03-01 is a Sunday
+    expect(formatDateShort('2026-03-01')).toBe('Sun 1');
+  });
+});
+
+describe('formatNumber', () => {
+  it('returns "0" for zero', () => {
+    expect(formatNumber(0)).toBe('0');
+  });
+
+  it('formats small numbers without grouping', () => {
+    expect(formatNumber(42)).toBe('42');
+  });
+
+  it('adds locale grouping for thousands', () => {
+    expect(formatNumber(1_541)).toBe('1,541');
+    expect(formatNumber(1_000_000)).toBe('1,000,000');
   });
 });
 

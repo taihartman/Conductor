@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Group, Panel, Separator, type Layout } from 'react-resizable-panels';
-import { STATUS_GROUPS } from '@shared/sharedConstants';
+import { STATUS_GROUPS, SESSION_STATUSES } from '@shared/sharedConstants';
 import type { LaunchMode } from '@shared/sharedConstants';
 import { useDashboardStore, DETAIL_VIEW_MODES } from '../store/dashboardStore';
 import { ConductorHeader } from './ConductorHeader';
@@ -11,9 +11,13 @@ import { EmptyState } from './EmptyState';
 import { ZenModeScene } from './ZenModeScene';
 import { SettingsDrawer } from './SettingsDrawer';
 import { HistoryPanel } from './HistoryPanel';
+import { UsagePanel } from './UsagePanel';
 import { useZenNudge } from '../hooks/useZenNudge';
 import { useCompletionDetector } from '../hooks/useCompletionDetector';
 import { matchesSearchQuery } from '../utils/sessionFilter';
+import { isLaunchingSession } from '../utils/sessionContext';
+import { UI_STRINGS } from '../config/strings';
+import type { SessionInfo } from '@shared/types';
 import { vscode } from '../vscode';
 
 const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
@@ -50,17 +54,60 @@ export function ConductorDashboard(): React.ReactElement {
   const launchMode = useDashboardStore((s) => s.launchMode);
   const setLaunchMode = useDashboardStore((s) => s.setLaunchMode);
   const historyEntries = useDashboardStore((s) => s.historyEntries);
+  const usageData = useDashboardStore((s) => s.usageData);
+  const pendingLaunchSessionId = useDashboardStore((s) => s.pendingLaunchSessionId);
 
   // Tab-based filtering: main sessions vs hidden sessions
   const mainSessions = sessions.filter((s) => !s.isSubAgent && !s.isHidden);
   const hiddenSessions = sessions.filter((s) => !s.isSubAgent && s.isHidden);
-  const tabSessions = activeTab === 'sessions' ? mainSessions : activeTab === 'hidden' ? hiddenSessions : mainSessions;
 
-  /** Wraps setActiveTab to send history:request when switching to the history tab. */
-  function handleTabChange(tab: 'sessions' | 'hidden' | 'history'): void {
+  // Remap launching sessions so they appear active everywhere (Kanban, StatusDot, etc.)
+  const effectiveMainSessions = useMemo(
+    () =>
+      mainSessions.map((s) =>
+        isLaunchingSession(s) ? { ...s, status: SESSION_STATUSES.WORKING } : s
+      ),
+    [mainSessions]
+  );
+
+  // Prepend a synthetic placeholder card while the JSONL file hasn't appeared yet
+  const mainSessionsWithPlaceholder = useMemo(() => {
+    if (!pendingLaunchSessionId || sessions.some((s) => s.sessionId === pendingLaunchSessionId)) {
+      return effectiveMainSessions;
+    }
+    const placeholder: SessionInfo = {
+      sessionId: pendingLaunchSessionId,
+      slug: pendingLaunchSessionId.substring(0, 8), // inline-ok
+      summary: '',
+      status: SESSION_STATUSES.WORKING,
+      model: '',
+      gitBranch: '',
+      cwd: '',
+      startedAt: new Date().toISOString(),
+      lastActivityAt: new Date().toISOString(),
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCacheReadTokens: 0,
+      totalCacheCreationTokens: 0,
+      isSubAgent: false,
+      isArtifact: false,
+      filePath: '',
+      launchedByConductor: true,
+      autoName: UI_STRINGS.LAUNCHING_PLACEHOLDER_NAME,
+    };
+    return [placeholder, ...effectiveMainSessions];
+  }, [pendingLaunchSessionId, sessions, effectiveMainSessions]);
+
+  const tabSessions = activeTab === 'sessions' ? mainSessionsWithPlaceholder : activeTab === 'hidden' ? hiddenSessions : mainSessionsWithPlaceholder;
+
+  /** Wraps setActiveTab to send data requests when switching tabs. */
+  function handleTabChange(tab: 'sessions' | 'hidden' | 'history' | 'usage'): void {
     setActiveTab(tab);
     if (tab === 'history') {
       vscode.postMessage({ type: 'history:request' });
+    } else if (tab === 'usage') {
+      vscode.postMessage({ type: 'usage:request' });
     }
   }
 
@@ -71,8 +118,8 @@ export function ConductorDashboard(): React.ReactElement {
     vscode.postMessage({ type: 'session:focus', sessionId });
   }
 
-  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(mainSessions, zenExitedAt);
-  const completionCount = useCompletionDetector(mainSessions);
+  const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(mainSessionsWithPlaceholder, zenExitedAt);
+  const completionCount = useCompletionDetector(mainSessionsWithPlaceholder);
   const mascotButtonRef = useRef<HTMLButtonElement>(null);
 
   // Filter sessions (operates on active tab's sessions)
@@ -189,7 +236,7 @@ export function ConductorDashboard(): React.ReactElement {
     }
   }, [autoZenTriggered, zenModeActive, enterZenMode, sessions.length]);
 
-  if (sessions.length === 0) {
+  if (sessions.length === 0 && !pendingLaunchSessionId) {
     return (
       <div
         style={{
@@ -200,7 +247,7 @@ export function ConductorDashboard(): React.ReactElement {
         }}
       >
         <ConductorHeader
-          sessions={mainSessions}
+          sessions={mainSessionsWithPlaceholder}
           tokenSummaries={tokenSummaries}
           onRefresh={handleRefresh}
           onLaunchSession={handleLaunchSession}
@@ -277,7 +324,7 @@ export function ConductorDashboard(): React.ReactElement {
           }}
         >
           {/* Expanded mode: collapsed bar + full detail */}
-          {detailViewMode === DETAIL_VIEW_MODES.EXPANDED && focusedSession && activeTab !== 'history' && (
+          {detailViewMode === DETAIL_VIEW_MODES.EXPANDED && focusedSession && (activeTab === 'sessions' || activeTab === 'hidden') && (
             <>
               <CollapsedBar
                 session={focusedSession}
@@ -302,7 +349,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Split mode: resizable panels */}
-          {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && activeTab !== 'history' && (
+          {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && (activeTab === 'sessions' || activeTab === 'hidden') && (
             <Group
               orientation={layoutOrientation}
               defaultLayout={panelLayout ?? PANEL_DEFAULT_LAYOUT}
@@ -358,7 +405,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Overview-only mode: no resize needed */}
-          {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && activeTab !== 'history' && (
+          {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && (activeTab === 'sessions' || activeTab === 'hidden') && (
             <div
               style={{
                 flex: 1,
@@ -399,6 +446,21 @@ export function ConductorDashboard(): React.ReactElement {
                 entries={historyEntries}
                 onFocusActiveSession={handleFocusActiveSession}
               />
+            </div>
+          )}
+
+          {/* Usage tab: aggregate stats from stats-cache.json */}
+          {activeTab === 'usage' && (
+            <div
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              }}
+            >
+              <UsagePanel stats={usageData} />
             </div>
           )}
         </div>

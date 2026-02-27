@@ -19,8 +19,9 @@ import {
   ToolStatEntry,
   TokenSummary,
   HistoryEntry,
+  StatsCache,
 } from './types';
-import type { LaunchMode } from './sharedConstants';
+import type { LaunchMode, NavDirection } from './sharedConstants';
 
 /** Result of attempting to send user input to a Claude Code terminal. */
 export type InputSendStatus = 'sent' | 'no-terminal' | 'error' | 'adopting';
@@ -49,9 +50,11 @@ export type ExtensionToWebviewMessage =
       tokenSummaries: TokenSummary[];
       /** True when the extension host is running inside a Claude Code session. */
       isNestedSession: boolean;
+      /** The session ID currently focused in the extension backend. Used by the webview to guard against stale data from debounced updates. */
+      focusedSessionId: string | null;
     }
-  | { type: 'activity:full'; events: ActivityEvent[] }
-  | { type: 'conversation:full'; turns: ConversationTurn[] }
+  | { type: 'activity:full'; events: ActivityEvent[]; sessionId: string | null }
+  | { type: 'conversation:full'; turns: ConversationTurn[]; sessionId: string | null }
   /** Feedback after attempting to send input to a terminal. */
   | { type: 'user:input-status'; sessionId: string; status: InputSendStatus; error?: string }
   /** PTY output data for a Conductor-launched session's embedded terminal. */
@@ -69,7 +72,13 @@ export type ExtensionToWebviewMessage =
   /** Extension-initiated session focus (e.g. from Quick Pick). Webview should update its selection. */
   | { type: 'session:focus-command'; sessionId: string }
   /** Session history entries for the History tab. Sent on `history:request`. */
-  | { type: 'history:full'; entries: HistoryEntry[] };
+  | { type: 'history:full'; entries: HistoryEntry[] }
+  /** Extension-initiated spatial navigation (from Cmd+Shift+Arrow keybinding). */
+  | { type: 'nav:move'; direction: NavDirection }
+  /** Extension-initiated selection of the keyboard-focused card (from Enter keybinding). */
+  | { type: 'nav:select' }
+  /** Usage stats from ~/.claude/stats-cache.json. Sent on `usage:request`. */
+  | { type: 'usage:full'; stats: StatsCache | null };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -110,4 +119,8 @@ export type WebviewToExtensionMessage =
   /** Webview requests session history data (sent when switching to History tab). */
   | { type: 'history:request' }
   /** User clicked Resume on a history entry. */
-  | { type: 'history:resume'; sessionId: string };
+  | { type: 'history:resume'; sessionId: string }
+  /** Webview notifies the extension when keyboard nav focus changes (for `when` clause context). */
+  | { type: 'nav:keyboard-focus-changed'; active: boolean }
+  /** Webview requests usage stats (sent when switching to Usage tab). */
+  | { type: 'usage:request' };

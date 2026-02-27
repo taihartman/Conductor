@@ -48,6 +48,33 @@ export function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+/**
+ * Format milliseconds as a human-friendly duration string.
+ * Returns "6h 40m" / "5m" / "2h" / "27d 19h" / "<1m".
+ */
+export function formatDurationHuman(ms: number): string {
+  const totalMinutes = Math.floor(ms / 60_000);
+  if (totalMinutes < 1) return '<1m';
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours > 0) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return `${minutes}m`;
+}
+
+/** Format an ISO date string as "Mon 27" (short weekday + day). */
+export function formatDateShort(dateStr: string): string {
+  const date = new Date(dateStr + 'T00:00:00');
+  const weekday = date.toLocaleDateString('en-US', { weekday: 'short' });
+  return `${weekday} ${date.getDate()}`;
+}
+
+/** Format a number with locale grouping (e.g. "1,541"). */
+export function formatNumber(n: number): string {
+  return n.toLocaleString('en-US');
+}
+
 /** Display name priority: user-set custom name > auto-generated name > slug. */
 export function getSessionDisplayName(session: {
   customName?: string;

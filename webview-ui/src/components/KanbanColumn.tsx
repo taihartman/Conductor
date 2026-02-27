@@ -2,6 +2,8 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { KanbanCard } from './KanbanCard';
 import { UI_STRINGS } from '../config/strings';
+import type { SortDirection } from '../store/dashboardStore';
+import { SORT_DIRECTIONS } from '../store/dashboardStore';
 
 interface KanbanColumnProps {
   label: string;
@@ -15,6 +17,8 @@ interface KanbanColumnProps {
   onHide?: (sessionId: string) => void;
   onUnhide?: (sessionId: string) => void;
   isHiddenTab?: boolean;
+  sortDirection: SortDirection;
+  onToggleSort: () => void;
 }
 
 export function KanbanColumn({
@@ -29,7 +33,11 @@ export function KanbanColumn({
   onHide,
   onUnhide,
   isHiddenTab,
+  sortDirection,
+  onToggleSort,
 }: KanbanColumnProps): React.ReactElement {
+  const isDesc = sortDirection === SORT_DIRECTIONS.DESC;
+  const sortTooltip = isDesc ? UI_STRINGS.KANBAN_SORT_NEWEST : UI_STRINGS.KANBAN_SORT_OLDEST;
   return (
     <div
       style={{
@@ -71,6 +79,23 @@ export function KanbanColumn({
         >
           ({sessions.length})
         </span>
+        <button
+          onClick={onToggleSort}
+          title={sortTooltip}
+          aria-label={sortTooltip}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--fg-muted)',
+            fontSize: '11px', // inline-ok
+            padding: '0 2px', // inline-ok
+            lineHeight: 1, // inline-ok
+            marginLeft: 'auto', // inline-ok: push to right edge
+          }}
+        >
+          {isDesc ? '\u2193' : '\u2191'}
+        </button>
       </div>
 
       {/* Card list */}

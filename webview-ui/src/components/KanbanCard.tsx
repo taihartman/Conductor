@@ -8,6 +8,7 @@ import { getContextText } from '../utils/sessionContext';
 import { timeAgo, formatCostCompact, getSessionDisplayName } from '../utils/formatters';
 import { COLORS } from '../config/colors';
 import { UI_STRINGS } from '../config/strings';
+import { useDashboardStore } from '../store/dashboardStore';
 
 interface KanbanCardProps {
   session: SessionInfo;
@@ -35,6 +36,9 @@ export function KanbanCard({
   isHiddenTab,
 }: KanbanCardProps): React.ReactElement {
   const isActive = STATUS_GROUPS.ACTIVE.has(session.status);
+  const isKeyboardFocused = useDashboardStore(
+    (s) => s.keyboardFocusedSessionId === session.sessionId
+  );
   const [isHovered, setIsHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const contextText = getContextText(session);
@@ -61,6 +65,7 @@ export function KanbanCard({
 
   return (
     <div
+      data-session-id={session.sessionId}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
       onContextMenu={(e) => {
@@ -81,6 +86,7 @@ export function KanbanCard({
         borderBottom: isSelected ? '1px solid var(--accent)' : '1px solid var(--border)',
         borderRadius: '4px', // inline-ok
         transition: 'background-color 0.1s, border-color 0.1s',
+        boxShadow: isKeyboardFocused ? `0 0 0 2px ${COLORS.KEYBOARD_FOCUS_RING}` : undefined,
         display: 'flex',
         flexDirection: 'column',
         gap: '4px', // inline-ok

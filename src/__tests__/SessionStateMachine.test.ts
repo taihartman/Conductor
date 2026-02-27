@@ -71,8 +71,8 @@ describe('SessionStateMachine', () => {
     expect(sm.status).toBe('idle');
   });
 
-  // --- Tool use (null stop_reason) → waiting with tool approval ---
-  it('transitions to waiting with tool approval on tool_use (null stop_reason)', () => {
+  // --- Tool use (null stop_reason) → working (auto-approved tool running) ---
+  it('transitions to working on tool_use with null stop_reason (auto-approved)', () => {
     const record = makeAssistantRecord({
       message: {
         content: [{ type: 'tool_use', id: 'tu-1', name: 'Read', input: { file_path: '/foo' } }],
@@ -80,11 +80,9 @@ describe('SessionStateMachine', () => {
       },
     });
     const status = sm.handleAssistantRecord(record);
-    expect(status).toBe('waiting');
-    expect(sm.status).toBe('waiting');
-    expect(sm.pendingQuestion?.isToolApproval).toBe(true);
-    expect(sm.pendingQuestion?.pendingTools).toHaveLength(1);
-    expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Read');
+    expect(status).toBe('working');
+    expect(sm.status).toBe('working');
+    expect(sm.pendingQuestion).toBeUndefined();
   });
 
   // --- Text-only, not end_turn → thinking ---
@@ -637,11 +635,12 @@ describe('SessionStateMachine', () => {
       );
       expect(sm.status).toBe('thinking');
 
-      // Next assistant record with tool_use arrives → now produces waiting
+      // Next assistant record with tool_use + stop_reason 'tool_use' → waiting
       sm.handleAssistantRecord(
         makeAssistantRecord({
           message: {
             content: [{ type: 'tool_use', id: 'tu-2', name: 'Read', input: {} }],
+            stop_reason: 'tool_use',
           },
         })
       );
@@ -829,7 +828,7 @@ describe('SessionStateMachine', () => {
       expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Bash');
     });
 
-    it('tool_use + stop_reason null → waiting with isToolApproval', () => {
+    it('tool_use + stop_reason null → working (auto-approved)', () => {
       const record = makeAssistantRecord({
         message: {
           content: [
@@ -839,10 +838,8 @@ describe('SessionStateMachine', () => {
         },
       });
       const status = sm.handleAssistantRecord(record);
-      expect(status).toBe('waiting');
-      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
-      expect(sm.pendingQuestion?.pendingTools).toHaveLength(1);
-      expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Read');
+      expect(status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
     });
 
     it('multiple tool_use blocks → pendingTools array has all tools', () => {
@@ -930,7 +927,7 @@ describe('SessionStateMachine', () => {
       expect(sm.pendingQuestion?.isToolApproval).toBe(true);
     });
 
-    it('multiple tool_use blocks with null stop_reason → pendingTools populated', () => {
+    it('multiple tool_use blocks with null stop_reason → working (auto-approved)', () => {
       const record = makeAssistantRecord({
         message: {
           content: [
@@ -941,16 +938,13 @@ describe('SessionStateMachine', () => {
         },
       });
       sm.handleAssistantRecord(record);
-      expect(sm.status).toBe('waiting');
-      expect(sm.pendingQuestion?.isToolApproval).toBe(true);
-      expect(sm.pendingQuestion?.pendingTools).toHaveLength(2);
-      expect(sm.pendingQuestion?.pendingTools?.[0].toolName).toBe('Bash');
-      expect(sm.pendingQuestion?.pendingTools?.[1].toolName).toBe('Write');
+      expect(sm.status).toBe('working');
+      expect(sm.pendingQuestion).toBeUndefined();
     });
 
     it('same-batch tool_use then tool_result → final status is working (auto-approved)', () => {
       // Simulates auto-approved tools where tool_use + tool_result arrive in same batch.
-      // After both records, status should be working (tool_result clears waiting).
+      // With null stop_reason, tool_use → working. tool_result confirms working.
       sm.handleAssistantRecord(
         makeAssistantRecord({
           message: {
@@ -961,7 +955,7 @@ describe('SessionStateMachine', () => {
           },
         })
       );
-      expect(sm.status).toBe('waiting');
+      expect(sm.status).toBe('working');
 
       // tool_result arrives immediately (same batch)
       sm.handleUserRecord(
@@ -998,58 +992,14 @@ describe('SessionStateMachine', () => {
   // Fix 4: Progress record intermission timer
   // =========================================================================
 
-  describe('progress record intermission timer', () => {
-    it('fires after 5s on progress record with no follow-up', () => {
+  describe('progress record behavior', () => {
+    it('does NOT start intermission timer (progress signals work in progress)', () => {
       sm.handleProgressRecord(makeProgressRecord());
       expect(sm.status).toBe('thinking');
 
+      // No timer — status stays thinking after 5s
       vi.advanceTimersByTime(5_000);
-      expect(sm.status).toBe('done');
-      expect(onStateChanged).toHaveBeenCalled();
-    });
-
-    it('progress record restarts intermission timer', () => {
-      sm.handleProgressRecord(makeProgressRecord());
       expect(sm.status).toBe('thinking');
-
-      vi.advanceTimersByTime(3_000);
-      sm.handleProgressRecord(makeProgressRecord());
-      expect(sm.status).toBe('thinking');
-
-      vi.advanceTimersByTime(3_000);
-      expect(sm.status).toBe('thinking');
-
-      vi.advanceTimersByTime(2_000);
-      expect(sm.status).toBe('done');
-    });
-
-    it('cancelled by assistant record', () => {
-      sm.handleProgressRecord(makeProgressRecord());
-      expect(sm.status).toBe('thinking');
-
-      sm.handleAssistantRecord(
-        makeAssistantRecord({
-          message: {
-            content: [{ type: 'tool_use', id: 'tu-1', name: 'Read', input: { file_path: '/foo' } }],
-            stop_reason: null,
-          },
-        })
-      );
-      expect(sm.status).toBe('waiting');
-
-      vi.advanceTimersByTime(5_000);
-      expect(sm.status).toBe('waiting');
-    });
-
-    it('cancelled by system turn_duration', () => {
-      sm.handleProgressRecord(makeProgressRecord());
-      expect(sm.status).toBe('thinking');
-
-      sm.handleSystemRecord(makeSystemRecord({ subtype: 'turn_duration', durationMs: 2000 }));
-      expect(sm.status).toBe('done');
-
-      onStateChanged.mockClear();
-      vi.advanceTimersByTime(5_000);
       expect(onStateChanged).not.toHaveBeenCalled();
     });
 
@@ -1073,19 +1023,13 @@ describe('SessionStateMachine', () => {
 
       sm.handleProgressRecord(makeProgressRecord());
       expect(sm.status).toBe('waiting');
-
-      vi.advanceTimersByTime(5_000);
-      expect(sm.status).toBe('waiting');
     });
 
-    it('does not start timer when WORKING', () => {
+    it('does not override WORKING status', () => {
       sm.setStatus('working');
       expect(sm.status).toBe('working');
 
       sm.handleProgressRecord(makeProgressRecord());
-      expect(sm.status).toBe('working');
-
-      vi.advanceTimersByTime(5_000);
       expect(sm.status).toBe('working');
     });
   });

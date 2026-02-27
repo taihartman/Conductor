@@ -99,7 +99,7 @@ describe('groupSessionsByColumn', () => {
 });
 
 describe('sortColumnSessions', () => {
-  it('sorts sessions by lastActivityAt descending (most recent first)', () => {
+  it('sorts sessions by lastActivityAt descending (most recent first) by default', () => {
     const grouped = new Map<string, SessionInfo[]>([
       [
         'performing',
@@ -134,6 +134,78 @@ describe('sortColumnSessions', () => {
     const grouped = new Map<string, SessionInfo[]>([['awaiting', []]]);
     const result = sortColumnSessions(grouped);
     expect(result.get('awaiting')!).toHaveLength(0);
+  });
+
+  it('sorts ascending when column direction is asc', () => {
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'performing',
+        [
+          makeSession({ sessionId: 'newest', lastActivityAt: '2026-02-25T14:00:00Z' }),
+          makeSession({ sessionId: 'old', lastActivityAt: '2026-02-25T10:00:00Z' }),
+          makeSession({ sessionId: 'mid', lastActivityAt: '2026-02-25T12:00:00Z' }),
+        ],
+      ],
+    ]);
+    const result = sortColumnSessions(grouped, { performing: 'asc' });
+    expect(result.get('performing')!.map((s) => s.sessionId)).toEqual(['old', 'mid', 'newest']);
+  });
+
+  it('supports mixed sort directions across columns', () => {
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'performing',
+        [
+          makeSession({ sessionId: 'p-old', lastActivityAt: '2026-02-25T10:00:00Z' }),
+          makeSession({ sessionId: 'p-new', lastActivityAt: '2026-02-25T14:00:00Z' }),
+        ],
+      ],
+      [
+        'completed',
+        [
+          makeSession({ sessionId: 'c-old', lastActivityAt: '2026-02-25T08:00:00Z' }),
+          makeSession({ sessionId: 'c-new', lastActivityAt: '2026-02-25T16:00:00Z' }),
+        ],
+      ],
+    ]);
+    const result = sortColumnSessions(grouped, { performing: 'asc', completed: 'desc' });
+    expect(result.get('performing')!.map((s) => s.sessionId)).toEqual(['p-old', 'p-new']);
+    expect(result.get('completed')!.map((s) => s.sessionId)).toEqual(['c-new', 'c-old']);
+  });
+
+  it('defaults to desc for columns missing from sortOrders (backwards compatible)', () => {
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'awaiting',
+        [
+          makeSession({ sessionId: 'old', lastActivityAt: '2026-02-25T10:00:00Z' }),
+          makeSession({ sessionId: 'new', lastActivityAt: '2026-02-25T14:00:00Z' }),
+        ],
+      ],
+    ]);
+    // Empty sortOrders — should default to desc
+    const result = sortColumnSessions(grouped, {});
+    expect(result.get('awaiting')!.map((s) => s.sessionId)).toEqual(['new', 'old']);
+  });
+
+  it('toggling twice restores original descending order', () => {
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'performing',
+        [
+          makeSession({ sessionId: 'old', lastActivityAt: '2026-02-25T10:00:00Z' }),
+          makeSession({ sessionId: 'new', lastActivityAt: '2026-02-25T14:00:00Z' }),
+        ],
+      ],
+    ]);
+    const descResult = sortColumnSessions(grouped, { performing: 'desc' });
+    const ascResult = sortColumnSessions(grouped, { performing: 'asc' });
+    const backToDesc = sortColumnSessions(grouped, { performing: 'desc' });
+    expect(descResult.get('performing')!.map((s) => s.sessionId)).toEqual(['new', 'old']);
+    expect(ascResult.get('performing')!.map((s) => s.sessionId)).toEqual(['old', 'new']);
+    expect(backToDesc.get('performing')!.map((s) => s.sessionId)).toEqual(
+      descResult.get('performing')!.map((s) => s.sessionId)
+    );
   });
 });
 
@@ -188,5 +260,25 @@ describe('getVisibleColumns (empty-row filtering)', () => {
     ]);
     const visible = getVisibleColumns(columns, grouped, true);
     expect(visible).toHaveLength(0);
+  });
+});
+
+describe('launching sessions with overridden working status', () => {
+  it('groups launching sessions (status overridden to working) into performing column', () => {
+    // When ConductorDashboard remaps a launching session status to "working",
+    // KanbanBoard should place it in the "performing" column
+    const sessions = [
+      makeSession({
+        sessionId: 'launching-1',
+        status: 'working',
+        launchedByConductor: true,
+        turnCount: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+      }),
+    ];
+    const result = groupSessionsByColumn(sessions);
+    expect(result.get('performing')!.map((s) => s.sessionId)).toEqual(['launching-1']);
+    expect(result.get('completed')!).toHaveLength(0);
   });
 });

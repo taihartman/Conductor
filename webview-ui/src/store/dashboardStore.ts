@@ -7,6 +7,7 @@ import type {
   ToolStatEntry,
   TokenSummary,
   HistoryEntry,
+  StatsCache,
 } from '@shared/types';
 import type { InputSendStatus } from '@shared/protocol';
 import type { LaunchMode } from '@shared/sharedConstants';
@@ -42,6 +43,14 @@ export const OVERVIEW_MODES = {
 
 export type OverviewMode = (typeof OVERVIEW_MODES)[keyof typeof OVERVIEW_MODES];
 
+/** Kanban column sort direction discriminators. */
+export const SORT_DIRECTIONS = {
+  DESC: 'desc',
+  ASC: 'asc',
+} as const;
+
+export type SortDirection = (typeof SORT_DIRECTIONS)[keyof typeof SORT_DIRECTIONS];
+
 interface DashboardState {
   sessions: SessionInfo[];
   activities: ActivityEvent[];
@@ -63,9 +72,11 @@ interface DashboardState {
   /** Per-session PTY ring buffer replay data (populated on session:launch-status). */
   ptyBuffers: Map<string, string>;
   /** Active tab in the overview panel. */
-  activeTab: 'sessions' | 'hidden' | 'history';
+  activeTab: 'sessions' | 'hidden' | 'history' | 'usage';
   /** Session history entries for the History tab (populated on demand). */
   historyEntries: HistoryEntry[];
+  /** Usage stats from ~/.claude/stats-cache.json (populated on demand). */
+  usageData: StatsCache | null;
   /** Session ID from a Conductor-initiated launch, awaiting appearance in state:full. */
   pendingLaunchSessionId: string | null;
   /** Session IDs currently being adopted for terminal mode. */
@@ -80,6 +91,12 @@ interface DashboardState {
   launchMode: LaunchMode;
   /** Overview panel display mode: list or board (kanban). */
   overviewMode: OverviewMode;
+  /** Session ID highlighted by keyboard navigation (distinct from focusedSessionId). */
+  keyboardFocusedSessionId: string | null;
+  /** Spatial anchor (x, y) for directional navigation. */
+  navAnchor: { x: number; y: number } | null;
+  /** Per-column sort direction for the Kanban board (missing keys default to 'desc'). */
+  kanbanSortOrders: Record<string, SortDirection>;
 
   setPendingLaunchSession: (sessionId: string | null) => void;
   addPendingAdoption: (sessionId: string) => void;
@@ -90,7 +107,8 @@ interface DashboardState {
     conversation: ConversationTurn[],
     toolStats: ToolStatEntry[],
     tokenSummaries: TokenSummary[],
-    isNestedSession: boolean
+    isNestedSession: boolean,
+    focusedSessionId: string | null
   ) => void;
   setActivities: (activities: ActivityEvent[]) => void;
   setConversation: (turns: ConversationTurn[]) => void;
@@ -111,12 +129,16 @@ interface DashboardState {
   appendPtyBuffer: (sessionId: string, data: string) => void;
   /** Bulk-replace PTY buffers (replay on webview reconnect). Size-capped per session. */
   setPtyBuffers: (buffers: Record<string, string>) => void;
-  setActiveTab: (tab: 'sessions' | 'hidden' | 'history') => void;
+  setActiveTab: (tab: 'sessions' | 'hidden' | 'history' | 'usage') => void;
   setHistoryEntries: (entries: HistoryEntry[]) => void;
+  setUsageData: (data: StatsCache | null) => void;
   toggleSettingsDrawer: () => void;
   setAutoHidePatterns: (patterns: string[]) => void;
   setLaunchMode: (mode: LaunchMode) => void;
   setOverviewMode: (mode: OverviewMode) => void;
+  toggleKanbanSortOrder: (columnKey: string) => void;
+  setKeyboardFocus: (sessionId: string | null, anchor?: { x: number; y: number }) => void;
+  clearKeyboardFocus: () => void;
   zenModeActive: boolean;
   zenExitedAt: number | null;
   enterZenMode: () => void;
@@ -142,6 +164,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   ptyBuffers: new Map(),
   activeTab: 'sessions',
   historyEntries: [],
+  usageData: null,
   pendingLaunchSessionId: null,
   pendingAdoptions: new Set(),
   isNestedSession: false,
@@ -149,6 +172,9 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   autoHidePatterns: [],
   launchMode: LAUNCH_MODES.NORMAL,
   overviewMode: OVERVIEW_MODES.LIST,
+  keyboardFocusedSessionId: null,
+  navAnchor: null,
+  kanbanSortOrders: {},
 
   setPendingLaunchSession: (sessionId) => set({ pendingLaunchSessionId: sessionId }),
   addPendingAdoption: (sessionId) =>
@@ -163,14 +189,25 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       next.delete(sessionId);
       return { pendingAdoptions: next };
     }),
-  setFullState: (sessions, activities, conversation, toolStats, tokenSummaries, isNestedSession) =>
+  setFullState: (
+    sessions,
+    activities,
+    conversation,
+    toolStats,
+    tokenSummaries,
+    isNestedSession,
+    msgFocusId
+  ) =>
     set((state) => {
       const pending = state.pendingLaunchSessionId;
       const found = pending !== null && sessions.some((s) => s.sessionId === pending);
+      // Apply activities/conversation only when the extension's focused session matches
+      // the webview's current focus, OR when a pending launch session is being claimed
+      // (the pending claim atomically sets focusedSessionId, so the data must accompany it).
+      const focusMatch = msgFocusId === state.focusedSessionId || found;
       return {
         sessions,
-        activities,
-        conversation,
+        ...(focusMatch ? { activities, conversation } : {}),
         toolStats,
         tokenSummaries,
         isNestedSession,
@@ -243,6 +280,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     }),
   setActiveTab: (tab) => set({ activeTab: tab }),
   setHistoryEntries: (entries) => set({ historyEntries: entries }),
+  setUsageData: (data) => set({ usageData: data }),
   appendPtyBuffer: (sessionId, data) =>
     set((state) => {
       const next = new Map(state.ptyBuffers);
@@ -263,6 +301,23 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setAutoHidePatterns: (patterns) => set({ autoHidePatterns: patterns }),
   setLaunchMode: (mode) => set({ launchMode: mode }),
   setOverviewMode: (mode) => set({ overviewMode: mode }),
+  toggleKanbanSortOrder: (columnKey) =>
+    set((state) => {
+      const current = state.kanbanSortOrders[columnKey] ?? SORT_DIRECTIONS.DESC;
+      return {
+        kanbanSortOrders: {
+          ...state.kanbanSortOrders,
+          [columnKey]:
+            current === SORT_DIRECTIONS.DESC ? SORT_DIRECTIONS.ASC : SORT_DIRECTIONS.DESC,
+        },
+      };
+    }),
+  setKeyboardFocus: (sessionId, anchor) =>
+    set({
+      keyboardFocusedSessionId: sessionId,
+      ...(anchor ? { navAnchor: anchor } : {}),
+    }),
+  clearKeyboardFocus: () => set({ keyboardFocusedSessionId: null, navAnchor: null }),
   zenModeActive: false,
   zenExitedAt: null,
   enterZenMode: () =>

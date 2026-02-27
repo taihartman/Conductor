@@ -24,8 +24,8 @@ interface ConductorHeaderProps {
   layoutOrientation?: LayoutOrientation;
   onToggleOrientation?: () => void;
   showOrientationToggle?: boolean;
-  activeTab?: 'sessions' | 'hidden' | 'history';
-  onTabChange?: (tab: 'sessions' | 'hidden' | 'history') => void;
+  activeTab?: 'sessions' | 'hidden' | 'history' | 'usage';
+  onTabChange?: (tab: 'sessions' | 'hidden' | 'history' | 'usage') => void;
   hiddenCount?: number;
   isNestedSession?: boolean;
   onToggleSettings?: () => void;
@@ -145,6 +145,9 @@ export function ConductorHeader({
               )}
               <TabButton active={activeTab === 'history'} onClick={() => onTabChange('history')}>
                 {UI_STRINGS.TAB_HISTORY}
+              </TabButton>
+              <TabButton active={activeTab === 'usage'} onClick={() => onTabChange('usage')}>
+                {UI_STRINGS.TAB_USAGE}
               </TabButton>
             </div>
           )}

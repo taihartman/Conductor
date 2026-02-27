@@ -139,9 +139,15 @@ export const UI_STRINGS = {
   KANBAN_COL_COMPLETED: 'Completed',
   /** Kanban board empty column placeholder */
   KANBAN_EMPTY_COLUMN: 'No sessions',
+  /** Kanban sort direction toggle — newest first (descending). */
+  KANBAN_SORT_NEWEST: 'Newest first',
+  /** Kanban sort direction toggle — oldest first (ascending). */
+  KANBAN_SORT_OLDEST: 'Oldest first',
   /** Toggle button tooltips */
   KANBAN_TOGGLE_BOARD: 'Switch to board view',
   KANBAN_TOGGLE_LIST: 'Switch to list view',
+  CONTEXT_LAUNCHING: 'Launching...',
+  LAUNCHING_PLACEHOLDER_NAME: 'Launching...',
 
   // ── Help & Shortcuts section ──────────────────────────────────────
   /** Section heading for the help area inside SettingsDrawer. */
@@ -168,6 +174,10 @@ export const UI_STRINGS = {
   HELP_SHORTCUT_RENAME: 'Rename Session',
   HELP_SHORTCUT_SELECT: 'Select Session',
   HELP_SHORTCUT_EXPAND: 'Expand Detail View',
+  HELP_KEY_NAV_ARROWS: '{modifier}+Shift+Arrows',
+  HELP_SHORTCUT_NAV_ARROWS: 'Navigate Between Sessions',
+  HELP_KEY_NAV_SELECT: 'Enter',
+  HELP_SHORTCUT_NAV_SELECT: 'Open Focused Session',
 
   // Feature names
   HELP_FEATURE_KANBAN: 'Kanban Board',
@@ -208,4 +218,24 @@ export const UI_STRINGS = {
     'Open the analytics drawer for a per-model breakdown of token usage and estimated cost.',
   HELP_DESC_AUTO_HIDE:
     'Add name patterns above to automatically hide matching sessions from the session list.',
+
+  // ── Usage tab ──────────────────────────────────────────────────────
+  TAB_USAGE: 'Usage',
+  USAGE_SECTION_TODAY: 'Today',
+  USAGE_SECTION_ALL_TIME: 'All Time',
+  USAGE_SECTION_MODEL_BREAKDOWN: 'Model Breakdown',
+  USAGE_SECTION_DAILY_ACTIVITY: 'Daily Activity',
+  USAGE_SECTION_PEAK_HOURS: 'Peak Hours',
+  USAGE_LABEL_SESSIONS: 'Sessions',
+  USAGE_LABEL_MESSAGES: 'Messages',
+  USAGE_LABEL_TOOL_CALLS: 'Tool Calls',
+  USAGE_LABEL_INPUT: 'Input',
+  USAGE_LABEL_OUTPUT: 'Output',
+  USAGE_LABEL_CACHE_READ: 'Cache Read',
+  USAGE_LABEL_CACHE_WRITE: 'Cache Write',
+  USAGE_LABEL_FIRST_SESSION: 'First Session',
+  USAGE_LABEL_LONGEST_SESSION: 'Longest Session (elapsed)',
+  USAGE_LABEL_LAST_UPDATED: 'Last updated',
+  USAGE_EMPTY_TITLE: 'No Usage Data',
+  USAGE_EMPTY_DESCRIPTION: 'Stats will appear after your first Claude Code session.',
 } as const;

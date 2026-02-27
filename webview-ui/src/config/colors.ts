@@ -53,6 +53,14 @@ export const COLORS = {
   PRIMARY_ACTION_BG: '#c6613f',
   /** Primary action button text color (Claude ivory) */
   PRIMARY_ACTION_COLOR: '#faf9f5',
+  /** Keyboard navigation focus ring */
+  KEYBOARD_FOCUS_RING: 'var(--vscode-focusBorder, #007fd4)',
+  /** Usage tab bar chart fill (semi-transparent accent). */
+  USAGE_BAR_FILL: 'rgba(0, 122, 204, 0.35)',
+  /** Usage tab highlighted bar for today. */
+  USAGE_BAR_TODAY: 'rgba(0, 122, 204, 0.7)',
+  /** Usage tab section heading underline. */
+  USAGE_SECTION_BORDER: 'rgba(255, 255, 255, 0.08)',
 } as const;
 
 /** Terminal-specific configuration for xterm.js Canvas 2D renderer. */

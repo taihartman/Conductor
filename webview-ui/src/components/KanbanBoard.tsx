@@ -5,6 +5,8 @@ import { STATUS_CONFIG } from '../config/statusConfig';
 import { SIZES } from '../config/colors';
 import { KanbanColumn } from './KanbanColumn';
 import { UI_STRINGS } from '../config/strings';
+import { useDashboardStore, SORT_DIRECTIONS } from '../store/dashboardStore';
+import type { SortDirection } from '../store/dashboardStore';
 
 /** Column definition for the Kanban board. */
 interface ColumnDef {
@@ -65,19 +67,24 @@ export function getVisibleColumns(
 }
 
 /**
- * Sorts each column's sessions by `lastActivityAt` descending (most recent first).
+ * Sorts each column's sessions by `lastActivityAt`.
+ * Direction is determined per-column via `sortOrders`; missing keys default to descending.
  * ISO 8601 strings sort lexicographically, so no Date parsing is needed.
  */
 export function sortColumnSessions(
   grouped: Map<string, SessionInfo[]>,
+  sortOrders: Record<string, SortDirection> = {},
 ): Map<string, SessionInfo[]> {
   const sorted = new Map<string, SessionInfo[]>();
   for (const [key, sessions] of grouped) {
+    const direction = sortOrders[key] ?? SORT_DIRECTIONS.DESC;
     sorted.set(
       key,
-      [...sessions].sort((a, b) =>
-        b.lastActivityAt > a.lastActivityAt ? 1 : b.lastActivityAt < a.lastActivityAt ? -1 : 0,
-      ),
+      [...sessions].sort((a, b) => {
+        const cmp =
+          a.lastActivityAt > b.lastActivityAt ? 1 : a.lastActivityAt < b.lastActivityAt ? -1 : 0;
+        return direction === SORT_DIRECTIONS.ASC ? cmp : -cmp;
+      }),
     );
   }
   return sorted;
@@ -133,6 +140,8 @@ export function KanbanBoard({
 }: KanbanBoardProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const [isVertical, setIsVertical] = useState(false);
+  const kanbanSortOrders = useDashboardStore((s) => s.kanbanSortOrders);
+  const toggleKanbanSortOrder = useDashboardStore((s) => s.toggleKanbanSortOrder);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -148,8 +157,8 @@ export function KanbanBoard({
 
   const grouped = useMemo(() => {
     const groups = groupSessionsByColumn(sessions);
-    return sortColumnSessions(groups);
-  }, [sessions]);
+    return sortColumnSessions(groups, kanbanSortOrders);
+  }, [sessions, kanbanSortOrders]);
 
   const visibleColumns = useMemo(() => {
     const ordered = getOrderedColumns(isVertical);
@@ -190,6 +199,8 @@ export function KanbanBoard({
             onHide={onHide}
             onUnhide={onUnhide}
             isHiddenTab={isHiddenTab}
+            sortDirection={kanbanSortOrders[col.key] ?? SORT_DIRECTIONS.DESC}
+            onToggleSort={() => toggleKanbanSortOrder(col.key)}
           />
         </div>
       ))}

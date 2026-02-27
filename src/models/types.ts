@@ -250,6 +250,26 @@ export type JsonlRecord =
   | FileHistorySnapshotRecord;
 
 // ---------------------------------------------------------------------------
+// Hook event types (from Claude Code hooks → conductor-hook.sh)
+// ---------------------------------------------------------------------------
+
+/** A hook event written by conductor-hook.sh to per-session event files. */
+export interface HookEvent {
+  /** Raw hook event name from Claude Code (e.g., 'SessionStart', 'Stop'). */
+  readonly e: string;
+  /** Unix timestamp (seconds). */
+  readonly ts: number;
+  /** Session ID. */
+  readonly sid: string;
+  /** Tool name (for tool-related events). */
+  readonly tool?: string;
+  /** Error message (for PostToolUseFailure). */
+  readonly err?: string;
+  /** Notification type (for Notification events). */
+  readonly ntype?: string;
+}
+
+// ---------------------------------------------------------------------------
 // Conversation transcript types
 // ---------------------------------------------------------------------------
 
@@ -415,6 +435,69 @@ export interface SessionInfo {
   lastAssistantText?: string;
   /** Structured question when status is 'waiting'. */
   pendingQuestion?: PendingQuestion;
+}
+
+// ---------------------------------------------------------------------------
+// Stats cache types (from ~/.claude/stats-cache.json)
+// ---------------------------------------------------------------------------
+
+/** Daily activity totals from the Claude Code stats cache. */
+export interface StatsDailyActivity {
+  date: string;
+  messageCount: number;
+  sessionCount: number;
+  toolCallCount: number;
+}
+
+/** Daily per-model token totals from the Claude Code stats cache. */
+export interface StatsDailyModelTokens {
+  date: string;
+  tokensByModel: Record<string, number>;
+}
+
+/** Per-model token breakdown from the Claude Code stats cache. */
+export interface StatsModelUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadInputTokens: number;
+  cacheCreationInputTokens: number;
+  webSearchRequests: number;
+}
+
+/**
+ * Longest session metadata from the Claude Code stats cache.
+ *
+ * @remarks
+ * `duration` is wall-clock milliseconds measured by Claude Code.
+ */
+export interface StatsLongestSession {
+  sessionId: string;
+  /** Wall-clock duration in milliseconds. */
+  duration: number;
+  messageCount: number;
+  timestamp: string;
+}
+
+/**
+ * Complete stats-cache.json structure maintained by Claude Code.
+ *
+ * @remarks
+ * Read-only from Conductor's perspective — Claude Code owns this file.
+ * Parsed by {@link StatsCacheReader} and sent to the webview via
+ * the `usage:full` IPC message.
+ */
+export interface StatsCache {
+  version: number;
+  lastComputedDate: string;
+  dailyActivity: StatsDailyActivity[];
+  dailyModelTokens: StatsDailyModelTokens[];
+  modelUsage: Record<string, StatsModelUsage>;
+  totalSessions: number;
+  totalMessages: number;
+  longestSession: StatsLongestSession;
+  firstSessionDate: string;
+  /** Sessions started per hour-of-day (string keys "0"–"23"). */
+  hourCounts: Record<string, number>;
 }
 
 /**

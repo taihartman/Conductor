@@ -12,6 +12,8 @@ export const SHORTCUTS: ReadonlyArray<{ key: string; action: string }> = [
   { key: UI_STRINGS.HELP_KEY_RENAME, action: UI_STRINGS.HELP_SHORTCUT_RENAME },
   { key: UI_STRINGS.HELP_KEY_SELECT, action: UI_STRINGS.HELP_SHORTCUT_SELECT },
   { key: UI_STRINGS.HELP_KEY_EXPAND, action: UI_STRINGS.HELP_SHORTCUT_EXPAND },
+  { key: UI_STRINGS.HELP_KEY_NAV_ARROWS, action: UI_STRINGS.HELP_SHORTCUT_NAV_ARROWS },
+  { key: UI_STRINGS.HELP_KEY_NAV_SELECT, action: UI_STRINGS.HELP_SHORTCUT_NAV_SELECT },
 ] as const;
 
 /** Feature accordion entries: [title, description]. */

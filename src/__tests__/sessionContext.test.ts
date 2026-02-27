@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { getContextText } from '../../webview-ui/src/utils/sessionContext';
+import { getContextText, isLaunchingSession } from '../../webview-ui/src/utils/sessionContext';
+import { UI_STRINGS } from '../../webview-ui/src/config/strings';
 import type { SessionInfo } from '../../src/models/types';
 
 /** Minimal SessionInfo factory for tests. */
@@ -159,5 +160,128 @@ describe('getContextText', () => {
       lastActivityAt: '2026-02-25T11:00:00Z',
     });
     expect(getContextText(session)).toBe('1h ago');
+  });
+
+  it('returns CONTEXT_LAUNCHING for a launching session', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      status: 'idle',
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(getContextText(session)).toBe(UI_STRINGS.CONTEXT_LAUNCHING);
+  });
+
+  it('returns normal context text for non-launching conductor sessions', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 1,
+      totalInputTokens: 100,
+      totalOutputTokens: 50,
+      status: 'working',
+    });
+    expect(getContextText(session)).toBe(UI_STRINGS.CONTEXT_WORKING);
+  });
+});
+
+describe('isLaunchingSession', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-02-25T12:00:00Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns true for launchedByConductor=true, turnCount=0, tokens=0, recent startedAt', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(true);
+  });
+
+  it('returns false when launchedByConductor is false', () => {
+    const session = makeSession({
+      launchedByConductor: false,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns false when launchedByConductor is undefined', () => {
+    const session = makeSession({
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns false when turnCount > 0', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 1,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns false when input tokens are present', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 100,
+      totalOutputTokens: 0,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns false when output tokens are present', () => {
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 50,
+      startedAt: new Date(Date.now()).toISOString(),
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns false after 30-second timeout', () => {
+    const thirtyOneSecondsAgo = new Date(Date.now() - 31_000).toISOString();
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: thirtyOneSecondsAgo,
+    });
+    expect(isLaunchingSession(session)).toBe(false);
+  });
+
+  it('returns true just before 30-second timeout', () => {
+    const twentyNineSecondsAgo = new Date(Date.now() - 29_000).toISOString();
+    const session = makeSession({
+      launchedByConductor: true,
+      turnCount: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      startedAt: twentyNineSecondsAgo,
+    });
+    expect(isLaunchingSession(session)).toBe(true);
   });
 });

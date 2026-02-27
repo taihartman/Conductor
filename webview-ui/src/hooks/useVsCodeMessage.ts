@@ -1,8 +1,15 @@
 import { useEffect } from 'react';
 import { useDashboardStore } from '../store/dashboardStore';
 import type { ExtensionToWebviewMessage } from '@shared/protocol';
+import type { NavDirection } from '@shared/sharedConstants';
 
-export function useVsCodeMessage(): void {
+/** Optional handlers for keyboard navigation messages. */
+export interface NavMessageHandlers {
+  handleNavMove: (direction: NavDirection) => void;
+  handleNavSelect: () => void;
+}
+
+export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
   const {
     setFullState,
     setActivities,
@@ -18,6 +25,7 @@ export function useVsCodeMessage(): void {
     setLaunchMode,
     setHistoryEntries,
     setActiveTab,
+    setUsageData,
   } = useDashboardStore();
 
   useEffect(() => {
@@ -32,15 +40,24 @@ export function useVsCodeMessage(): void {
             message.conversation,
             message.toolStats,
             message.tokenSummaries,
-            message.isNestedSession
+            message.isNestedSession,
+            message.focusedSessionId
           );
           break;
-        case 'activity:full':
-          setActivities(message.events);
+        case 'activity:full': {
+          const { focusedSessionId } = useDashboardStore.getState();
+          if (message.sessionId === focusedSessionId) {
+            setActivities(message.events);
+          }
           break;
-        case 'conversation:full':
-          setConversation(message.turns);
+        }
+        case 'conversation:full': {
+          const { focusedSessionId } = useDashboardStore.getState();
+          if (message.sessionId === focusedSessionId) {
+            setConversation(message.turns);
+          }
           break;
+        }
         case 'user:input-status':
           setInputStatus(message);
           break;
@@ -76,6 +93,15 @@ export function useVsCodeMessage(): void {
         case 'history:full':
           setHistoryEntries(message.entries);
           break;
+        case 'usage:full':
+          setUsageData(message.stats);
+          break;
+        case 'nav:move':
+          navHandlers?.handleNavMove(message.direction);
+          break;
+        case 'nav:select':
+          navHandlers?.handleNavSelect();
+          break;
       }
     }
 
@@ -96,5 +122,7 @@ export function useVsCodeMessage(): void {
     setLaunchMode,
     setHistoryEntries,
     setActiveTab,
+    setUsageData,
+    navHandlers,
   ]);
 }

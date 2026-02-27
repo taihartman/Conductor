@@ -23,6 +23,7 @@ import { IPtyBridge } from './terminal/IPtyBridge';
 import { ILaunchedSessionStore } from './persistence/ILaunchedSessionStore';
 import { ISessionHistoryStore } from './persistence/ISessionHistoryStore';
 import { ISessionHistoryService } from './persistence/ISessionHistoryService';
+import { IStatsCacheReader } from './persistence/StatsCacheReader';
 import {
   PANEL_TITLE,
   LOG_PREFIX,
@@ -31,8 +32,9 @@ import {
   SETTINGS,
   LAUNCH_MODES,
   WORKSPACE_STATE_KEYS,
+  CONTEXT_KEYS,
 } from './constants';
-import type { LaunchMode } from './constants';
+import type { LaunchMode, NavDirection } from './constants';
 import { isInsideClaudeSession } from './terminal/SessionLauncher';
 
 /**
@@ -59,6 +61,7 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly launchedSessionStore: ILaunchedSessionStore;
   private readonly sessionHistoryStore: ISessionHistoryStore;
   private readonly sessionHistoryService: ISessionHistoryService;
+  private readonly statsCacheReader: IStatsCacheReader;
   private readonly workspaceState: vscode.Memento;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingAdoptions = new Set<string>();
@@ -89,6 +92,7 @@ export class DashboardPanel implements vscode.Disposable {
    * @param launchedSessionStore - Persistence layer for Conductor-launched session IDs
    * @param sessionHistoryStore - Persistence layer for session history metadata
    * @param sessionHistoryService - Service that builds history entries for the webview
+   * @param statsCacheReader - Reads the Claude Code stats-cache.json for the Usage tab
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
@@ -101,7 +105,8 @@ export class DashboardPanel implements vscode.Disposable {
     ptyBridge: IPtyBridge,
     launchedSessionStore: ILaunchedSessionStore,
     sessionHistoryStore: ISessionHistoryStore,
-    sessionHistoryService: ISessionHistoryService
+    sessionHistoryService: ISessionHistoryService,
+    statsCacheReader: IStatsCacheReader
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -135,6 +140,7 @@ export class DashboardPanel implements vscode.Disposable {
       launchedSessionStore,
       sessionHistoryStore,
       sessionHistoryService,
+      statsCacheReader,
       context.workspaceState
     );
 
@@ -153,6 +159,7 @@ export class DashboardPanel implements vscode.Disposable {
     launchedSessionStore: ILaunchedSessionStore,
     sessionHistoryStore: ISessionHistoryStore,
     sessionHistoryService: ISessionHistoryService,
+    statsCacheReader: IStatsCacheReader,
     workspaceState: vscode.Memento
   ) {
     this.panel = panel;
@@ -166,6 +173,7 @@ export class DashboardPanel implements vscode.Disposable {
     this.launchedSessionStore = launchedSessionStore;
     this.sessionHistoryStore = sessionHistoryStore;
     this.sessionHistoryService = sessionHistoryService;
+    this.statsCacheReader = statsCacheReader;
     this.workspaceState = workspaceState;
     this.conductorLaunchedIds = new Set(this.launchedSessionStore.getAll());
     this.restoreLaunchedSessionModes();
@@ -201,6 +209,19 @@ export class DashboardPanel implements vscode.Disposable {
     );
 
     this.visibilityStore.onVisibilityChanged(() => this.postFullState(), null, this.disposables);
+
+    // Track panel focus state for keybinding `when` clauses
+    this.panel.onDidChangeViewState(
+      (e) => {
+        vscode.commands.executeCommand(
+          'setContext',
+          CONTEXT_KEYS.PANEL_FOCUSED,
+          e.webviewPanel.active
+        );
+      },
+      null,
+      this.disposables
+    );
 
     // Wire PTY data from SessionLauncher → PtyBridge ring buffer + webview
     this.sessionLauncher.onPtyData(
@@ -241,6 +262,7 @@ export class DashboardPanel implements vscode.Disposable {
       toolStats: state.toolStats,
       tokenSummaries: state.tokenSummaries,
       isNestedSession: isInsideClaudeSession(),
+      focusedSessionId: this.focusedSessionId,
     });
 
     // Prune PTY buffers for sessions that SessionTracker no longer knows about
@@ -264,9 +286,27 @@ export class DashboardPanel implements vscode.Disposable {
   public focusSession(sessionId: string): void {
     console.log(`${LOG_PREFIX.PANEL} Focusing session from extension: ${sessionId}`);
     this.focusedSessionId = sessionId;
+    this.postMessage({ type: 'session:focus-command', sessionId });
     this.postActivities();
     this.postConversation();
-    this.postMessage({ type: 'session:focus-command', sessionId });
+  }
+
+  /**
+   * Forward a spatial navigation command to the webview.
+   * Called by nav commands registered in extension.ts.
+   *
+   * @param direction - The direction to navigate
+   */
+  public navigate(direction: NavDirection): void {
+    this.postMessage({ type: 'nav:move', direction });
+  }
+
+  /**
+   * Forward a nav-select command to the webview.
+   * Called by the navSelect command registered in extension.ts.
+   */
+  public selectKeyboardFocused(): void {
+    this.postMessage({ type: 'nav:select' });
   }
 
   /**
@@ -325,7 +365,11 @@ export class DashboardPanel implements vscode.Disposable {
    */
   private postActivities(): void {
     const activities = this.sessionTracker.getFilteredActivities(this.focusedSessionId);
-    this.postMessage({ type: 'activity:full', events: activities });
+    this.postMessage({
+      type: 'activity:full',
+      events: activities,
+      sessionId: this.focusedSessionId,
+    });
   }
 
   /**
@@ -357,7 +401,11 @@ export class DashboardPanel implements vscode.Disposable {
    */
   private postConversation(): void {
     const conversation = this.sessionTracker.getFilteredConversation(this.focusedSessionId);
-    this.postMessage({ type: 'conversation:full', turns: conversation });
+    this.postMessage({
+      type: 'conversation:full',
+      turns: conversation,
+      sessionId: this.focusedSessionId,
+    });
   }
 
   private handleMessage(message: WebviewToExtensionMessage): void {
@@ -419,6 +467,16 @@ export class DashboardPanel implements vscode.Disposable {
         break;
       case 'history:resume':
         this.handleHistoryResume(message.sessionId);
+        break;
+      case 'usage:request':
+        this.handleUsageRequest();
+        break;
+      case 'nav:keyboard-focus-changed':
+        vscode.commands.executeCommand(
+          'setContext',
+          CONTEXT_KEYS.KEYBOARD_NAV_ACTIVE,
+          message.active
+        );
         break;
     }
   }
@@ -773,7 +831,8 @@ export class DashboardPanel implements vscode.Disposable {
     const forceShownIds = this.visibilityStore.getForceShownIds();
     return sessions.map((s) => {
       const hidden =
-        hiddenIds.has(s.sessionId) || (s.isArtifact && !forceShownIds.has(s.sessionId));
+        hiddenIds.has(s.sessionId) ||
+        (s.isArtifact && !forceShownIds.has(s.sessionId) && !s.launchedByConductor);
       return hidden ? { ...s, isHidden: true } : s;
     });
   }
@@ -858,6 +917,14 @@ export class DashboardPanel implements vscode.Disposable {
     if (toRemove.length > 0) {
       console.log(`${LOG_PREFIX.PANEL} Pruned ${toRemove.length} orphaned PTY buffer(s)`);
     }
+  }
+
+  // ── Usage helpers ───────────────────────────────────────────────────
+
+  /** Handle the webview requesting usage stats for the Usage tab. */
+  private async handleUsageRequest(): Promise<void> {
+    const stats = await this.statsCacheReader.read();
+    this.postMessage({ type: 'usage:full', stats });
   }
 
   // ── History helpers ──────────────────────────────────────────────────
@@ -1027,6 +1094,8 @@ export class DashboardPanel implements vscode.Disposable {
   /** Dispose the panel, clear the singleton, and release all subscriptions. */
   dispose(): void {
     this.clearLaunchDiscoveryTimer();
+    vscode.commands.executeCommand('setContext', CONTEXT_KEYS.PANEL_FOCUSED, false);
+    vscode.commands.executeCommand('setContext', CONTEXT_KEYS.KEYBOARD_NAV_ACTIVE, false);
     DashboardPanel.currentPanel = undefined;
     this.panel.dispose();
     while (this.disposables.length) {

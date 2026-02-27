@@ -38,6 +38,10 @@ export interface ISessionStateMachine {
   handleSystemRecord(record: SystemRecord): SessionStatus;
   handleProgressRecord(record: ProgressRecord): SessionStatus;
   setStatus(status: SessionStatus): void;
+  /** Cancel all pending timers and set status atomically. Used by hook events. */
+  overrideStatus(status: SessionStatus): void;
+  /** Record a tool error from a hook event (for error threshold tracking). */
+  recordHookError(toolName: string): void;
   dispose(): void;
 }
 
@@ -125,11 +129,33 @@ export class SessionStateMachine implements ISessionStateMachine {
 
   /**
    * Force the session to a specific status (e.g., for idle timeout).
+   * Cancels pending timers to prevent them from overriding the forced status.
    *
    * @param status - The new session status
    */
   setStatus(status: SessionStatus): void {
+    this.cancelTimers();
     this._status = status;
+  }
+
+  /**
+   * Cancel all pending timers and set status atomically.
+   * Used by hook events to override JSONL-inferred state.
+   *
+   * @param status - The new session status
+   */
+  overrideStatus(status: SessionStatus): void {
+    this.cancelTimers();
+    this._status = status;
+  }
+
+  /**
+   * Record a tool error from a hook event (for error threshold tracking).
+   *
+   * @param toolName - Name of the tool that failed
+   */
+  recordHookError(toolName: string): void {
+    this.recordError(toolName);
   }
 
   /**
@@ -210,26 +236,30 @@ export class SessionStateMachine implements ISessionStateMachine {
         planMode: planToolName === SPECIAL_NAMES.ENTER_PLAN_MODE ? 'enter' : 'exit',
       };
     } else if (hasToolUse) {
-      // Tool call detected — always set WAITING with tool approval.
-      // Auto-approved tools: tool_result arrives in the same polling batch (1s),
-      // and the 100ms IPC debounce means the webview never sees the transient state.
-      // Approval-needed tools: tool_result is delayed, so WAITING persists and
-      // ChatInput renders Allow/Always/Deny buttons.
-      // Edge: slow auto-approved tools (>1s) may briefly show WAITING — acceptable
-      // trade-off vs. Pattern B sessions (null stop_reason) never showing buttons.
-      this._status = SESSION_STATUSES.WAITING;
-      const pendingTools = toolBlocks
-        .filter(
-          (t) => !USER_BLOCKING_TOOLS.has(t.name) && t.name !== SPECIAL_NAMES.ASK_USER_QUESTION
-        )
-        .map((t) => ({ toolName: t.name, inputSummary: '', input: t.input }));
-      this._pendingQuestion = {
-        question: '',
-        options: [],
-        multiSelect: false,
-        isToolApproval: true,
-        pendingTools,
-      };
+      // Discriminate on stop_reason: 'tool_use' means Claude stopped to request
+      // permission → WAITING. null/other means auto-approved tool running → WORKING.
+      // Caveat: stop_reason === 'tool_use' doesn't always mean "needs approval" —
+      // auto-approved tools can also have this stop reason. With hooks active,
+      // PermissionRequest gives the definitive answer.
+      if (msg.stop_reason === SPECIAL_NAMES.TOOL_USE_STOP_REASON) {
+        this._status = SESSION_STATUSES.WAITING;
+        const pendingTools = toolBlocks
+          .filter(
+            (t) => !USER_BLOCKING_TOOLS.has(t.name) && t.name !== SPECIAL_NAMES.ASK_USER_QUESTION
+          )
+          .map((t) => ({ toolName: t.name, inputSummary: '', input: t.input }));
+        this._pendingQuestion = {
+          question: '',
+          options: [],
+          multiSelect: false,
+          isToolApproval: true,
+          pendingTools,
+        };
+      } else {
+        // Auto-approved tool running (null stop_reason or streaming)
+        this._status = SESSION_STATUSES.WORKING;
+        this._pendingQuestion = undefined;
+      }
     } else if (msg.stop_reason === SPECIAL_NAMES.END_TURN_STOP_REASON) {
       // Text-only end_turn: Claude finished its turn
       this._pendingQuestion = undefined;
@@ -238,9 +268,9 @@ export class SessionStateMachine implements ISessionStateMachine {
       // Text-only, null stop_reason — start intermission timer as fallback
       if (this._status !== SESSION_STATUSES.WORKING && this._status !== SESSION_STATUSES.ERROR) {
         this._status = SESSION_STATUSES.THINKING;
+        this.startIntermissionTimer();
       }
       this._pendingQuestion = undefined;
-      this.startIntermissionTimer();
     }
 
     this._lastAssistantTime = Date.now();
@@ -325,7 +355,6 @@ export class SessionStateMachine implements ISessionStateMachine {
     this.cancelTimers();
     if (this._status !== SESSION_STATUSES.WORKING && this._status !== SESSION_STATUSES.WAITING) {
       this._status = SESSION_STATUSES.THINKING;
-      this.startIntermissionTimer();
     }
     return this._status;
   }
@@ -337,7 +366,11 @@ export class SessionStateMachine implements ISessionStateMachine {
 
   private startIntermissionTimer(): void {
     this.intermissionTimer = setTimeout(() => {
-      if (this._status !== SESSION_STATUSES.WAITING) {
+      if (
+        this._status !== SESSION_STATUSES.WAITING &&
+        this._status !== SESSION_STATUSES.WORKING &&
+        this._status !== SESSION_STATUSES.ERROR
+      ) {
         this._status = SESSION_STATUSES.DONE;
         this.onStateChanged();
       }

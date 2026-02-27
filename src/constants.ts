@@ -13,6 +13,17 @@ export const COMMANDS = {
   REFRESH: 'conductor.refresh',
   LAUNCH_SESSION: 'conductor.launchSession',
   QUICK_PICK_SESSION: 'conductor.quickPickSession',
+  NAV_UP: 'conductor.navUp',
+  NAV_DOWN: 'conductor.navDown',
+  NAV_LEFT: 'conductor.navLeft',
+  NAV_RIGHT: 'conductor.navRight',
+  NAV_SELECT: 'conductor.navSelect',
+} as const;
+
+/** VS Code `when`-clause context keys managed by the extension. */
+export const CONTEXT_KEYS = {
+  PANEL_FOCUSED: 'conductor.panelFocused',
+  KEYBOARD_NAV_ACTIVE: 'conductor.keyboardNavActive',
 } as const;
 
 /** Structured log prefixes for Debug Console output. */
@@ -34,6 +45,9 @@ export const LOG_PREFIX = {
   QUICK_PICK: '[Conductor:QuickPick]',
   HISTORY_STORE: '[Conductor:HistoryStore]',
   HISTORY_SERVICE: '[Conductor:HistoryService]',
+  HOOK_REGISTRAR: '[Conductor:HookRegistrar]',
+  HOOK_WATCHER: '[Conductor:HookWatcher]',
+  USAGE_READER: '[Conductor:UsageReader]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -44,6 +58,8 @@ export const FS_PATHS = {
   PLANS_DIR: 'plans',
   JSONL_EXT: '.jsonl',
   AGENT_PREFIX: 'agent-',
+  /** Filename for the Claude Code daily usage stats cache. */
+  STATS_CACHE_FILE: 'stats-cache.json',
 } as const;
 
 /** Character limits for truncating text in activity events and tool summaries. */
@@ -209,12 +225,53 @@ export const CLAUDE_CLI = {
   REMOTE_CONTROL: 'remote-control',
 } as const;
 
+/** Hook event names from Claude Code hooks API. */
+export const HOOK_EVENTS = {
+  SESSION_START: 'SessionStart',
+  USER_PROMPT_SUBMIT: 'UserPromptSubmit',
+  PRE_TOOL_USE: 'PreToolUse',
+  POST_TOOL_USE: 'PostToolUse',
+  POST_TOOL_USE_FAILURE: 'PostToolUseFailure',
+  PERMISSION_REQUEST: 'PermissionRequest',
+  NOTIFICATION: 'Notification',
+  SUBAGENT_START: 'SubagentStart',
+  STOP: 'Stop',
+  SESSION_END: 'SessionEnd',
+  PRE_COMPACT: 'PreCompact',
+} as const;
+
+/** Notification subtypes from the Notification hook event. */
+export const HOOK_NOTIFICATION_TYPES = {
+  IDLE_PROMPT: 'idle_prompt',
+  PERMISSION_PROMPT: 'permission_prompt',
+} as const;
+
+/** Directory for hook event files written by conductor-hook.sh. */
+export const HOOK_EVENTS_DIR = '~/.conductor/events';
+
+/** Staleness threshold (ms): if no hook event for this long, fall back to JSONL. */
+export const HOOK_STALENESS_MS = 60_000;
+
+/** Max buffered hook events per session for sessions not yet discovered via JSONL. */
+export const HOOK_BUFFER_MAX_EVENTS = 50;
+
+/** TTL (ms) for pending hook event buffers (discard if session never appears). */
+export const HOOK_BUFFER_TTL_MS = 60_000;
+
 /** User-visible strings for the Quick Pick session switcher. */
 export const QUICK_PICK_STRINGS = {
   /** Placeholder text shown in the Quick Pick input. */
   PLACEHOLDER: 'Switch to session...',
   /** Shown when no sessions are available. */
   NO_SESSIONS: 'No active sessions found',
+} as const;
+
+/** Usage tab configuration. */
+export const USAGE = {
+  /** Number of recent days shown in the daily trend chart. */
+  DAILY_TREND_DAYS: 7,
+  /** Expected stats-cache.json version. */
+  SUPPORTED_CACHE_VERSION: 1,
 } as const;
 
 // Re-export shared constants so extension code has a single import point.
@@ -229,5 +286,6 @@ export {
   TOOL_APPROVAL_INPUTS,
   PLAN_INPUTS,
   LAUNCH_MODES,
+  NAV_DIRECTIONS,
 } from './models/sharedConstants';
-export type { LaunchMode } from './models/sharedConstants';
+export type { LaunchMode, NavDirection } from './models/sharedConstants';

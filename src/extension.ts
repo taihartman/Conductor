@@ -10,7 +10,9 @@ import { PtyBridge } from './terminal/PtyBridge';
 import { LaunchedSessionStore } from './persistence/LaunchedSessionStore';
 import { SessionHistoryStore } from './persistence/SessionHistoryStore';
 import { SessionHistoryService } from './persistence/SessionHistoryService';
+import { StatsCacheReader } from './persistence/StatsCacheReader';
 import { AutoReconnectService } from './terminal/AutoReconnectService';
+import { HookRegistrar } from './hooks/HookRegistrar';
 import {
   OUTPUT_CHANNEL_NAME,
   STATUS_BAR_TEXT,
@@ -62,6 +64,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(sessionHistoryStore);
 
   const sessionHistoryService = new SessionHistoryService(sessionHistoryStore, nameStore);
+  const statsCacheReader = new StatsCacheReader(outputChannel);
 
   const autoReconnect = new AutoReconnectService(
     sessionTracker,
@@ -84,7 +87,8 @@ export function activate(context: vscode.ExtensionContext): void {
       ptyBridge,
       launchedSessionStore,
       sessionHistoryStore,
-      sessionHistoryService
+      sessionHistoryService,
+      statsCacheReader
     );
   });
 
@@ -120,12 +124,39 @@ export function activate(context: vscode.ExtensionContext): void {
       launchedSessionStore,
       sessionHistoryStore,
       sessionHistoryService,
+      statsCacheReader,
     }).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.EXTENSION} Quick Pick failed: ${err}`);
     });
   });
 
-  context.subscriptions.push(openCommand, refreshCommand, launchCommand, quickPickCommand);
+  const navUpCommand = vscode.commands.registerCommand(COMMANDS.NAV_UP, () => {
+    DashboardPanel.currentPanel?.navigate('up');
+  });
+  const navDownCommand = vscode.commands.registerCommand(COMMANDS.NAV_DOWN, () => {
+    DashboardPanel.currentPanel?.navigate('down');
+  });
+  const navLeftCommand = vscode.commands.registerCommand(COMMANDS.NAV_LEFT, () => {
+    DashboardPanel.currentPanel?.navigate('left');
+  });
+  const navRightCommand = vscode.commands.registerCommand(COMMANDS.NAV_RIGHT, () => {
+    DashboardPanel.currentPanel?.navigate('right');
+  });
+  const navSelectCommand = vscode.commands.registerCommand(COMMANDS.NAV_SELECT, () => {
+    DashboardPanel.currentPanel?.selectKeyboardFocused();
+  });
+
+  context.subscriptions.push(
+    openCommand,
+    refreshCommand,
+    launchCommand,
+    quickPickCommand,
+    navUpCommand,
+    navDownCommand,
+    navLeftCommand,
+    navRightCommand,
+    navSelectCommand
+  );
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.text = STATUS_BAR_TEXT;
@@ -133,6 +164,30 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBarItem.command = COMMANDS.OPEN;
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
+
+  // Hook registration: auto-install Conductor hooks for real-time status detection.
+  // Non-fatal: extension continues with JSONL-only detection if this fails.
+  const hookRegistrar = new HookRegistrar();
+  hookRegistrar
+    .isInstalled()
+    .then(async (installed) => {
+      if (installed) {
+        await hookRegistrar.ensureHookScript();
+        console.log(`${LOG_PREFIX.EXTENSION} Conductor hooks already installed, script verified`);
+      } else {
+        await hookRegistrar.install();
+        console.log(`${LOG_PREFIX.EXTENSION} Conductor hooks installed`);
+        vscode.window.showInformationMessage(
+          'Conductor hooks installed for real-time session status.'
+        );
+      }
+    })
+    .catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.EXTENSION} Hook setup failed (non-fatal): ${err}`);
+      vscode.window.showWarningMessage(
+        `Conductor hooks setup failed: ${err instanceof Error ? err.message : String(err)}`
+      );
+    });
 
   sessionTracker.start();
   autoReconnect.start();

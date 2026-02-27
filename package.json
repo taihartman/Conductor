@@ -45,6 +45,31 @@
       {
         "command": "conductor.quickPickSession",
         "title": "Conductor: Switch Session"
+      },
+      {
+        "command": "conductor.navUp",
+        "title": "Navigate Up",
+        "category": "Conductor"
+      },
+      {
+        "command": "conductor.navDown",
+        "title": "Navigate Down",
+        "category": "Conductor"
+      },
+      {
+        "command": "conductor.navLeft",
+        "title": "Navigate Left",
+        "category": "Conductor"
+      },
+      {
+        "command": "conductor.navRight",
+        "title": "Navigate Right",
+        "category": "Conductor"
+      },
+      {
+        "command": "conductor.navSelect",
+        "title": "Select Focused Session",
+        "category": "Conductor"
       }
     ],
     "keybindings": [
@@ -52,6 +77,35 @@
         "command": "conductor.quickPickSession",
         "key": "ctrl+shift+;",
         "mac": "cmd+shift+;"
+      },
+      {
+        "command": "conductor.navUp",
+        "key": "ctrl+shift+up",
+        "mac": "cmd+shift+up",
+        "when": "conductor.panelFocused"
+      },
+      {
+        "command": "conductor.navDown",
+        "key": "ctrl+shift+down",
+        "mac": "cmd+shift+down",
+        "when": "conductor.panelFocused"
+      },
+      {
+        "command": "conductor.navLeft",
+        "key": "ctrl+shift+left",
+        "mac": "cmd+shift+left",
+        "when": "conductor.panelFocused"
+      },
+      {
+        "command": "conductor.navRight",
+        "key": "ctrl+shift+right",
+        "mac": "cmd+shift+right",
+        "when": "conductor.panelFocused"
+      },
+      {
+        "command": "conductor.navSelect",
+        "key": "enter",
+        "when": "conductor.panelFocused && conductor.keyboardNavActive"
       }
     ],
     "configuration": {
