@@ -303,31 +303,46 @@ function HourChart({ hourCounts }: { hourCounts: Record<string, number> }): Reac
   const maxCount = Math.max(...hours.map((h) => h.count), 1);
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-end',
-        gap: '2px', // inline-ok
-        height: '60px', // inline-ok
-        padding: '0 var(--spacing-sm)',
-      }}
-    >
-      {hours.map((h) => {
-        const heightPct = (h.count / maxCount) * 100;
-        return (
-          <div
-            key={h.hour}
-            title={`${h.hour}:00 — ${formatNumber(h.count)} sessions`}
-            style={{
-              flex: 1,
-              height: `${Math.max(heightPct, 2)}%`, // inline-ok: min 2% for visibility
-              backgroundColor: h.count > 0 ? COLORS.USAGE_BAR_FILL : 'var(--bg-card)',
-              borderRadius: '1px 1px 0 0', // inline-ok
-              transition: 'height 0.3s ease',
-            }}
-          />
-        );
-      })}
+    <div style={{ display: 'flex', flexDirection: 'column', padding: '0 var(--spacing-sm)' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'flex-end',
+          gap: '2px', // inline-ok
+          height: '60px', // inline-ok
+        }}
+      >
+        {hours.map((h) => {
+          const heightPct = (h.count / maxCount) * 100;
+          return (
+            <div
+              key={h.hour}
+              title={`${h.hour}:00 — ${formatNumber(h.count)} sessions`}
+              style={{
+                flex: 1,
+                height: `${Math.max(heightPct, 2)}%`, // inline-ok: min 2% for visibility
+                backgroundColor: h.count > 0 ? COLORS.USAGE_BAR_FILL : 'var(--bg-card)',
+                borderRadius: '1px 1px 0 0', // inline-ok
+                transition: 'height 0.3s ease',
+              }}
+            />
+          );
+        })}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          fontSize: '10px', // inline-ok
+          color: 'var(--fg-secondary)',
+          marginTop: '2px', // inline-ok
+        }}
+      >
+        <span>{UI_STRINGS.USAGE_HOUR_MIDNIGHT}</span>
+        <span>{UI_STRINGS.USAGE_HOUR_6AM}</span>
+        <span>{UI_STRINGS.USAGE_HOUR_NOON}</span>
+        <span>{UI_STRINGS.USAGE_HOUR_6PM}</span>
+      </div>
     </div>
   );
 }

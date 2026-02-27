@@ -24,7 +24,7 @@ export const UI_STRINGS = {
   TOOL_CALL_FALLBACK: 'Tool call',
   RESULT_ERROR: 'Error',
   RESULT_COMPLETED: 'Completed',
-  RENAME_HINT: 'Double-click to rename',
+  RENAME_HINT: 'Right-click to rename',
   ZEN_MASCOT_TOOLTIP: 'Zen mode',
   ZEN_MASCOT_LABEL: 'Enter zen mode',
   ZEN_EXIT_LABEL: 'Exit zen mode — click anywhere',
@@ -162,7 +162,7 @@ export const UI_STRINGS = {
   HELP_KEY_OPEN_DASHBOARD: '{modifier}+Shift+P \u2192 "Conductor: Open"',
   HELP_KEY_REFRESH: '{modifier}+Shift+P \u2192 "Conductor: Refresh"',
   HELP_KEY_LAUNCH: '{modifier}+Shift+P \u2192 "Conductor: Launch"',
-  HELP_KEY_RENAME: 'Double-click name',
+  HELP_KEY_RENAME: 'Right-click name',
   HELP_KEY_SELECT: 'Click card',
   HELP_KEY_EXPAND: 'Double-click card',
 
@@ -187,7 +187,6 @@ export const UI_STRINGS = {
   HELP_FEATURE_SESSION_MGMT: 'Session Management',
   HELP_FEATURE_LAUNCH: 'Launch Modes',
   HELP_FEATURE_CONVERSATION: 'Conversation & Terminal',
-  HELP_FEATURE_PLAN_APPROVAL: 'Plan & Tool Approval',
   HELP_FEATURE_ZEN: 'Zen Mode',
   HELP_FEATURE_SUB_AGENT: 'Sub-Agent Ensemble',
   HELP_FEATURE_ANALYTICS: 'Analytics Drawer',
@@ -203,13 +202,11 @@ export const UI_STRINGS = {
   HELP_DESC_LAYOUT:
     'Switch between vertical and horizontal split layouts. Click a session to select it, double-click to expand the detail view.',
   HELP_DESC_SESSION_MGMT:
-    'Double-click a session name to rename it. Drag the handle to reorder. Long-press or right-click for a context menu.',
+    'Right-click a session name to rename it. Drag the handle to reorder. Long-press or right-click for a context menu.',
   HELP_DESC_LAUNCH:
     'Launch sessions in Normal, YOLO (bypass permissions), or Remote Control mode via the split-button chevron.',
   HELP_DESC_CONVERSATION:
-    'Toggle between the AI conversation view and a live terminal view for each session.',
-  HELP_DESC_PLAN_APPROVAL:
-    'Approve or deny plan-mode requests and individual tool calls directly from the dashboard.',
+    'Each session has an experimental chat view for reading the conversation inline, and a default terminal view showing live Claude Code output.',
   HELP_DESC_ZEN:
     'Click the owl mascot to enter a meditative view. Zen mode also auto-activates after 5 minutes of idle time.',
   HELP_DESC_SUB_AGENT:
@@ -238,4 +235,9 @@ export const UI_STRINGS = {
   USAGE_LABEL_LAST_UPDATED: 'Last updated',
   USAGE_EMPTY_TITLE: 'No Usage Data',
   USAGE_EMPTY_DESCRIPTION: 'Stats will appear after your first Claude Code session.',
+  /** Peak Hours chart X-axis labels at 6-hour intervals. */
+  USAGE_HOUR_MIDNIGHT: '12a',
+  USAGE_HOUR_6AM: '6a',
+  USAGE_HOUR_NOON: '12p',
+  USAGE_HOUR_6PM: '6p',
 } as const;
