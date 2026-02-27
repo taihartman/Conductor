@@ -157,3 +157,41 @@ export const NAV_DIRECTIONS = {
 
 /** Spatial navigation direction for keyboard-driven card focus. */
 export type NavDirection = (typeof NAV_DIRECTIONS)[keyof typeof NAV_DIRECTIONS];
+
+// ---------------------------------------------------------------------------
+// Overview panel display modes
+// ---------------------------------------------------------------------------
+
+/** Overview panel display mode discriminators (list vs kanban board). */
+export const OVERVIEW_MODES = {
+  LIST: 'list',
+  BOARD: 'board',
+} as const;
+
+/** Union type of all overview mode string literals. */
+export type OverviewMode = (typeof OVERVIEW_MODES)[keyof typeof OVERVIEW_MODES];
+
+// ---------------------------------------------------------------------------
+// Kanban column sort directions
+// ---------------------------------------------------------------------------
+
+/** Kanban column sort direction discriminators. */
+export const SORT_DIRECTIONS = {
+  DESC: 'desc',
+  ASC: 'asc',
+} as const;
+
+/** Union type of all sort direction string literals. */
+export type SortDirection = (typeof SORT_DIRECTIONS)[keyof typeof SORT_DIRECTIONS];
+
+// ---------------------------------------------------------------------------
+// Terminal key escape sequences
+// ---------------------------------------------------------------------------
+
+/** Escape sequences for terminal key forwarding (used by both extension and webview). */
+export const TERMINAL_KEYS = {
+  /** CSI u encoded Shift+Enter for multi-line input in Claude Code. */
+  SHIFT_ENTER: '\x1b[13;2u',
+  /** Ctrl+U: kill to beginning of line (maps Cmd+Backspace on macOS, Ctrl+Backspace on Win/Linux). */
+  CMD_BACKSPACE: '\x15',
+} as const;

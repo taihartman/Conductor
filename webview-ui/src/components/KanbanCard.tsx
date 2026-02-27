@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { SessionInfo } from '@shared/types';
 import { SESSION_STATUSES, STATUS_GROUPS } from '@shared/sharedConstants';
 import { StatusDot } from './StatusDot';
 import { ContextMenu } from './ContextMenu';
 import type { ContextMenuItem } from './ContextMenu';
 import { getContextText } from '../utils/sessionContext';
-import { timeAgo, formatCostCompact, getSessionDisplayName } from '../utils/formatters';
+import { timeAgo, formatCostCompact, getSessionDisplayName, formatUserMessage } from '../utils/formatters';
 import { COLORS } from '../config/colors';
 import { UI_STRINGS } from '../config/strings';
 import { useDashboardStore } from '../store/dashboardStore';
+import { useInlineEdit } from '../hooks/useInlineEdit';
 
 interface KanbanCardProps {
   session: SessionInfo;
@@ -43,6 +44,13 @@ export function KanbanCard({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const contextText = getContextText(session);
 
+  const handleSave = useCallback(
+    (value: string) => onRename(session.sessionId, value),
+    [onRename, session.sessionId]
+  );
+  const { isEditing, editValue, inputRef, startEditing, setEditValue, handleKeyDown, handleBlur } =
+    useInlineEdit({ onSave: handleSave });
+
   const contextMenuItems: ContextMenuItem[] = isHiddenTab
     ? [
         ...(onUnhide
@@ -50,7 +58,7 @@ export function KanbanCard({
           : []),
         {
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
-          action: () => onRename(session.sessionId, getSessionDisplayName(session)),
+          action: () => startEditing(getSessionDisplayName(session)),
         },
       ]
     : [
@@ -59,7 +67,7 @@ export function KanbanCard({
           : []),
         {
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
-          action: () => onRename(session.sessionId, getSessionDisplayName(session)),
+          action: () => startEditing(getSessionDisplayName(session)),
         },
       ];
 
@@ -105,23 +113,66 @@ export function KanbanCard({
         }}
       >
         <StatusDot status={session.status} size={6} />
-        <span
+        {isEditing ? (
+          <input
+            ref={inputRef}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={(e) => e.stopPropagation()}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '12px', // inline-ok
+              fontWeight: 700,
+              color: 'var(--fg-primary)',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--accent)',
+              borderRadius: '3px',
+              padding: '0 4px',
+              outline: 'none',
+              minWidth: 0,
+              flex: 1,
+            }}
+          />
+        ) : (
+          <span
+            style={{
+              fontFamily: 'var(--font-mono)',
+              fontSize: '12px', // inline-ok
+              fontWeight: 700,
+              color: 'var(--fg-primary)',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={getSessionDisplayName(session)}
+          >
+            {getSessionDisplayName(session)}
+          </span>
+        )}
+      </div>
+
+      {/* Row 2: User message ("You: ...") */}
+      {session.lastUserText && (
+        <div
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '12px', // inline-ok
-            fontWeight: 700,
-            color: 'var(--fg-primary)',
+            fontSize: '10px', // inline-ok
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
-          title={getSessionDisplayName(session)}
+          title={session.lastUserText}
         >
-          {getSessionDisplayName(session)}
-        </span>
-      </div>
+          <span style={{ color: 'var(--fg-muted)' }}>{UI_STRINGS.USER_MESSAGE_PREFIX} </span>
+          <span style={{ color: 'var(--fg-secondary)' }}>
+            {formatUserMessage(session.lastUserText)}
+          </span>
+        </div>
+      )}
 
-      {/* Row 2: Context text */}
+      {/* Row 3: Context text */}
       <div
         style={{
           fontSize: '10px', // inline-ok

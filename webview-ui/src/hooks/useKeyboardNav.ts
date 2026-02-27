@@ -19,6 +19,24 @@ import type { NavDirection } from '@shared/sharedConstants';
 /** Row/column threshold for sorting cards into reading order (pixels). */
 const ROW_THRESHOLD = 20; // inline-ok: layout grouping threshold
 
+/** Timer for debouncing session:focus IPC during rapid keyboard navigation. */
+let focusIpcTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounce interval for session:focus IPC messages (ms). */
+const FOCUS_IPC_DEBOUNCE_MS = 80; // inline-ok: navigation debounce
+
+/**
+ * Select a session: update store immediately for snappy UI,
+ * debounce the IPC message to avoid wasted computation during rapid navigation.
+ */
+function selectSession(sessionId: string, setFocusedSession: (id: string) => void): void {
+  setFocusedSession(sessionId);
+  if (focusIpcTimer) clearTimeout(focusIpcTimer);
+  focusIpcTimer = setTimeout(() => {
+    vscode.postMessage({ type: 'session:focus', sessionId });
+  }, FOCUS_IPC_DEBOUNCE_MS);
+}
+
 /** Return type for the useKeyboardNav hook. */
 export interface KeyboardNavHandlers {
   handleNavMove: (direction: NavDirection) => void;
@@ -40,19 +58,30 @@ export function useKeyboardNav(): KeyboardNavHandlers {
     (direction: NavDirection) => {
       const { keyboardFocusedSessionId, navAnchor } = useDashboardStore.getState();
       const cards = getCardPositions();
-      if (cards.length === 0) return;
+      if (cards.length === 0) {
+        return;
+      }
 
-      // First press with no focus — highlight the first card (top-left in reading order)
+      // First press with no keyboard focus — start from the currently selected
+      // session (if any), otherwise fall back to the top-left card in reading order.
       if (!keyboardFocusedSessionId) {
-        const sorted = [...cards].sort((a, b) => {
-          const rowDiff = a.center.y - b.center.y;
-          if (Math.abs(rowDiff) > ROW_THRESHOLD) return rowDiff;
-          return a.center.x - b.center.x;
-        });
-        const first = sorted[0];
-        setKeyboardFocus(first.sessionId, { x: first.center.x, y: first.center.y });
+        const { focusedSessionId } = useDashboardStore.getState();
+        const startCard = focusedSessionId
+          ? cards.find((c) => c.sessionId === focusedSessionId)
+          : null;
+
+        const initial =
+          startCard ??
+          [...cards].sort((a, b) => {
+            const rowDiff = a.center.y - b.center.y;
+            if (Math.abs(rowDiff) > ROW_THRESHOLD) return rowDiff;
+            return a.center.x - b.center.x;
+          })[0];
+
+        setKeyboardFocus(initial.sessionId, { x: initial.center.x, y: initial.center.y });
+        selectSession(initial.sessionId, setFocusedSession);
         vscode.postMessage({ type: 'nav:keyboard-focus-changed', active: true });
-        scrollCardIntoView(first.sessionId);
+        scrollCardIntoView(initial.sessionId);
         return;
       }
 
@@ -78,18 +107,18 @@ export function useKeyboardNav(): KeyboardNavHandlers {
 
       if (target && target.sessionId !== keyboardFocusedSessionId) {
         setKeyboardFocus(target.sessionId, { x: target.center.x, y: target.center.y });
+        selectSession(target.sessionId, setFocusedSession);
         scrollCardIntoView(target.sessionId);
       }
     },
-    [setKeyboardFocus, clearKeyboardFocus]
+    [setKeyboardFocus, clearKeyboardFocus, setFocusedSession]
   );
 
   const handleNavSelect = useCallback(() => {
     const { keyboardFocusedSessionId } = useDashboardStore.getState();
     if (!keyboardFocusedSessionId) return;
 
-    setFocusedSession(keyboardFocusedSessionId);
-    vscode.postMessage({ type: 'session:focus', sessionId: keyboardFocusedSessionId });
+    selectSession(keyboardFocusedSessionId, setFocusedSession);
     clearKeyboardFocus();
     vscode.postMessage({ type: 'nav:keyboard-focus-changed', active: false });
   }, [setFocusedSession, clearKeyboardFocus]);

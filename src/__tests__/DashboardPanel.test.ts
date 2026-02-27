@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { PTY, LAUNCH_MODES, WORKSPACE_STATE_KEYS } from '../constants';
+import { PTY, LAUNCH_MODES, TIMING, WORKSPACE_STATE_KEYS } from '../constants';
 import type { LaunchMode } from '../constants';
 
 // --- Mock vscode ---
 let messageHandler: ((msg: any) => void) | undefined;
+let viewStateHandler: ((e: any) => void) | undefined;
 const postedMessages: any[] = [];
 
 const mockConfigValues: Record<string, unknown> = {};
@@ -48,7 +49,10 @@ vi.mock('vscode', () => ({
         }),
       },
       onDidDispose: vi.fn(() => ({ dispose: vi.fn() })),
-      onDidChangeViewState: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidChangeViewState: vi.fn((handler: (e: any) => void) => {
+        viewStateHandler = handler;
+        return { dispose: vi.fn() };
+      }),
       reveal: vi.fn(),
       dispose: vi.fn(),
     })),
@@ -180,6 +184,7 @@ function createMockLaunchedSessionStore(): any {
     getAll: vi.fn(() => []),
     save: vi.fn(() => Promise.resolve()),
     remove: vi.fn(() => Promise.resolve()),
+    getCwd: vi.fn(() => undefined),
     prune: vi.fn(() => Promise.resolve()),
     dispose: vi.fn(),
   };
@@ -239,6 +244,7 @@ describe('DashboardPanel message routing', () => {
 
     postedMessages.length = 0;
     messageHandler = undefined;
+    viewStateHandler = undefined;
 
     // Reset workspace state store between tests
     for (const key of Object.keys(mockWorkspaceStateStore)) {
@@ -333,7 +339,8 @@ describe('DashboardPanel message routing', () => {
       expect(launcher.transfer).toHaveBeenCalledWith('ext-session', 'hi', undefined, [
         'ext-session',
       ]);
-      expect(ptyBridge.registerSession).toHaveBeenCalledWith('ext-session');
+      // PtyBridge registration is handled by preSpawnCallback, not adoptSession
+      expect(ptyBridge.registerSession).not.toHaveBeenCalledWith('ext-session');
     });
 
     it('posts error on adoption failure', async () => {
@@ -394,7 +401,8 @@ describe('DashboardPanel message routing', () => {
 
       // transfer receives all group members as 4th arg
       expect(launcher.transfer).toHaveBeenCalledWith('ext-session', '', undefined, ['ext-session']);
-      expect(ptyBridge.registerSession).toHaveBeenCalledWith('ext-session');
+      // PtyBridge registration is handled by preSpawnCallback, not adoptSession
+      expect(ptyBridge.registerSession).not.toHaveBeenCalledWith('ext-session');
     });
 
     it('posts error status on failure', async () => {
@@ -432,8 +440,20 @@ describe('DashboardPanel message routing', () => {
         'member-b',
         'member-c',
       ]);
-      // Should register with the returned ID (member-b), not the original (member-a)
-      expect(ptyBridge.registerSession).toHaveBeenCalledWith('member-b');
+    });
+
+    it('skips adoption when a group member already has a launched terminal', async () => {
+      tracker.getGroupMembers.mockReturnValue(['member-a', 'member-b']);
+      // member-b is already launched by Conductor (e.g. AutoReconnectService resumed it)
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'member-b');
+
+      sendMessage({ type: 'session:adopt', sessionId: 'member-a' });
+
+      // Allow microtasks to settle
+      await vi.waitFor(() => {
+        // transfer() should never be called because the guard returns early
+        expect(launcher.transfer).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -534,6 +554,231 @@ describe('DashboardPanel message routing', () => {
       expect(stateMsg).toBeDefined();
       const session = stateMsg.sessions.find((s: any) => s.sessionId === 'launched-1');
       expect(session?.launchedByConductor).toBe(true);
+    });
+  });
+
+  describe('launchedByConductor via continuation group', () => {
+    it('marks session as launchedByConductor when a continuation member was launched', () => {
+      const panel = DashboardPanel.currentPanel!;
+      // Mark 'member-2' as launched (not the primary session)
+      panel.notifySessionLaunched('member-2');
+      postedMessages.length = 0;
+
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'primary-id',
+            startedAt: '2026-01-01',
+            continuationSessionIds: ['primary-id', 'member-2'],
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'primary-id');
+      expect(session?.launchedByConductor).toBe(true);
+    });
+
+    it('does not mark launchedByConductor when no group member was launched', () => {
+      postedMessages.length = 0;
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'primary-id',
+            startedAt: '2026-01-01',
+            continuationSessionIds: ['primary-id', 'member-2'],
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'primary-id');
+      expect(session?.launchedByConductor).toBeUndefined();
+    });
+  });
+
+  describe('PTY ID translation for adopted sessions', () => {
+    it('translates resumedId to primaryId in pty:data messages', async () => {
+      // Setup: transfer returns a different resumedId than the sessionId
+      const resumedId = 'resumed-abc';
+      const primaryId = 'primary-group';
+      tracker.getGroupMembers.mockReturnValue([primaryId, 'member-2']);
+      launcher.isLaunchedSession.mockReturnValue(false);
+      launcher.transfer.mockResolvedValue(resumedId);
+
+      // Capture the onPtyData callback
+      let ptyDataCallback: ((data: { sessionId: string; data: string }) => void) | undefined;
+      launcher.onPtyData.mockImplementation(
+        (handler: (data: { sessionId: string; data: string }) => void) => {
+          ptyDataCallback = handler;
+          return { dispose: vi.fn() };
+        }
+      );
+
+      // Re-create panel to wire up the new onPtyData mock
+      DashboardPanel.currentPanel!.dispose();
+      DashboardPanel.currentPanel = undefined;
+      DashboardPanel.createOrShow(
+        createMockContext(),
+        tracker,
+        createMockNameStore(),
+        createMockOrderStore(),
+        createMockVisibilityStore(),
+        launcher,
+        ptyBridge,
+        createMockLaunchedSessionStore(),
+        createMockSessionHistoryStore(),
+        createMockSessionHistoryService(),
+        createMockStatsCacheReader()
+      );
+
+      // Trigger adoption with a session that has a different resumedId
+      sendMessage({ type: 'session:adopt', sessionId: primaryId });
+
+      // Wait for full adoption to complete (including ptyIdToDisplayId mapping)
+      await vi.waitFor(() => {
+        const adopted = postedMessages.find(
+          (m) => m.type === 'session:adopt-status' && m.status === 'adopted'
+        );
+        expect(adopted).toBeDefined();
+      });
+
+      // Simulate PTY data arriving with the resumedId
+      postedMessages.length = 0;
+      expect(ptyDataCallback).toBeDefined();
+      ptyDataCallback!({ sessionId: resumedId, data: 'hello terminal' });
+
+      // Verify the pty:data message uses the primary display ID, not resumedId
+      const ptyMsg = postedMessages.find((m) => m.type === 'pty:data');
+      expect(ptyMsg).toBeDefined();
+      expect(ptyMsg.sessionId).toBe(primaryId);
+
+      // Verify PtyBridge also received data under primaryId
+      expect(ptyBridge.pushData).toHaveBeenCalledWith(primaryId, 'hello terminal');
+    });
+
+    it('registers PtyBridge under primaryId when resumedId differs', async () => {
+      const resumedId = 'resumed-xyz';
+      const primaryId = 'primary-xyz';
+      tracker.getGroupMembers.mockReturnValue([primaryId, 'member-3']);
+      launcher.isLaunchedSession.mockReturnValue(false);
+      launcher.transfer.mockResolvedValue(resumedId);
+
+      sendMessage({ type: 'session:adopt', sessionId: primaryId });
+
+      // Wait for full adoption to complete (including PtyBridge registration)
+      await vi.waitFor(() => {
+        const adopted = postedMessages.find(
+          (m) => m.type === 'session:adopt-status' && m.status === 'adopted'
+        );
+        expect(adopted).toBeDefined();
+      });
+
+      // PtyBridge should have been registered with primaryId
+      expect(ptyBridge.registerSession).toHaveBeenCalledWith(primaryId);
+    });
+  });
+
+  describe('hasActivePty enrichment', () => {
+    it('sets hasActivePty when session has a registered PTY', () => {
+      ptyBridge.registerSession('pty-session');
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'pty-session', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'pty-session');
+      expect(session?.hasActivePty).toBe(true);
+    });
+
+    it('does not set hasActivePty when session has no registered PTY', () => {
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'no-pty-session', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'no-pty-session');
+      expect(session?.hasActivePty).toBeUndefined();
+    });
+
+    it('sets hasActivePty when a continuation member has a registered PTY', () => {
+      ptyBridge.registerSession('member-2');
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'primary-id',
+            startedAt: '2026-01-01',
+            continuationSessionIds: ['primary-id', 'member-2'],
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      const panel = DashboardPanel.currentPanel!;
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'primary-id');
+      expect(session?.hasActivePty).toBe(true);
+    });
+
+    it('post-restart: launchedByConductor true but hasActivePty false when no PTY registered', () => {
+      const panel = DashboardPanel.currentPanel!;
+      // Simulate launch (registers PTY), then simulate restart by unregistering PTY
+      panel.notifySessionLaunched('restarted-session');
+      ptyBridge.unregisterSession('restarted-session');
+      postedMessages.length = 0;
+
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'restarted-session', startedAt: '2026-01-01', status: 'idle' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      panel.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      const session = stateMsg.sessions.find((s: any) => s.sessionId === 'restarted-session');
+      expect(session?.launchedByConductor).toBe(true);
+      expect(session?.hasActivePty).toBeUndefined();
     });
   });
 
@@ -640,6 +885,67 @@ describe('DashboardPanel message routing', () => {
       // unregisterSession should NOT have been called for active-1
       const unregisterCalls = ptyBridge.unregisterSession.mock.calls.map((c: any[]) => c[0]);
       expect(unregisterCalls).not.toContain('active-1');
+    });
+
+    it('protects buffer during discovery window (pendingDiscoveryIds)', () => {
+      vi.useFakeTimers();
+      try {
+        const panel = DashboardPanel.currentPanel!;
+
+        // notifySessionLaunched registers the buffer AND adds to pendingDiscoveryIds
+        panel.notifySessionLaunched('discovery-1');
+
+        // SessionTracker returns no sessions — JSONL not yet discovered
+        tracker.getState.mockReturnValue({
+          sessions: [],
+          activities: [],
+          conversation: [],
+          toolStats: [],
+          tokenSummaries: [],
+        });
+
+        ptyBridge.unregisterSession.mockClear();
+        panel.postFullState();
+
+        // Buffer should survive because sessionId is in pendingDiscoveryIds
+        const unregisterCalls = ptyBridge.unregisterSession.mock.calls.map((c: any[]) => c[0]);
+        expect(unregisterCalls).not.toContain('discovery-1');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('buffer is prunable after discovery poll completes', () => {
+      vi.useFakeTimers();
+      try {
+        const panel = DashboardPanel.currentPanel!;
+
+        // notifySessionLaunched starts the discovery poll
+        panel.notifySessionLaunched('discovery-2');
+
+        // SessionTracker never finds the session — simulate max retries exhausted
+        tracker.getState.mockReturnValue({
+          sessions: [],
+          activities: [],
+          conversation: [],
+          toolStats: [],
+          tokenSummaries: [],
+        });
+
+        // Clear mock before advancing — the final poll tick calls postFullState()
+        // which prunes the buffer once pendingDiscoveryIds no longer protects it
+        ptyBridge.unregisterSession.mockClear();
+
+        // Advance past all discovery poll retries
+        const totalPollTime = TIMING.LAUNCH_DISCOVERY_POLL_MS * TIMING.LAUNCH_DISCOVERY_MAX_RETRIES;
+        vi.advanceTimersByTime(totalPollTime);
+
+        // The last poll tick removed from pendingDiscoveryIds then called postFullState → prune
+        const unregisterCalls = ptyBridge.unregisterSession.mock.calls.map((c: any[]) => c[0]);
+        expect(unregisterCalls).toContain('discovery-2');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 
@@ -749,6 +1055,60 @@ describe('DashboardPanel message routing', () => {
       const modeMsg = lastPosted('launch-mode:current');
       expect(modeMsg).toBeDefined();
       expect(modeMsg.mode).toBe('normal');
+    });
+  });
+
+  describe('overview mode persistence (overview-mode:set)', () => {
+    it('persists overview mode to workspace state on overview-mode:set', () => {
+      sendMessage({ type: 'overview-mode:set', mode: 'board' });
+
+      expect(mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.OVERVIEW_MODE]).toBe('board');
+    });
+
+    it('sends overview-mode:current on ready with persisted mode', () => {
+      mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.OVERVIEW_MODE] = 'board';
+
+      sendMessage({ type: 'ready' });
+
+      const modeMsg = lastPosted('overview-mode:current');
+      expect(modeMsg).toBeDefined();
+      expect(modeMsg.mode).toBe('board');
+    });
+
+    it('sends overview-mode:current with list as default when no mode persisted', () => {
+      sendMessage({ type: 'ready' });
+
+      const modeMsg = lastPosted('overview-mode:current');
+      expect(modeMsg).toBeDefined();
+      expect(modeMsg.mode).toBe('list');
+    });
+  });
+
+  describe('kanban sort orders persistence (kanban-sort-orders:set)', () => {
+    it('persists sort orders to workspace state on kanban-sort-orders:set', () => {
+      const sortOrders = { performing: 'asc' as const, completed: 'desc' as const };
+      sendMessage({ type: 'kanban-sort-orders:set', sortOrders });
+
+      expect(mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.KANBAN_SORT_ORDERS]).toEqual(sortOrders);
+    });
+
+    it('sends kanban-sort-orders:current on ready with persisted orders', () => {
+      const sortOrders = { performing: 'asc' as const };
+      mockWorkspaceStateStore[WORKSPACE_STATE_KEYS.KANBAN_SORT_ORDERS] = sortOrders;
+
+      sendMessage({ type: 'ready' });
+
+      const sortMsg = lastPosted('kanban-sort-orders:current');
+      expect(sortMsg).toBeDefined();
+      expect(sortMsg.sortOrders).toEqual(sortOrders);
+    });
+
+    it('sends kanban-sort-orders:current with empty object as default when nothing persisted', () => {
+      sendMessage({ type: 'ready' });
+
+      const sortMsg = lastPosted('kanban-sort-orders:current');
+      expect(sortMsg).toBeDefined();
+      expect(sortMsg.sortOrders).toEqual({});
     });
   });
 
@@ -1247,5 +1607,173 @@ describe('DashboardPanel race condition guards', () => {
       expect(focusIdx).toBeLessThan(activityIdx);
       expect(focusIdx).toBeLessThan(convIdx);
     });
+  });
+});
+
+// ── Panel visibility relayout tests ──────────────────────────────────
+
+describe('DashboardPanel visibility relayout', () => {
+  beforeEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+
+    postedMessages.length = 0;
+    messageHandler = undefined;
+    viewStateHandler = undefined;
+
+    for (const key of Object.keys(mockWorkspaceStateStore)) {
+      delete mockWorkspaceStateStore[key];
+    }
+
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      createMockSessionTracker(),
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      createMockSessionLauncher(),
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
+    );
+
+    postedMessages.length = 0;
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  /** Simulate an onDidChangeViewState event. */
+  function fireViewState(visible: boolean, active: boolean): void {
+    if (!viewStateHandler) throw new Error('No viewState handler registered');
+    viewStateHandler({ webviewPanel: { visible, active } });
+  }
+
+  it('sends panel:visible on hidden→visible transition', () => {
+    // Panel starts visible. Make it hidden first.
+    fireViewState(false, false);
+    postedMessages.length = 0;
+
+    // Now make it visible again
+    fireViewState(true, true);
+
+    const visibilityMsg = postedMessages.find((m) => m.type === 'panel:visible');
+    expect(visibilityMsg).toBeDefined();
+  });
+
+  it('does NOT send panel:visible on focus-only change (panel stays visible)', () => {
+    // Panel is visible and active
+    fireViewState(true, true);
+    postedMessages.length = 0;
+
+    // Panel loses focus but stays visible (user clicked another editor column)
+    fireViewState(true, false);
+    postedMessages.length = 0;
+
+    // Panel gains focus again (still visible)
+    fireViewState(true, true);
+
+    const visibilityMsg = postedMessages.find((m) => m.type === 'panel:visible');
+    expect(visibilityMsg).toBeUndefined();
+  });
+
+  it('does NOT send panel:visible when panel becomes hidden', () => {
+    fireViewState(false, false);
+
+    const visibilityMsg = postedMessages.find((m) => m.type === 'panel:visible');
+    expect(visibilityMsg).toBeUndefined();
+  });
+
+  it('sends panel:visible on each hidden→visible cycle', () => {
+    // First cycle: hide then show
+    fireViewState(false, false);
+    fireViewState(true, true);
+    const firstCount = postedMessages.filter((m) => m.type === 'panel:visible').length;
+    expect(firstCount).toBe(1);
+
+    // Second cycle: hide then show
+    fireViewState(false, false);
+    fireViewState(true, true);
+    const secondCount = postedMessages.filter((m) => m.type === 'panel:visible').length;
+    expect(secondCount).toBe(2);
+  });
+});
+
+describe('DashboardPanel focus context', () => {
+  let mockExecuteCommand: ReturnType<typeof vi.fn>;
+
+  beforeEach(async () => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+    postedMessages.length = 0;
+    messageHandler = undefined;
+    viewStateHandler = undefined;
+
+    const vscode = await import('vscode');
+    mockExecuteCommand = vi.mocked(vscode.commands.executeCommand);
+    mockExecuteCommand.mockClear();
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  it('sets conductor.panelFocused context to true on initial creation', () => {
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      createMockSessionTracker(),
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      createMockSessionLauncher(),
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
+    );
+
+    expect(mockExecuteCommand).toHaveBeenCalledWith('setContext', 'conductor.panelFocused', true);
+  });
+
+  it('sets conductor.panelFocused context to true when revealing existing panel', () => {
+    // Create the panel
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      createMockSessionTracker(),
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      createMockSessionLauncher(),
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
+    );
+
+    mockExecuteCommand.mockClear();
+
+    // Reveal the existing panel
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      createMockSessionTracker(),
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      createMockSessionLauncher(),
+      createMockPtyBridge(),
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader()
+    );
+
+    expect(mockExecuteCommand).toHaveBeenCalledWith('setContext', 'conductor.panelFocused', true);
   });
 });

@@ -46,6 +46,12 @@ export interface SessionFile {
   modifiedAt: Date;
   /** Session ID of the parent that spawned this sub-agent. */
   parentSessionId?: string;
+  /** Slug eagerly extracted from the first JSONL record (if available). */
+  peekedSlug?: string;
+  /** Working directory eagerly extracted from the first JSONL record. */
+  peekedCwd?: string;
+  /** Git branch eagerly extracted from the first JSONL record. */
+  peekedGitBranch?: string;
 }
 
 /**

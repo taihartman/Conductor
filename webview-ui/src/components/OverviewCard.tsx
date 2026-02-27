@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import type { SessionInfo } from '@shared/types';
 import { SESSION_STATUSES, STATUS_GROUPS, LAUNCH_MODES } from '@shared/sharedConstants';
 import { StatusDot } from './StatusDot';
@@ -12,11 +12,13 @@ import {
   formatTokens,
   formatModel,
   getSessionDisplayName,
+  formatUserMessage,
 } from '../utils/formatters';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
 import { useDashboardStore } from '../store/dashboardStore';
 import { useLongPress } from '../hooks/useLongPress';
+import { useInlineEdit } from '../hooks/useInlineEdit';
 import { getContextText } from '../utils/sessionContext';
 
 interface OverviewCardProps {
@@ -51,11 +53,15 @@ export function OverviewCard({
   const isKeyboardFocused = useDashboardStore(
     (s) => s.keyboardFocusedSessionId === session.sessionId
   );
-  const [isEditing, setIsEditing] = useState(false);
-  const [editValue, setEditValue] = useState('');
   const [isHovered, setIsHovered] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleSave = useCallback(
+    (value: string) => onRename(session.sessionId, value),
+    [onRename, session.sessionId]
+  );
+  const { isEditing, editValue, inputRef, startEditing, setEditValue, handleKeyDown, handleBlur } =
+    useInlineEdit({ onSave: handleSave });
 
   const longPress = useLongPress({
     onLongPress: (pos) => setContextMenu(pos),
@@ -68,10 +74,7 @@ export function OverviewCard({
           : []),
         {
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
-          action: () => {
-            setEditValue(getSessionDisplayName(session));
-            setIsEditing(true);
-          },
+          action: () => startEditing(getSessionDisplayName(session)),
         },
       ]
     : [
@@ -80,19 +83,9 @@ export function OverviewCard({
           : []),
         {
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
-          action: () => {
-            setEditValue(getSessionDisplayName(session));
-            setIsEditing(true);
-          },
+          action: () => startEditing(getSessionDisplayName(session)),
         },
       ];
-
-  useEffect(() => {
-    if (isEditing && inputRef.current) {
-      inputRef.current.focus();
-      inputRef.current.select();
-    }
-  }, [isEditing]);
 
   return (
     <div
@@ -195,17 +188,8 @@ export function OverviewCard({
             onChange={(e) => setEditValue(e.target.value)}
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.stopPropagation();
-                setIsEditing(false);
-                onRename(session.sessionId, editValue);
-              } else if (e.key === 'Escape') {
-                e.stopPropagation();
-                setIsEditing(false);
-              }
-            }}
-            onBlur={() => setIsEditing(false)}
+            onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             style={{
               fontFamily: 'var(--font-mono)',
               fontSize: '13px', // inline-ok
@@ -230,14 +214,8 @@ export function OverviewCard({
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
-              cursor: 'text',
             }}
-            title={session.customName || session.autoName ? session.slug : UI_STRINGS.RENAME_HINT}
-            onDoubleClick={(e) => {
-              e.stopPropagation();
-              setEditValue(getSessionDisplayName(session));
-              setIsEditing(true);
-            }}
+            title={getSessionDisplayName(session)}
           >
             {getSessionDisplayName(session)}
           </span>
@@ -315,7 +293,25 @@ export function OverviewCard({
         )}
       </div>
 
-      {/* Row 2: Context text (what Claude is doing) */}
+      {/* Row 2: User message ("You: ...") */}
+      {session.lastUserText && (
+        <div
+          style={{
+            fontSize: '11px', // inline-ok
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}
+          title={session.lastUserText}
+        >
+          <span style={{ color: 'var(--fg-muted)' }}>{UI_STRINGS.USER_MESSAGE_PREFIX} </span>
+          <span style={{ color: 'var(--fg-secondary)' }}>
+            {formatUserMessage(session.lastUserText)}
+          </span>
+        </div>
+      )}
+
+      {/* Row 3: Context text (what Claude is doing) */}
       <div
         style={{
           fontSize: '11px', // inline-ok

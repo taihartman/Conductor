@@ -33,6 +33,8 @@ export interface ISessionStateMachine {
   readonly lastAssistantTime: number;
   readonly pendingQuestion: PendingQuestion | undefined;
   readonly recentErrorCount: number;
+  /** Whether the error threshold has been reached in the recent time window. */
+  readonly isErrorThresholdReached: boolean;
   handleAssistantRecord(record: AssistantRecord): SessionStatus;
   handleUserRecord(record: UserRecord): SessionStatus;
   handleSystemRecord(record: SystemRecord): SessionStatus;
@@ -125,6 +127,15 @@ export class SessionStateMachine implements ISessionStateMachine {
   get recentErrorCount(): number {
     this.pruneOldErrors();
     return this.recentErrors.length;
+  }
+
+  /**
+   * Whether the error threshold has been reached in the recent time window.
+   *
+   * @returns True if {@link ERROR_THRESHOLD} or more errors occurred within {@link ERROR_WINDOW_MS}
+   */
+  get isErrorThresholdReached(): boolean {
+    return this.recentErrorCount >= ERROR_THRESHOLD;
   }
 
   /**

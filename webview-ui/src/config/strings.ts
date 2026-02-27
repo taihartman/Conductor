@@ -146,6 +146,8 @@ export const UI_STRINGS = {
   /** Toggle button tooltips */
   KANBAN_TOGGLE_BOARD: 'Switch to board view',
   KANBAN_TOGGLE_LIST: 'Switch to list view',
+  /** Prefix label for user message row on session cards. */
+  USER_MESSAGE_PREFIX: 'You:',
   CONTEXT_LAUNCHING: 'Launching...',
   LAUNCHING_PLACEHOLDER_NAME: 'Launching...',
 
@@ -176,8 +178,6 @@ export const UI_STRINGS = {
   HELP_SHORTCUT_EXPAND: 'Expand Detail View',
   HELP_KEY_NAV_ARROWS: '{modifier}+Shift+Arrows',
   HELP_SHORTCUT_NAV_ARROWS: 'Navigate Between Sessions',
-  HELP_KEY_NAV_SELECT: 'Enter',
-  HELP_SHORTCUT_NAV_SELECT: 'Open Focused Session',
 
   // Feature names
   HELP_FEATURE_KANBAN: 'Kanban Board',
@@ -232,6 +232,7 @@ export const UI_STRINGS = {
   USAGE_LABEL_CACHE_WRITE: 'Cache Write',
   USAGE_LABEL_FIRST_SESSION: 'First Session',
   USAGE_LABEL_LONGEST_SESSION: 'Longest Session (elapsed)',
+  USAGE_LABEL_MODEL: 'Model',
   USAGE_LABEL_LAST_UPDATED: 'Last updated',
   USAGE_EMPTY_TITLE: 'No Usage Data',
   USAGE_EMPTY_DESCRIPTION: 'Stats will appear after your first Claude Code session.',
@@ -240,4 +241,6 @@ export const UI_STRINGS = {
   USAGE_HOUR_6AM: '6a',
   USAGE_HOUR_NOON: '12p',
   USAGE_HOUR_6PM: '6p',
+  /** End-of-axis midnight label for the Peak Hours chart. */
+  USAGE_HOUR_MIDNIGHT_END: '12a',
 } as const;

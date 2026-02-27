@@ -7,11 +7,14 @@ import { SessionTracker } from '../monitoring/SessionTracker';
 import { AUTO_RECONNECT, LOG_PREFIX, SESSION_STATUSES } from '../constants';
 import { SessionStatus } from '../models/types';
 
-/** Session statuses that indicate the session is alive and worth reconnecting. */
+/** Session statuses that indicate the session is alive and worth reconnecting.
+ *  Includes `done` because after hook event replay on restart, `done` means
+ *  "turn completed, process still running" (vs `idle` = "session ended"). */
 const RECONNECTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set([
   SESSION_STATUSES.WORKING,
   SESSION_STATUSES.THINKING,
   SESSION_STATUSES.WAITING,
+  SESSION_STATUSES.DONE,
 ]);
 
 /**
@@ -19,9 +22,11 @@ const RECONNECTABLE_STATUSES: ReadonlySet<SessionStatus> = new Set([
  * after extension reload or VS Code restart.
  *
  * @remarks
- * Listens for the first {@link SessionTracker.onStateChanged} event (indicating
- * initial JSONL discovery is complete) or a fallback timeout, then resumes
- * persisted sessions that are still alive.
+ * Subscribes to {@link SessionTracker.onStateChanged} events and waits until
+ * all persisted sessions have completed their initial JSONL replay (so that
+ * continuation grouping data is available). A settle timer gives the debounced
+ * state and ContinuationGrouper time to stabilize before reconnection.
+ * Falls back to a timeout if sessions never become ready.
  */
 export class AutoReconnectService implements IAutoReconnectService {
   private readonly sessionTracker: SessionTracker;
@@ -31,6 +36,7 @@ export class AutoReconnectService implements IAutoReconnectService {
   private readonly outputChannel: vscode.OutputChannel;
   private readonly disposables: vscode.Disposable[] = [];
   private fallbackTimer: ReturnType<typeof setTimeout> | undefined;
+  private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private attempted = false;
 
   constructor(
@@ -59,15 +65,38 @@ export class AutoReconnectService implements IAutoReconnectService {
       `${LOG_PREFIX.AUTO_RECONNECT} Waiting for session discovery (${persistedIds.length} persisted)`
     );
 
-    // One-shot: first onStateChanged → attempt reconnect
+    // Subscribe to all onStateChanged events and check readiness each time.
+    // Only proceed once all persisted sessions have completed initial JSONL replay,
+    // ensuring continuation grouping data is available for correct ID resolution.
     const stateDisposable = this.sessionTracker.onStateChanged(() => {
+      if (this.attempted) return;
+
+      if (!this.sessionTracker.areSessionsInitiallyProcessed(persistedIds)) {
+        console.log(
+          `${LOG_PREFIX.AUTO_RECONNECT} Sessions not yet ready, waiting for initial replay`
+        );
+        return;
+      }
+
+      // All persisted sessions are processed — dispose subscription, cancel fallback,
+      // and start settle timer to let debounced state + grouper stabilize.
       stateDisposable.dispose();
       this.cancelFallbackTimer();
-      this.attemptReconnect();
+
+      console.log(
+        `${LOG_PREFIX.AUTO_RECONNECT} All sessions initially processed, settling for ${AUTO_RECONNECT.READINESS_SETTLE_MS}ms`
+      );
+
+      this.settleTimer = setTimeout(() => {
+        this.settleTimer = undefined;
+        console.log(`${LOG_PREFIX.AUTO_RECONNECT} Settle timer fired, attempting reconnect`);
+        this.attemptReconnect();
+      }, AUTO_RECONNECT.READINESS_SETTLE_MS);
     });
     this.disposables.push(stateDisposable);
 
-    // Fallback: if SessionTracker never fires (no JSONL files found)
+    // Fallback: if SessionTracker never fires (no JSONL files found) or
+    // sessions never complete initial replay within the timeout window.
     this.fallbackTimer = setTimeout(() => {
       this.fallbackTimer = undefined;
       console.log(`${LOG_PREFIX.AUTO_RECONNECT} Fallback timeout reached`);
@@ -82,6 +111,13 @@ export class AutoReconnectService implements IAutoReconnectService {
     }
   }
 
+  private cancelSettleTimer(): void {
+    if (this.settleTimer !== undefined) {
+      clearTimeout(this.settleTimer);
+      this.settleTimer = undefined;
+    }
+  }
+
   private attemptReconnect(): void {
     if (this.attempted) return;
     this.attempted = true;
@@ -91,6 +127,7 @@ export class AutoReconnectService implements IAutoReconnectService {
     const sessionMap = new Map(sessions.map((s) => [s.sessionId, s]));
 
     const candidates: Array<{ sessionId: string; cwd?: string }> = [];
+    const seenLatestIds = new Set<string>();
 
     for (const id of persistedIds) {
       // Skip if already has a terminal (e.g., extension hot-reloaded within same process)
@@ -101,6 +138,24 @@ export class AutoReconnectService implements IAutoReconnectService {
 
       // Resolve continuation chain: the persisted ID may be an older member
       const latestId = this.sessionTracker.getMostRecentContinuationMember(id);
+
+      // Skip if the resolved ID already has a terminal
+      if (this.sessionLauncher.isLaunchedSession(latestId)) {
+        console.log(
+          `${LOG_PREFIX.AUTO_RECONNECT} Skipping ${id} — resolved ${latestId} already launched`
+        );
+        continue;
+      }
+
+      // Skip if another persisted ID already resolved to the same latestId
+      if (seenLatestIds.has(latestId)) {
+        console.log(
+          `${LOG_PREFIX.AUTO_RECONNECT} Skipping ${id} — duplicate resolved ID ${latestId}`
+        );
+        continue;
+      }
+      seenLatestIds.add(latestId);
+
       const session = sessionMap.get(latestId) ?? sessionMap.get(id);
 
       if (!session) {
@@ -113,7 +168,10 @@ export class AutoReconnectService implements IAutoReconnectService {
         continue;
       }
 
-      candidates.push({ sessionId: latestId, cwd: session.cwd });
+      // Prefer cwd from JSONL parsing; fall back to cwd persisted at launch time.
+      // Uses original `id` (not `latestId`) for getCwd() since that's what was passed to save().
+      const sessionCwd = session.cwd || this.launchedSessionStore.getCwd(id);
+      candidates.push({ sessionId: latestId, cwd: sessionCwd });
     }
 
     if (candidates.length === 0) {
@@ -151,7 +209,6 @@ export class AutoReconnectService implements IAutoReconnectService {
   private async resumeSession(sessionId: string, cwd?: string): Promise<void> {
     try {
       await this.sessionLauncher.resume(sessionId, '', cwd);
-      this.ptyBridge.registerSession(sessionId);
       console.log(`${LOG_PREFIX.AUTO_RECONNECT} Resumed session ${sessionId}`);
     } catch (err) {
       console.log(`${LOG_PREFIX.AUTO_RECONNECT} Failed to resume ${sessionId}: ${err}`);
@@ -162,6 +219,7 @@ export class AutoReconnectService implements IAutoReconnectService {
   /** Clean up timers and subscriptions. */
   dispose(): void {
     this.cancelFallbackTimer();
+    this.cancelSettleTimer();
     while (this.disposables.length) {
       const d = this.disposables.pop();
       d?.dispose();

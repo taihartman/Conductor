@@ -18,12 +18,15 @@ export const COMMANDS = {
   NAV_LEFT: 'conductor.navLeft',
   NAV_RIGHT: 'conductor.navRight',
   NAV_SELECT: 'conductor.navSelect',
+  TERMINAL_SHIFT_ENTER: 'conductor.terminalShiftEnter',
+  TERMINAL_CMD_BACKSPACE: 'conductor.terminalCmdBackspace',
 } as const;
 
 /** VS Code `when`-clause context keys managed by the extension. */
 export const CONTEXT_KEYS = {
   PANEL_FOCUSED: 'conductor.panelFocused',
   KEYBOARD_NAV_ACTIVE: 'conductor.keyboardNavActive',
+  TERMINAL_VIEW_SHOWING: 'conductor.terminalViewShowing',
 } as const;
 
 /** Structured log prefixes for Debug Console output. */
@@ -139,6 +142,10 @@ export const WORKSPACE_STATE_KEYS = {
   LAUNCHED_SESSION_MODES: 'conductor.launchedSessionModes',
   /** Map of sessionId → HistoryEntryMeta for session history browsing. */
   SESSION_HISTORY: 'conductor.sessionHistory',
+  /** Persisted overview mode preference (list or board). */
+  OVERVIEW_MODE: 'conductor.overviewMode',
+  /** Persisted per-column kanban sort orders. */
+  KANBAN_SORT_ORDERS: 'conductor.kanbanSortOrders',
 } as const;
 
 /** Timing values (ms) for session state transitions. */
@@ -158,6 +165,13 @@ export const TIMING = {
   LAUNCH_DISCOVERY_POLL_MS: 500,
   /** Maximum number of poll attempts before giving up (500ms * 20 = 10s). */
   LAUNCH_DISCOVERY_MAX_RETRIES: 20,
+  /**
+   * Max age (ms) for session files during launch discovery polls.
+   * A just-launched session's JSONL file will be brand new, so 5 minutes is
+   * more than enough. Using the normal 4-hour REFRESH_WINDOW_MS caused
+   * hundreds of old "ghost" sessions to appear on every launch poll tick.
+   */
+  LAUNCH_DISCOVERY_MAX_AGE_MS: 5 * 60 * 1000,
   /**
    * Settle time (ms) after closing an external terminal before resuming a session.
    * Allows the Claude process to fully exit and flush JSONL writes. 1.5s is
@@ -211,10 +225,19 @@ export const ARTIFACT_DETECTION = {
 export const AUTO_RECONNECT = {
   /** Fallback timeout (ms) if SessionTracker never fires onStateChanged. */
   FALLBACK_TIMEOUT_MS: 10_000,
+  /** Extra settle time (ms) after all persisted sessions are initially processed,
+   *  allowing the debounced onStateChanged and ContinuationGrouper to stabilize. */
+  READINESS_SETTLE_MS: 500,
   /** Max terminals opened automatically to avoid flooding. */
   MAX_SESSIONS: 5,
   /** Prune persisted entries older than this (days). */
   TTL_DAYS: 7,
+} as const;
+
+/** Configuration for eager metadata extraction from new JSONL files. */
+export const FILE_PEEK = {
+  /** Maximum bytes to read from the start of a file for slug extraction. */
+  MAX_BYTES: 4096,
 } as const;
 
 /** CLI argument strings for Claude Code session launch modes. */
@@ -248,9 +271,6 @@ export const HOOK_NOTIFICATION_TYPES = {
 
 /** Directory for hook event files written by conductor-hook.sh. */
 export const HOOK_EVENTS_DIR = '~/.conductor/events';
-
-/** Staleness threshold (ms): if no hook event for this long, fall back to JSONL. */
-export const HOOK_STALENESS_MS = 60_000;
 
 /** Max buffered hook events per session for sessions not yet discovered via JSONL. */
 export const HOOK_BUFFER_MAX_EVENTS = 50;
@@ -287,5 +307,13 @@ export {
   PLAN_INPUTS,
   LAUNCH_MODES,
   NAV_DIRECTIONS,
+  OVERVIEW_MODES,
+  SORT_DIRECTIONS,
+  TERMINAL_KEYS,
 } from './models/sharedConstants';
-export type { LaunchMode, NavDirection } from './models/sharedConstants';
+export type {
+  LaunchMode,
+  NavDirection,
+  OverviewMode,
+  SortDirection,
+} from './models/sharedConstants';

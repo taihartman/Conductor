@@ -21,6 +21,7 @@ import {
   LOG_PREFIX,
   SETTINGS,
   LAUNCH_MODES,
+  TERMINAL_KEYS,
 } from './constants';
 import { quickPickSession } from './commands/quickPickSession';
 
@@ -104,10 +105,11 @@ export function activate(context: vscode.ExtensionContext): void {
       .launch(undefined, LAUNCH_MODES.NORMAL)
       .then((sessionId) => {
         console.log(`${LOG_PREFIX.EXTENSION} Session launched: ${sessionId}`);
-        launchedSessionStore.save(sessionId).catch((err: unknown) => {
-          console.log(`${LOG_PREFIX.EXTENSION} Failed to persist launched session: ${err}`);
-        });
-        DashboardPanel.currentPanel?.notifySessionLaunched(sessionId);
+        // notifySessionLaunched() calls save() internally — no duplicate save here
+        DashboardPanel.currentPanel?.notifySessionLaunched(
+          sessionId,
+          vscode.workspace.workspaceFolders?.[0]?.uri.fsPath
+        );
       })
       .catch((err: unknown) => {
         console.log(`${LOG_PREFIX.EXTENSION} Failed to launch session: ${err}`);
@@ -146,6 +148,13 @@ export function activate(context: vscode.ExtensionContext): void {
     DashboardPanel.currentPanel?.selectKeyboardFocused();
   });
 
+  const termShiftEnter = vscode.commands.registerCommand(COMMANDS.TERMINAL_SHIFT_ENTER, () => {
+    DashboardPanel.currentPanel?.injectTerminalKeys(TERMINAL_KEYS.SHIFT_ENTER);
+  });
+  const termCmdBackspace = vscode.commands.registerCommand(COMMANDS.TERMINAL_CMD_BACKSPACE, () => {
+    DashboardPanel.currentPanel?.injectTerminalKeys(TERMINAL_KEYS.CMD_BACKSPACE);
+  });
+
   context.subscriptions.push(
     openCommand,
     refreshCommand,
@@ -155,7 +164,9 @@ export function activate(context: vscode.ExtensionContext): void {
     navDownCommand,
     navLeftCommand,
     navRightCommand,
-    navSelectCommand
+    navSelectCommand,
+    termShiftEnter,
+    termCmdBackspace
   );
 
   const statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);

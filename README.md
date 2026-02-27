@@ -1,6 +1,6 @@
 # Conductor
 
-[![CI](https://github.com/anthropics/conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/anthropics/conductor/actions/workflows/ci.yml)
+[![CI](https://github.com/taihartman/Conductor/actions/workflows/ci.yml/badge.svg)](https://github.com/taihartman/Conductor/actions/workflows/ci.yml)
 [![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/conductor.conductor)](https://marketplace.visualstudio.com/items?itemName=conductor.conductor)
 [![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20this%20project-F16061?style=flat&logo=kofi&logoColor=white)](https://ko-fi.com/taitopia)
 
@@ -98,6 +98,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 
 ## Known Limitations
 
+- **Terminal capture requires macOS or Windows** — Full terminal capture uses native `node-pty` bindings, which have prebuilds for macOS (ARM64/x64) and Windows (x64/ARM64). Linux users can still use the extension, but terminal capture falls back to VS Code's built-in terminal API.
 - Token pricing is hardcoded — must update source code when Anthropic changes rates
 - Tool input summaries only cover 9 built-in tools — custom tools show empty summaries
 - No webview dev stub — running `npm run dev` in `webview-ui/` crashes outside VS Code

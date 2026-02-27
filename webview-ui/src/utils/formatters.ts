@@ -75,6 +75,69 @@ export function formatNumber(n: number): string {
   return n.toLocaleString('en-US');
 }
 
+/** Format an ISO date string as "Dec 2, 2025" (month day, year). Falls back to raw string on invalid input. */
+export function formatDateLong(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return dateStr;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
+ * Aggregate model usage entries by display name.
+ * Models that map to the same display name (e.g. two Opus variants) have their token counts summed.
+ */
+export function aggregateModelUsage(
+  modelUsage: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      webSearchRequests: number;
+    }
+  >
+): Record<
+  string,
+  {
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadInputTokens: number;
+    cacheCreationInputTokens: number;
+    webSearchRequests: number;
+  }
+> {
+  const result: Record<
+    string,
+    {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadInputTokens: number;
+      cacheCreationInputTokens: number;
+      webSearchRequests: number;
+    }
+  > = {};
+  for (const [model, usage] of Object.entries(modelUsage)) {
+    const displayName = formatModel(model);
+    const existing = result[displayName];
+    if (existing) {
+      existing.inputTokens += usage.inputTokens;
+      existing.outputTokens += usage.outputTokens;
+      existing.cacheReadInputTokens += usage.cacheReadInputTokens;
+      existing.cacheCreationInputTokens += usage.cacheCreationInputTokens;
+      existing.webSearchRequests += usage.webSearchRequests;
+    } else {
+      result[displayName] = { ...usage };
+    }
+  }
+  return result;
+}
+
+/** Collapse all whitespace (including newlines) into single spaces for single-line card display. */
+export function formatUserMessage(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
 /** Display name priority: user-set custom name > auto-generated name > slug. */
 export function getSessionDisplayName(session: {
   customName?: string;

@@ -51,7 +51,6 @@ import {
   STATUS_GROUPS,
   HOOK_EVENTS,
   HOOK_NOTIFICATION_TYPES,
-  HOOK_STALENESS_MS,
   HOOK_BUFFER_MAX_EVENTS,
   HOOK_BUFFER_TTL_MS,
 } from '../constants';
@@ -130,12 +129,19 @@ const STALE_SESSION_MS = 4 * 60 * 60 * 1000;
 const CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
 /** Records older than this on first file read are considered historical replay. */
 const REPLAY_STALE_THRESHOLD_MS = 5 * 60 * 1000;
+/** Hook events older than this are considered stale replay and cannot wake a
+ *  completed session. Real-time events from a running process arrive within
+ *  seconds; replayed events from disk carry their original timestamp. */
+const HOOK_RECENCY_THRESHOLD_MS = 2 * 60 * 1000;
 /** Debounce interval (ms) for batching state change notifications. */
 const DEBOUNCE_MS = 100;
 /** Maximum activity events sent to the webview in a single state snapshot. */
 const MAX_ACTIVITIES_FOR_WEBVIEW = 200;
 /** Maximum age of session files considered during manual refresh — matches {@link STALE_SESSION_MS}. */
 const REFRESH_WINDOW_MS = 4 * 60 * 60 * 1000;
+
+/** Delay before running initial stale cleanup on startup to catch hook-event races. */
+const INITIAL_CLEANUP_DELAY_MS = 5_000;
 /** Interval for retrying scope resolution when scoped but empty (30 seconds). */
 const SCOPE_RETRY_INTERVAL_MS = 30_000;
 
@@ -168,6 +174,7 @@ export class SessionTracker implements vscode.Disposable {
   private debounceTimer?: ReturnType<typeof setTimeout>;
   private cleanupTimer?: ReturnType<typeof setInterval>;
   private scopeRetryTimer?: ReturnType<typeof setInterval>;
+  private initialCleanupTimer?: ReturnType<typeof setTimeout>;
   private eventCounter = 0;
   /**
    * `undefined` = unscoped (no workspace context, scan all projects).
@@ -187,8 +194,6 @@ export class SessionTracker implements vscode.Disposable {
   private hookEventSubscription?: vscode.Disposable;
   /** Sessions that have received at least one hook event. */
   private readonly hookActiveForSession = new Set<string>();
-  /** Timestamp of last hook event per session (for staleness detection). */
-  private readonly lastHookEventTime = new Map<string, number>();
   /** Buffer for hook events that arrive before JSONL discovers the session. */
   private readonly pendingHookEvents = new Map<
     string,
@@ -268,6 +273,13 @@ export class SessionTracker implements vscode.Disposable {
     this.restartWatcher();
     this.cleanupTimer = setInterval(() => this.cleanupStaleSessions(), CLEANUP_INTERVAL_MS);
 
+    // Run cleanup once after settle to catch sessions where stale hook events
+    // arrived between replay detection and periodic cleanup.
+    this.initialCleanupTimer = setTimeout(() => {
+      this.initialCleanupTimer = undefined;
+      this.cleanupStaleSessions();
+    }, INITIAL_CLEANUP_DELAY_MS);
+
     // When scoped but empty, periodically retry to discover the project dir
     if (this.scopedProjectDirs !== undefined && this.scopedProjectDirs.length === 0) {
       this.startScopeRetry();
@@ -301,16 +313,19 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
-   * Manually re-scan for session files (last 4 hours) and register new ones.
+   * Re-scan for session files and register any new ones found.
+   *
+   * @param maxAgeMs - Maximum file age to include in the scan (default: 4 hours).
+   *   Pass a shorter window for targeted discovery (e.g., launch polls use 5 min).
    *
    * @remarks
-   * Triggered by the `conductor.refresh` command or the webview
-   * `refresh` IPC message. Does not re-read existing tracked files.
+   * Triggered by the `conductor.refresh` command, the webview `refresh` IPC
+   * message, or the launch discovery poll. Does not re-read existing tracked files.
    */
-  refresh(): void {
+  refresh(maxAgeMs: number = REFRESH_WINDOW_MS): void {
     this.outputChannel.appendLine('Manual refresh triggered');
     // Pass scopedProjectDirs directly: undefined → scan all, [] → scan nothing, [dirs] → scan those
-    const files = this.scanner.scanSessionFiles(this.scopedProjectDirs, REFRESH_WINDOW_MS);
+    const files = this.scanner.scanSessionFiles(this.scopedProjectDirs, maxAgeMs);
     let added = 0;
     for (const file of files) {
       if (!this.sessions.has(file.sessionId) && !this.removedSessionIds.has(file.sessionId)) {
@@ -428,7 +443,7 @@ export class SessionTracker implements vscode.Disposable {
   getState(focusedSessionId?: string | null): DashboardState {
     // Sync status from state machines to SessionInfo — skip when hooks are active
     for (const [id, session] of this.sessions) {
-      if (!this.isHookActive(id)) {
+      if (!this.hookActiveForSession.has(id)) {
         session.info.status = session.stateMachine.status;
       }
     }
@@ -651,12 +666,12 @@ export class SessionTracker implements vscode.Disposable {
       this.sessions.set(file.sessionId, {
         info: {
           sessionId: file.sessionId,
-          slug: file.sessionId.substring(0, 8),
+          slug: file.peekedSlug ?? file.sessionId.substring(0, 8),
           summary: '',
           status: SESSION_STATUSES.IDLE,
           model: '',
-          gitBranch: '',
-          cwd: '',
+          gitBranch: file.peekedGitBranch ?? '',
+          cwd: file.peekedCwd ?? '',
           startedAt: file.modifiedAt.toISOString(),
           lastActivityAt: file.modifiedAt.toISOString(),
           turnCount: 0,
@@ -675,7 +690,7 @@ export class SessionTracker implements vscode.Disposable {
         description: '',
         planTitleChecked: false,
         pendingPlanCheck: false,
-        slugIsExplicit: false,
+        slugIsExplicit: file.peekedSlug !== undefined,
       });
       this.continuationGrouper.markDirty();
 
@@ -706,11 +721,10 @@ export class SessionTracker implements vscode.Disposable {
       session.isInitialReplayDone = true;
       const lastRecord = records[records.length - 1];
       const lastRecordTime = lastRecord?.timestamp ? new Date(lastRecord.timestamp).getTime() : 0;
-      if (
-        lastRecordTime > 0 &&
-        Date.now() - lastRecordTime > REPLAY_STALE_THRESHOLD_MS &&
-        !this.isHookActive(sessionFile.sessionId)
-      ) {
+      if (lastRecordTime > 0 && Date.now() - lastRecordTime > REPLAY_STALE_THRESHOLD_MS) {
+        // Clear stale hook override — JSONL is ground truth for historical sessions.
+        // This re-enables state machine sync in processRecord() and getState().
+        this.hookActiveForSession.delete(sessionFile.sessionId);
         session.stateMachine.setStatus(SESSION_STATUSES.DONE);
         session.info.status = SESSION_STATUSES.DONE;
       }
@@ -796,7 +810,7 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     // Sync status from state machine — skip when hooks are actively driving state
-    if (!this.isHookActive(file.sessionId)) {
+    if (!this.hookActiveForSession.has(file.sessionId)) {
       session.info.status = session.stateMachine.status;
     }
   }
@@ -974,16 +988,20 @@ export class SessionTracker implements vscode.Disposable {
       } else if (block.type === CONTENT_BLOCK_TYPES.TEXT) {
         const textBlock = block as TextContentBlock;
         if (textBlock.text && textBlock.text.trim().length > 0) {
+          const truncatedText =
+            textBlock.text.length > TRUNCATION.TEXT_MAX
+              ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
+              : textBlock.text;
+
+          session.info.lastUserText = truncatedText;
+
           this.addActivity({
             id: `evt-${++this.eventCounter}`,
             sessionId: session.info.sessionId,
             sessionSlug: session.info.slug,
             timestamp: record.timestamp || new Date().toISOString(),
             type: ACTIVITY_TYPES.USER_INPUT,
-            text:
-              textBlock.text.length > TRUNCATION.TEXT_MAX
-                ? textBlock.text.substring(0, TRUNCATION.TEXT_MAX) + '...'
-                : textBlock.text,
+            text: truncatedText,
           });
         }
       }
@@ -1069,6 +1087,28 @@ export class SessionTracker implements vscode.Disposable {
     this.continuationGrouper.ensureFresh(this.sessions);
     const primaryId = this.continuationGrouper.getPrimaryId(sessionId);
     return this.continuationGrouper.getGroupMembers(primaryId);
+  }
+
+  /**
+   * Check whether all specified session IDs have completed their initial
+   * JSONL replay cycle (slug + metadata extracted from first read).
+   *
+   * @remarks
+   * Used by {@link AutoReconnectService} to delay reconnection until
+   * continuation grouping data is available. Sessions not tracked by this
+   * instance are considered "ready" since they cannot become more resolved.
+   *
+   * @param sessionIds - Session IDs to check
+   * @returns `true` if all specified sessions have been initially processed
+   */
+  areSessionsInitiallyProcessed(sessionIds: readonly string[]): boolean {
+    for (const id of sessionIds) {
+      const session = this.sessions.get(id);
+      // Sessions not in the map (file never discovered) are treated as ready —
+      // they can't become more resolved, and attemptReconnect() will skip them.
+      if (session && !session.isInitialReplayDone) return false;
+    }
+    return true;
   }
 
   /**
@@ -1171,6 +1211,7 @@ export class SessionTracker implements vscode.Disposable {
       lastToolName: mostRecent.info.lastToolName,
       lastToolInput: mostRecent.info.lastToolInput,
       lastAssistantText: mostRecent.info.lastAssistantText,
+      lastUserText: mostRecent.info.lastUserText,
       pendingQuestion,
       continuationSessionIds: memberIds,
       continuationCount: memberIds.length - 1,
@@ -1234,21 +1275,43 @@ export class SessionTracker implements vscode.Disposable {
     }
 
     this.hookActiveForSession.add(sessionId);
-    this.lastHookEventTime.set(sessionId, Date.now());
+    session.info.lastActivityAt = new Date(event.ts * 1000).toISOString();
 
     const status = this.mapHookEventToStatus(event);
     if (status) {
+      const currentStatus = session.info.status;
+      const eventAgeMs = Date.now() - event.ts * 1000;
+
+      // Stale hook events (replayed from disk for crashed sessions) cannot wake
+      // a completed session. Real-time events from running processes are recent.
+      if (STATUS_GROUPS.COMPLETED.has(currentStatus) && eventAgeMs > HOOK_RECENCY_THRESHOLD_MS) {
+        console.log(
+          `${LOG_PREFIX.SESSION_TRACKER} Hook: stale ${event.e} for ${sessionId} (age: ${Math.round(eventAgeMs / 1000)}s, status: ${currentStatus})`
+        );
+        this.outputChannel.appendLine(
+          `Hook event ${event.e} stale for ${session.info.slug} (age: ${Math.round(eventAgeMs / 1000)}s, status: ${currentStatus})`
+        );
+        return;
+      }
+
+      if (STATUS_GROUPS.COMPLETED.has(currentStatus) && currentStatus !== status) {
+        console.log(
+          `${LOG_PREFIX.SESSION_TRACKER} Hook: waking ${sessionId} from ${currentStatus} → ${status} (${event.e})`
+        );
+        this.outputChannel.appendLine(
+          `Hook: waking ${session.info.slug} from ${currentStatus} → ${status} (${event.e})`
+        );
+      }
+      // overrideStatus() kept: it calls cancelTimers() which prevents
+      // intermission timer from overriding the hook-driven status
       session.stateMachine.overrideStatus(status);
       session.info.status = status;
     }
 
-    // Update lastActivityAt to prevent inactivity timeout from overriding
-    session.info.lastActivityAt = new Date(event.ts * 1000).toISOString();
-
-    // Track tool errors for error state threshold
+    // Error tracking runs unconditionally (PostToolUseFailure maps to null, bypasses guard)
     if (event.e === HOOK_EVENTS.POST_TOOL_USE_FAILURE) {
       session.stateMachine.recordHookError(event.tool || 'unknown');
-      if (session.stateMachine.recentErrorCount >= 3) {
+      if (session.stateMachine.isErrorThresholdReached) {
         session.stateMachine.overrideStatus(SESSION_STATUSES.ERROR);
         session.info.status = SESSION_STATUSES.ERROR;
       }
@@ -1278,12 +1341,10 @@ export class SessionTracker implements vscode.Disposable {
         return SESSION_STATUSES.WAITING;
 
       case HOOK_EVENTS.NOTIFICATION:
-        if (
-          event.ntype === HOOK_NOTIFICATION_TYPES.IDLE_PROMPT ||
-          event.ntype === HOOK_NOTIFICATION_TYPES.PERMISSION_PROMPT
-        ) {
+        if (event.ntype === HOOK_NOTIFICATION_TYPES.PERMISSION_PROMPT) {
           return SESSION_STATUSES.WAITING;
         }
+        // idle_prompt intentionally ignored: Stop already sets DONE before it fires
         return null;
 
       case HOOK_EVENTS.STOP:
@@ -1298,26 +1359,6 @@ export class SessionTracker implements vscode.Disposable {
       default:
         return null;
     }
-  }
-
-  /**
-   * Whether hook events are actively driving state for this session.
-   * Returns false if hooks have never fired or are stale (>60s since last event).
-   *
-   * @param sessionId - The session to check
-   * @returns True if hooks are actively driving state for this session
-   */
-  private isHookActive(sessionId: string): boolean {
-    if (!this.hookActiveForSession.has(sessionId)) return false;
-    const lastTime = this.lastHookEventTime.get(sessionId);
-    if (!lastTime) return false;
-    if (Date.now() - lastTime > HOOK_STALENESS_MS) {
-      // Hooks went stale — fall back to JSONL
-      this.hookActiveForSession.delete(sessionId);
-      this.lastHookEventTime.delete(sessionId);
-      return false;
-    }
-    return true;
   }
 
   private cleanupStaleSessions(): void {
@@ -1335,9 +1376,8 @@ export class SessionTracker implements vscode.Disposable {
     // so the error state remains visible in the dashboard until then.
     const freshlyTransitioned = new Set<string>();
     for (const [id, session] of this.sessions) {
-      const status = session.stateMachine.status;
       if (
-        STATUS_GROUPS.ACTIVE.has(status) &&
+        STATUS_GROUPS.ACTIVE.has(session.info.status) &&
         now - new Date(session.info.lastActivityAt).getTime() > INACTIVITY_TIMEOUT_MS
       ) {
         session.stateMachine.setStatus(SESSION_STATUSES.DONE);
@@ -1355,7 +1395,7 @@ export class SessionTracker implements vscode.Disposable {
     // Without this, waiting sessions that are never answered would accumulate forever.
     for (const [id, session] of this.sessions) {
       if (
-        session.stateMachine.status === SESSION_STATUSES.WAITING &&
+        session.info.status === SESSION_STATUSES.WAITING &&
         now - new Date(session.info.lastActivityAt).getTime() > WAITING_INACTIVITY_TIMEOUT_MS
       ) {
         session.stateMachine.setStatus(SESSION_STATUSES.DONE);
@@ -1378,7 +1418,7 @@ export class SessionTracker implements vscode.Disposable {
       // Guard: never remove sessions freshly transitioned in this same cycle
       if (freshlyTransitioned.has(id)) continue;
 
-      const status = session.stateMachine.status;
+      const status = session.info.status;
       if (
         (STATUS_GROUPS.COMPLETED.has(status) || status === SESSION_STATUSES.ERROR) &&
         now - new Date(session.info.lastActivityAt).getTime() > STALE_SESSION_MS
@@ -1391,7 +1431,7 @@ export class SessionTracker implements vscode.Disposable {
           const anyMemberActive = members.some((memberId) => {
             const member = this.sessions.get(memberId);
             if (!member) return false;
-            return STATUS_GROUPS.ACTIVE_FILTER.has(member.stateMachine.status);
+            return STATUS_GROUPS.ACTIVE_FILTER.has(member.info.status);
           });
           if (anyMemberActive) continue;
         }
@@ -1414,6 +1454,7 @@ export class SessionTracker implements vscode.Disposable {
         session.stateMachine.dispose();
         this.watcher?.removeTracked(session.info.filePath);
         this.sessions.delete(id);
+        this.hookActiveForSession.delete(id);
         this.activitiesBySession.delete(id);
         this.conversationBuilder.clearSession(id);
         this.removedSessionIds.set(id, now);
@@ -1493,6 +1534,9 @@ export class SessionTracker implements vscode.Disposable {
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
     }
+    if (this.initialCleanupTimer) {
+      clearTimeout(this.initialCleanupTimer);
+    }
     this.stopScopeRetry();
     for (const session of this.sessions.values()) {
       session.stateMachine.dispose();
@@ -1503,7 +1547,6 @@ export class SessionTracker implements vscode.Disposable {
     this.activitiesBySession.clear();
     this.removedSessionIds.clear();
     this.hookActiveForSession.clear();
-    this.lastHookEventTime.clear();
     this.pendingHookEvents.clear();
   }
 }

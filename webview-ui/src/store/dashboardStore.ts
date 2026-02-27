@@ -10,8 +10,8 @@ import type {
   StatsCache,
 } from '@shared/types';
 import type { InputSendStatus } from '@shared/protocol';
-import type { LaunchMode } from '@shared/sharedConstants';
-import { LAUNCH_MODES } from '@shared/sharedConstants';
+import type { LaunchMode, OverviewMode, SortDirection } from '@shared/sharedConstants';
+import { LAUNCH_MODES, OVERVIEW_MODES, SORT_DIRECTIONS } from '@shared/sharedConstants';
 
 export type FilterMode = 'recent' | 'active' | 'all';
 
@@ -34,22 +34,6 @@ export const LAYOUT_ORIENTATIONS = {
 } as const;
 
 export type LayoutOrientation = (typeof LAYOUT_ORIENTATIONS)[keyof typeof LAYOUT_ORIENTATIONS];
-
-/** Overview panel display mode discriminators. */
-export const OVERVIEW_MODES = {
-  LIST: 'list',
-  BOARD: 'board',
-} as const;
-
-export type OverviewMode = (typeof OVERVIEW_MODES)[keyof typeof OVERVIEW_MODES];
-
-/** Kanban column sort direction discriminators. */
-export const SORT_DIRECTIONS = {
-  DESC: 'desc',
-  ASC: 'asc',
-} as const;
-
-export type SortDirection = (typeof SORT_DIRECTIONS)[keyof typeof SORT_DIRECTIONS];
 
 interface DashboardState {
   sessions: SessionInfo[];
@@ -137,6 +121,7 @@ interface DashboardState {
   setLaunchMode: (mode: LaunchMode) => void;
   setOverviewMode: (mode: OverviewMode) => void;
   toggleKanbanSortOrder: (columnKey: string) => void;
+  setKanbanSortOrders: (sortOrders: Record<string, SortDirection>) => void;
   setKeyboardFocus: (sessionId: string | null, anchor?: { x: number; y: number }) => void;
   clearKeyboardFocus: () => void;
   zenModeActive: boolean;
@@ -312,6 +297,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         },
       };
     }),
+  setKanbanSortOrders: (sortOrders) => set({ kanbanSortOrders: sortOrders }),
   setKeyboardFocus: (sessionId, anchor) =>
     set({
       keyboardFocusedSessionId: sessionId,

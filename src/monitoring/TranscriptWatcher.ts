@@ -124,6 +124,7 @@ export class TranscriptWatcher implements vscode.Disposable {
 
       // File is either not tombstoned, or has new writes since removal — track it
       this.tombstones.delete(file.filePath);
+      this.enrichWithPeek(file);
       console.log(
         `${LOG_PREFIX.WATCHER} Tracking new file: ${file.sessionId} (${file.projectDir})`
       );
@@ -204,6 +205,7 @@ export class TranscriptWatcher implements vscode.Disposable {
               modifiedAt: new Date(),
               parentSessionId,
             };
+            this.enrichWithPeek(sessionFile);
             this.trackedFiles.set(filePath, sessionFile);
             this.onNewFileCallback(sessionFile);
             this.outputChannel.appendLine(`New session file: ${baseName}`);
@@ -265,6 +267,19 @@ export class TranscriptWatcher implements vscode.Disposable {
     } else if (result.newOffset > currentOffset) {
       this.offsets.set(file.filePath, result.newOffset);
     }
+  }
+
+  /**
+   * Eagerly extract metadata from a newly discovered JSONL file and enrich
+   * the {@link SessionFile} with peeked slug, cwd, and gitBranch fields.
+   *
+   * @param file - Session file to enrich with peeked metadata
+   */
+  private enrichWithPeek(file: SessionFile): void {
+    const peeked = JsonlParser.peekFileMetadata(file.filePath);
+    file.peekedSlug = peeked.slug;
+    file.peekedCwd = peeked.cwd;
+    file.peekedGitBranch = peeked.gitBranch;
   }
 
   /** Stop all timers, file watchers, and release resources. */

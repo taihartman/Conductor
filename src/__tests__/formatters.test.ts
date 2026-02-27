@@ -10,6 +10,7 @@ import {
   formatDateShort,
   formatNumber,
   getSessionDisplayName,
+  formatUserMessage,
 } from '../../webview-ui/src/utils/formatters';
 
 describe('formatModel', () => {
@@ -209,5 +210,23 @@ describe('getSessionDisplayName', () => {
         slug: 'slug-123',
       })
     ).toBe('Custom');
+  });
+});
+
+describe('formatUserMessage', () => {
+  it('collapses newlines and multiple spaces into single space', () => {
+    expect(formatUserMessage('fix the\nlogin\n\nflow  please')).toBe('fix the login flow please');
+  });
+
+  it('trims leading and trailing whitespace', () => {
+    expect(formatUserMessage('  hello world  ')).toBe('hello world');
+  });
+
+  it('returns empty string for whitespace-only input', () => {
+    expect(formatUserMessage('   \n\t  ')).toBe('');
+  });
+
+  it('passes through single-line text unchanged', () => {
+    expect(formatUserMessage('simple message')).toBe('simple message');
   });
 });

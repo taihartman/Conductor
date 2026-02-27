@@ -5,13 +5,26 @@
   "version": "0.1.0",
   "publisher": "conductor",
   "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "ai",
+    "agent",
+    "dashboard",
+    "monitoring",
+    "token-usage"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/conductor"
+    "url": "https://github.com/taihartman/Conductor"
   },
-  "homepage": "https://github.com/anthropics/conductor#readme",
+  "homepage": "https://github.com/taihartman/Conductor#readme",
   "bugs": {
-    "url": "https://github.com/anthropics/conductor/issues"
+    "url": "https://github.com/taihartman/Conductor/issues"
   },
   "funding": {
     "type": "ko-fi",
@@ -70,6 +83,12 @@
         "command": "conductor.navSelect",
         "title": "Select Focused Session",
         "category": "Conductor"
+      },
+      {
+        "command": "conductor.terminalShiftEnter"
+      },
+      {
+        "command": "conductor.terminalCmdBackspace"
       }
     ],
     "keybindings": [
@@ -106,6 +125,17 @@
         "command": "conductor.navSelect",
         "key": "enter",
         "when": "conductor.panelFocused && conductor.keyboardNavActive"
+      },
+      {
+        "command": "conductor.terminalShiftEnter",
+        "key": "shift+enter",
+        "when": "conductor.panelFocused && conductor.terminalViewShowing"
+      },
+      {
+        "command": "conductor.terminalCmdBackspace",
+        "key": "ctrl+backspace",
+        "mac": "cmd+backspace",
+        "when": "conductor.panelFocused && conductor.terminalViewShowing"
       }
     ],
     "configuration": {
@@ -128,7 +158,9 @@
         },
         "conductor.autoHidePatterns": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "default": [],
           "scope": "window",
           "markdownDescription": "Substring patterns matched against session names (case-insensitive). Matching sessions are auto-hidden as artifacts."
@@ -152,12 +184,16 @@
     "prepare": "[ -d .git ] && git config core.hooksPath .githooks || true",
     "docs": "typedoc",
     "format": "prettier --write \"src/**/*.ts\"",
-    "format:check": "prettier --check \"src/**/*.ts\""
+    "format:check": "prettier --check \"src/**/*.ts\"",
+    "package": "vsce package --target darwin-arm64 darwin-x64 win32-x64 win32-arm64",
+    "publish:marketplace": "vsce publish --packagePath conductor-*.vsix",
+    "screenshot": "npm run build:webview && npx playwright test scripts/capture-screenshot.ts --project=chromium"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.20.0",
     "eslint": "^9.18.0",
     "eslint-plugin-jsdoc": "~50.6.0",

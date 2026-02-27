@@ -51,6 +51,7 @@ function createMockSessionTracker(): any {
     })),
     getMostRecentContinuationMember: vi.fn((id: string) => id),
     getGroupMembers: vi.fn((id: string) => [id]),
+    areSessionsInitiallyProcessed: vi.fn(() => true),
     dispose: vi.fn(),
   };
 }
@@ -64,14 +65,18 @@ function createMockSessionLauncher(): any {
 }
 
 function createMockLaunchedSessionStore(): any {
-  const sessions = new Map<string, number>();
+  const sessions = new Map<string, { timestamp: number; cwd?: string }>();
   return {
     getAll: vi.fn(() => Array.from(sessions.keys())),
-    save: vi.fn(async (id: string) => sessions.set(id, Date.now())),
+    save: vi.fn(async (id: string, cwd?: string) => {
+      const existing = sessions.get(id);
+      sessions.set(id, { timestamp: Date.now(), cwd: cwd ?? existing?.cwd });
+    }),
     remove: vi.fn(async (id: string) => sessions.delete(id)),
+    getCwd: vi.fn((id: string) => sessions.get(id)?.cwd),
     prune: vi.fn(async () => {}),
     dispose: vi.fn(),
-    _set: (id: string) => sessions.set(id, Date.now()),
+    _set: (id: string, cwd?: string) => sessions.set(id, { timestamp: Date.now(), cwd }),
   };
 }
 
@@ -106,6 +111,13 @@ function createSession(id: string, status: string, cwd = '/workspace'): any {
     isArtifact: false,
     filePath: `/tmp/${id}.jsonl`,
   };
+}
+
+/** Fire onStateChanged and advance past the settle timer so attemptReconnect() runs. */
+async function fireAndSettle(tracker: any): Promise<void> {
+  tracker._fireStateChanged();
+  vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+  await vi.runAllTimersAsync();
 }
 
 describe('AutoReconnectService', () => {
@@ -146,11 +158,11 @@ describe('AutoReconnectService', () => {
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).toHaveBeenCalledTimes(3);
-    expect(ptyBridge.registerSession).toHaveBeenCalledTimes(3);
+    // PtyBridge registration is handled by preSpawnCallback, not by AutoReconnectService
+    expect(ptyBridge.registerSession).not.toHaveBeenCalled();
     expect(mockShowInformationMessage).toHaveBeenCalledWith(
       'Conductor: Reconnected to 3 active session(s)'
     );
@@ -164,22 +176,31 @@ describe('AutoReconnectService', () => {
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).not.toHaveBeenCalled();
   });
 
-  it('skips sessions with inactive status (done/idle)', async () => {
+  it('reconnects sessions in done status', async () => {
     launchedStore._set('s1');
-    launchedStore._set('s2');
     tracker.getState.mockReturnValue({
-      sessions: [createSession('s1', 'done'), createSession('s2', 'idle')],
+      sessions: [createSession('s1', 'done')],
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
+
+    expect(launcher.resume).toHaveBeenCalledWith('s1', '', '/workspace');
+  });
+
+  it('skips sessions with idle status', async () => {
+    launchedStore._set('s1');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'idle')],
+    });
+
+    service.start();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).not.toHaveBeenCalled();
   });
@@ -189,8 +210,7 @@ describe('AutoReconnectService', () => {
     tracker.getState.mockReturnValue({ sessions: [] });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).not.toHaveBeenCalled();
   });
@@ -204,8 +224,7 @@ describe('AutoReconnectService', () => {
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).toHaveBeenCalledTimes(AUTO_RECONNECT.MAX_SESSIONS);
   });
@@ -227,20 +246,17 @@ describe('AutoReconnectService', () => {
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).toHaveBeenCalledTimes(3);
-    // s1 and s3 should have registered, s2 should not (it threw)
-    expect(ptyBridge.registerSession).toHaveBeenCalledWith('s1');
-    expect(ptyBridge.registerSession).not.toHaveBeenCalledWith('s2');
-    expect(ptyBridge.registerSession).toHaveBeenCalledWith('s3');
+    // PtyBridge registration is handled by preSpawnCallback, not by AutoReconnectService
+    expect(ptyBridge.registerSession).not.toHaveBeenCalled();
     expect(mockShowInformationMessage).toHaveBeenCalledWith(
       'Conductor: Reconnected to 2 of 3 session(s)'
     );
   });
 
-  it('fires on first onStateChanged event', async () => {
+  it('fires after readiness + settle on first ready onStateChanged event', async () => {
     launchedStore._set('s1');
     tracker.getState.mockReturnValue({
       sessions: [createSession('s1', 'working')],
@@ -248,9 +264,8 @@ describe('AutoReconnectService', () => {
 
     service.start();
 
-    // First fire triggers reconnect
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    // First fire triggers readiness check → settle → reconnect
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).toHaveBeenCalledTimes(1);
 
@@ -311,9 +326,179 @@ describe('AutoReconnectService', () => {
     });
 
     service.start();
-    tracker._fireStateChanged();
-    await vi.runAllTimersAsync();
+    await fireAndSettle(tracker);
 
     expect(launcher.resume).toHaveBeenCalledWith('new-id', '', '/workspace');
+  });
+
+  it('skips when resolved latestId is already launched', async () => {
+    launchedStore._set('old-id');
+    tracker.getMostRecentContinuationMember.mockReturnValue('new-id');
+    // old-id is not launched, but new-id (resolved) is
+    launcher.isLaunchedSession.mockImplementation((id: string) => id === 'new-id');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('new-id', 'working')],
+    });
+
+    service.start();
+    await fireAndSettle(tracker);
+
+    expect(launcher.resume).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates when two persisted IDs resolve to the same latestId', async () => {
+    launchedStore._set('old-a');
+    launchedStore._set('old-b');
+    // Both resolve to the same continuation member
+    tracker.getMostRecentContinuationMember.mockReturnValue('shared-latest');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('shared-latest', 'working')],
+    });
+
+    service.start();
+    await fireAndSettle(tracker);
+
+    // Should only resume once, not twice
+    expect(launcher.resume).toHaveBeenCalledTimes(1);
+    expect(launcher.resume).toHaveBeenCalledWith('shared-latest', '', '/workspace');
+  });
+
+  it('uses stored cwd from LaunchedSessionStore when session.cwd is empty', async () => {
+    launchedStore._set('s1', '/stored/project');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'working', '')],
+    });
+
+    service.start();
+    await fireAndSettle(tracker);
+
+    expect(launchedStore.getCwd).toHaveBeenCalledWith('s1');
+    expect(launcher.resume).toHaveBeenCalledWith('s1', '', '/stored/project');
+  });
+
+  it('prefers session.cwd from SessionTracker when populated', async () => {
+    launchedStore._set('s1', '/stored/project');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'working', '/tracker/project')],
+    });
+
+    service.start();
+    await fireAndSettle(tracker);
+
+    expect(launcher.resume).toHaveBeenCalledWith('s1', '', '/tracker/project');
+  });
+
+  // --- Readiness gate tests ---
+
+  it('waits for readiness before attempting reconnect', async () => {
+    launchedStore._set('s1');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'working')],
+    });
+
+    // Initially not ready
+    tracker.areSessionsInitiallyProcessed.mockReturnValue(false);
+
+    service.start();
+
+    // First event: not ready yet — should not reconnect (only advance settle, not fallback)
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    expect(launcher.resume).not.toHaveBeenCalled();
+
+    // Second event: still not ready
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    expect(launcher.resume).not.toHaveBeenCalled();
+
+    // Now become ready
+    tracker.areSessionsInitiallyProcessed.mockReturnValue(true);
+
+    // Third event: ready → settle → reconnect
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(launcher.resume).toHaveBeenCalledTimes(1);
+    expect(launcher.resume).toHaveBeenCalledWith('s1', '', '/workspace');
+  });
+
+  it('falls back on timeout when sessions never become ready', async () => {
+    launchedStore._set('s1');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'working')],
+    });
+
+    // Never ready
+    tracker.areSessionsInitiallyProcessed.mockReturnValue(false);
+
+    service.start();
+
+    // Fire some events — all ignored because not ready
+    tracker._fireStateChanged();
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    expect(launcher.resume).not.toHaveBeenCalled();
+
+    // Advance past fallback timeout
+    vi.advanceTimersByTime(AUTO_RECONNECT.FALLBACK_TIMEOUT_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(launcher.resume).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not reconnect if disposed during settle period', async () => {
+    launchedStore._set('s1');
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('s1', 'working')],
+    });
+
+    service.start();
+
+    // Fire event → readiness detected → settle timer starts
+    tracker._fireStateChanged();
+
+    // Dispose before settle timer fires
+    service.dispose();
+
+    // Advance past settle period
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    await vi.runAllTimersAsync();
+
+    expect(launcher.resume).not.toHaveBeenCalled();
+  });
+
+  it('handles mixed tracked/untracked persisted IDs correctly', async () => {
+    launchedStore._set('tracked-s1');
+    launchedStore._set('unknown-s2');
+
+    // Only tracked-s1 is in the tracker; unknown-s2 is never discovered.
+    // areSessionsInitiallyProcessed returns false initially (tracked-s1 not processed),
+    // then true after tracked-s1 is processed (unknown-s2 treated as ready).
+    let callCount = 0;
+    tracker.areSessionsInitiallyProcessed.mockImplementation(() => {
+      callCount++;
+      return callCount > 1; // false on first call, true on second+
+    });
+
+    tracker.getState.mockReturnValue({
+      sessions: [createSession('tracked-s1', 'working')],
+    });
+
+    service.start();
+
+    // First event: not ready (tracked-s1 not processed yet)
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    expect(launcher.resume).not.toHaveBeenCalled();
+
+    // Second event: ready (tracked-s1 processed, unknown-s2 treated as ready)
+    tracker._fireStateChanged();
+    vi.advanceTimersByTime(AUTO_RECONNECT.READINESS_SETTLE_MS);
+    await vi.advanceTimersByTimeAsync(0);
+
+    // Only tracked-s1 is reconnectable (unknown-s2 is not in the session map)
+    expect(launcher.resume).toHaveBeenCalledTimes(1);
+    expect(launcher.resume).toHaveBeenCalledWith('tracked-s1', '', '/workspace');
   });
 });

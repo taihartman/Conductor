@@ -11,6 +11,17 @@
 
 import * as fs from 'fs';
 import { JsonlRecord } from '../models/types';
+import { FILE_PEEK } from '../constants';
+
+/** Metadata eagerly extracted from the first few bytes of a JSONL file. */
+export interface PeekedMetadata {
+  /** Session slug (short project identifier). */
+  slug?: string;
+  /** Working directory recorded in the JSONL record. */
+  cwd?: string;
+  /** Git branch recorded in the JSONL record. */
+  gitBranch?: string;
+}
 
 /** Result of an incremental parse operation. */
 export interface ParseResult {
@@ -142,6 +153,69 @@ export class JsonlParser {
     }
 
     return records;
+  }
+
+  /**
+   * Eagerly extract metadata (slug, cwd, gitBranch) from the start of a JSONL file.
+   *
+   * @remarks
+   * Reads up to {@link FILE_PEEK.MAX_BYTES} bytes synchronously and parses
+   * complete lines. Returns metadata from the first record that contains a
+   * `slug` field. Returns `{}` on any error (empty file, missing file, no
+   * slug found, malformed JSON).
+   *
+   * @param filePath - Absolute path to the JSONL file
+   * @returns Extracted metadata, or empty object if unavailable
+   */
+  static peekFileMetadata(filePath: string): PeekedMetadata {
+    let fd: number;
+    try {
+      fd = fs.openSync(filePath, 'r');
+    } catch {
+      return {};
+    }
+
+    try {
+      const buffer = Buffer.alloc(FILE_PEEK.MAX_BYTES);
+      const bytesRead = fs.readSync(fd, buffer, 0, FILE_PEEK.MAX_BYTES, 0);
+      if (bytesRead === 0) {
+        return {};
+      }
+
+      const text = buffer.toString('utf-8', 0, bytesRead);
+      const lines = text.split('\n');
+
+      // Drop the last element — it may be a partial line from the byte boundary
+      if (!text.endsWith('\n')) {
+        lines.pop();
+      }
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed && typeof parsed === 'object' && parsed.slug) {
+            const result: PeekedMetadata = { slug: parsed.slug };
+            if (parsed.cwd) {
+              result.cwd = parsed.cwd;
+            }
+            if (parsed.gitBranch) {
+              result.gitBranch = parsed.gitBranch;
+            }
+            return result;
+          }
+        } catch {
+          // Malformed line — skip and try next
+        }
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+
+    return {};
   }
 
   /** Clear the line buffer. Call when switching files or resetting state. */

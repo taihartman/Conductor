@@ -2,8 +2,8 @@ import React from 'react';
 import type { SessionInfo } from '@shared/types';
 import { KanbanCard } from './KanbanCard';
 import { UI_STRINGS } from '../config/strings';
-import type { SortDirection } from '../store/dashboardStore';
-import { SORT_DIRECTIONS } from '../store/dashboardStore';
+import type { SortDirection } from '@shared/sharedConstants';
+import { SORT_DIRECTIONS } from '@shared/sharedConstants';
 
 interface KanbanColumnProps {
   label: string;

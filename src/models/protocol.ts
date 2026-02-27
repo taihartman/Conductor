@@ -21,7 +21,7 @@ import {
   HistoryEntry,
   StatsCache,
 } from './types';
-import type { LaunchMode, NavDirection } from './sharedConstants';
+import type { LaunchMode, NavDirection, OverviewMode, SortDirection } from './sharedConstants';
 
 /** Result of attempting to send user input to a Claude Code terminal. */
 export type InputSendStatus = 'sent' | 'no-terminal' | 'error' | 'adopting';
@@ -69,6 +69,10 @@ export type ExtensionToWebviewMessage =
   | { type: 'settings:current'; autoHidePatterns: string[] }
   /** Persisted launch mode preference pushed to the webview on `ready`. */
   | { type: 'launch-mode:current'; mode: LaunchMode }
+  /** Persisted overview mode preference pushed to the webview on `ready`. */
+  | { type: 'overview-mode:current'; mode: OverviewMode }
+  /** Persisted kanban sort orders pushed to the webview on `ready`. */
+  | { type: 'kanban-sort-orders:current'; sortOrders: Record<string, SortDirection> }
   /** Extension-initiated session focus (e.g. from Quick Pick). Webview should update its selection. */
   | { type: 'session:focus-command'; sessionId: string }
   /** Session history entries for the History tab. Sent on `history:request`. */
@@ -78,7 +82,11 @@ export type ExtensionToWebviewMessage =
   /** Extension-initiated selection of the keyboard-focused card (from Enter keybinding). */
   | { type: 'nav:select' }
   /** Usage stats from ~/.claude/stats-cache.json. Sent on `usage:request`. */
-  | { type: 'usage:full'; stats: StatsCache | null };
+  | { type: 'usage:full'; stats: StatsCache | null }
+  /** Sent when the panel transitions from hidden to visible, prompting a layout recalculation. */
+  | { type: 'panel:visible' }
+  /** Injected terminal key sequence from VS Code keybinding (bypasses VS Code interception). */
+  | { type: 'terminal:inject-keys'; data: string };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -116,6 +124,10 @@ export type WebviewToExtensionMessage =
   | { type: 'settings:update'; autoHidePatterns: string[] }
   /** User changed the launch mode preference in the split button dropdown. */
   | { type: 'session:set-launch-mode'; mode: LaunchMode }
+  /** User changed the overview mode preference (list vs board). */
+  | { type: 'overview-mode:set'; mode: OverviewMode }
+  /** User changed kanban column sort orders. */
+  | { type: 'kanban-sort-orders:set'; sortOrders: Record<string, SortDirection> }
   /** Webview requests session history data (sent when switching to History tab). */
   | { type: 'history:request' }
   /** User clicked Resume on a history entry. */
@@ -123,4 +135,6 @@ export type WebviewToExtensionMessage =
   /** Webview notifies the extension when keyboard nav focus changes (for `when` clause context). */
   | { type: 'nav:keyboard-focus-changed'; active: boolean }
   /** Webview requests usage stats (sent when switching to Usage tab). */
-  | { type: 'usage:request' };
+  | { type: 'usage:request' }
+  /** Webview notifies the extension when the terminal view is shown/hidden (for keybinding `when` clause). */
+  | { type: 'terminal:view-changed'; active: boolean };

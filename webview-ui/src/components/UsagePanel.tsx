@@ -3,11 +3,12 @@ import type { StatsCache, StatsDailyActivity } from '@shared/types';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
 import {
-  formatModel,
   formatTokens,
   formatNumber,
   formatDurationHuman,
   formatDateShort,
+  formatDateLong,
+  aggregateModelUsage,
 } from '../utils/formatters';
 
 /** Number of recent days shown in the daily trend chart. */
@@ -42,8 +43,17 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
   const todayStr = new Date().toISOString().slice(0, 10); // inline-ok: date format
   const todayActivity = stats.dailyActivity.find((d) => d.date === todayStr);
 
-  // Last N days of activity for trend chart
-  const recentDays = stats.dailyActivity.slice(-DAILY_TREND_DAYS);
+  // Build a complete 7-day range ending today, filling gaps with zero-activity entries
+  const today = new Date(todayStr + 'T00:00:00Z');
+  const completeDays = Array.from({ length: DAILY_TREND_DAYS }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (DAILY_TREND_DAYS - 1 - i));
+    return d.toISOString().slice(0, 10); // inline-ok: date format
+  });
+  const activityMap = new Map(stats.dailyActivity.map((d) => [d.date, d]));
+  const recentDays = completeDays.map(
+    (date) => activityMap.get(date) ?? { date, messageCount: 0, sessionCount: 0, toolCallCount: 0 },
+  );
 
   return (
     <div
@@ -58,7 +68,7 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
     >
       {/* Last updated */}
       <span style={{ fontSize: '11px' /* inline-ok */, color: 'var(--fg-muted)' }}>
-        {UI_STRINGS.USAGE_LABEL_LAST_UPDATED}: {stats.lastComputedDate}
+        {UI_STRINGS.USAGE_LABEL_LAST_UPDATED}: {formatDateLong(stats.lastComputedDate)}
       </span>
 
       {/* Today */}
@@ -77,7 +87,7 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
         <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
           <StatCard label={UI_STRINGS.USAGE_LABEL_SESSIONS} value={stats.totalSessions} />
           <StatCard label={UI_STRINGS.USAGE_LABEL_MESSAGES} value={stats.totalMessages} />
-          <StatCard label={UI_STRINGS.USAGE_LABEL_FIRST_SESSION} text={stats.firstSessionDate} />
+          <StatCard label={UI_STRINGS.USAGE_LABEL_FIRST_SESSION} text={formatDateLong(stats.firstSessionDate)} />
           <StatCard
             label={UI_STRINGS.USAGE_LABEL_LONGEST_SESSION}
             text={stats.longestSession ? formatDurationHuman(stats.longestSession.duration) : '—'}
@@ -99,14 +109,14 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
               padding: '0 var(--spacing-sm)',
             }}
           >
-            <span>Model</span>
+            <span>{UI_STRINGS.USAGE_LABEL_MODEL}</span>
             <span style={{ textAlign: 'right' }}>{UI_STRINGS.USAGE_LABEL_INPUT}</span>
             <span style={{ textAlign: 'right' }}>{UI_STRINGS.USAGE_LABEL_OUTPUT}</span>
             <span style={{ textAlign: 'right' }}>{UI_STRINGS.USAGE_LABEL_CACHE_READ}</span>
             <span style={{ textAlign: 'right' }}>{UI_STRINGS.USAGE_LABEL_CACHE_WRITE}</span>
           </div>
-          {Object.entries(stats.modelUsage).map(([model, usage]) => (
-            <ModelRow key={model} model={model} usage={usage} />
+          {Object.entries(aggregateModelUsage(stats.modelUsage)).map(([displayName, usage]) => (
+            <ModelRow key={displayName} model={displayName} usage={usage} />
           ))}
         </div>
       </section>
@@ -205,7 +215,7 @@ function ModelRow({
         color: 'var(--fg-primary)',
       }}
     >
-      <span style={{ fontWeight: 500 }}>{formatModel(model)}</span>
+      <span style={{ fontWeight: 500 }}>{model}</span>
       <span style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
         {formatTokens(usage.inputTokens)}
       </span>
@@ -342,6 +352,7 @@ function HourChart({ hourCounts }: { hourCounts: Record<string, number> }): Reac
         <span>{UI_STRINGS.USAGE_HOUR_6AM}</span>
         <span>{UI_STRINGS.USAGE_HOUR_NOON}</span>
         <span>{UI_STRINGS.USAGE_HOUR_6PM}</span>
+        <span>{UI_STRINGS.USAGE_HOUR_MIDNIGHT_END}</span>
       </div>
     </div>
   );

@@ -176,6 +176,16 @@ export class SessionLauncher implements ISessionLauncher {
       throw new Error(ERROR_MESSAGES.NESTED_SESSION);
     }
 
+    if (this.sessions.has(sessionId)) {
+      console.log(
+        `${LOG_PREFIX.SESSION_LAUNCHER} Session ${sessionId} already has a terminal, skipping resume`
+      );
+      this.outputChannel.appendLine(
+        `${LOG_PREFIX.SESSION_LAUNCHER} Session ${sessionId} already launched, skipping duplicate resume`
+      );
+      return;
+    }
+
     let workspacePath = cwd || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
     if (!workspacePath) {
@@ -441,7 +451,6 @@ export class SessionLauncher implements ISessionLauncher {
     const launchCommand = vscode.workspace
       .getConfiguration()
       .get<string>(SETTINGS.LAUNCH_COMMAND, 'claude');
-
     const nodePty = await this.loadNodePty();
 
     if (nodePty) {

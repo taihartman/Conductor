@@ -272,6 +272,17 @@ describe('SessionLauncher', () => {
       await launcher.resume('session-abc', 'hi');
       expect(launcher.isLaunchedSession('session-abc')).toBe(true);
     });
+
+    it('skips duplicate resume when session already has a terminal', async () => {
+      const nodePty = await import('node-pty');
+      await launcher.resume('session-abc', '', '/test/workspace');
+      expect(nodePty.spawn).toHaveBeenCalledTimes(1);
+      expect(launcher.isLaunchedSession('session-abc')).toBe(true);
+
+      // Second resume for the same session — should be a no-op
+      await launcher.resume('session-abc', 'hello', '/test/workspace');
+      expect(nodePty.spawn).toHaveBeenCalledTimes(1); // NOT 2
+    });
   });
 
   describe('writeInput (node-pty mode)', () => {

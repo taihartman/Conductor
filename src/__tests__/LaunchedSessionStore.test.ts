@@ -45,7 +45,9 @@ describe('LaunchedSessionStore', () => {
     expect(store.getAll()).toContain('session-1');
     expect(memento.update).toHaveBeenCalledWith(
       WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS,
-      expect.objectContaining({ 'session-1': expect.any(Number) })
+      expect.objectContaining({
+        'session-1': expect.objectContaining({ timestamp: expect.any(Number) }),
+      })
     );
   });
 
@@ -85,7 +87,7 @@ describe('LaunchedSessionStore', () => {
     expect(store.getAll()).toEqual(['session-1']);
     // The second save should have the later timestamp
     expect(memento.update).toHaveBeenLastCalledWith(WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS, {
-      'session-1': now + 1000,
+      'session-1': expect.objectContaining({ timestamp: now + 1000 }),
     });
 
     vi.restoreAllMocks();
@@ -207,5 +209,109 @@ describe('LaunchedSessionStore', () => {
     );
 
     expect(loaded.getAll()).toEqual(['valid-session']);
+  });
+
+  // ---- cwd support ----
+
+  it('save/getCwd round-trip', async () => {
+    await store.save('session-1', '/my/project');
+    expect(store.getCwd('session-1')).toBe('/my/project');
+  });
+
+  it('getCwd returns undefined for unknown sessionId', () => {
+    expect(store.getCwd('nonexistent')).toBeUndefined();
+  });
+
+  it('save() merge-preserves existing cwd when called without one', async () => {
+    await store.save('session-1', '/my/project');
+    await store.save('session-1');
+    expect(store.getCwd('session-1')).toBe('/my/project');
+  });
+
+  it('save() with explicit cwd overwrites existing cwd', async () => {
+    await store.save('session-1', '/old/path');
+    await store.save('session-1', '/new/path');
+    expect(store.getCwd('session-1')).toBe('/new/path');
+  });
+
+  it('backward compat: old format {id: number} loads with cwd undefined', () => {
+    const preloaded = createMockMemento({
+      [WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS]: {
+        'old-session': Date.now(),
+      },
+    });
+    const loaded = new LaunchedSessionStore(
+      preloaded as unknown as import('vscode').Memento,
+      outputChannel as unknown as import('vscode').OutputChannel
+    );
+
+    expect(loaded.getAll()).toContain('old-session');
+    expect(loaded.getCwd('old-session')).toBeUndefined();
+  });
+
+  it('new format {id: {timestamp, cwd}} loads correctly', () => {
+    const preloaded = createMockMemento({
+      [WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS]: {
+        'new-session': { timestamp: Date.now(), cwd: '/projects/foo' },
+      },
+    });
+    const loaded = new LaunchedSessionStore(
+      preloaded as unknown as import('vscode').Memento,
+      outputChannel as unknown as import('vscode').OutputChannel
+    );
+
+    expect(loaded.getAll()).toContain('new-session');
+    expect(loaded.getCwd('new-session')).toBe('/projects/foo');
+  });
+
+  it('mixed old and new format entries load correctly', () => {
+    const preloaded = createMockMemento({
+      [WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS]: {
+        'old-session': Date.now(),
+        'new-session': { timestamp: Date.now(), cwd: '/projects/bar' },
+      },
+    });
+    const loaded = new LaunchedSessionStore(
+      preloaded as unknown as import('vscode').Memento,
+      outputChannel as unknown as import('vscode').OutputChannel
+    );
+
+    expect(loaded.getAll()).toHaveLength(2);
+    expect(loaded.getCwd('old-session')).toBeUndefined();
+    expect(loaded.getCwd('new-session')).toBe('/projects/bar');
+  });
+
+  it('load-then-persist migration: old format auto-migrates on save', async () => {
+    const now = Date.now();
+    const preloaded = createMockMemento({
+      [WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS]: {
+        'old-session': now,
+      },
+    });
+    const loaded = new LaunchedSessionStore(
+      preloaded as unknown as import('vscode').Memento,
+      outputChannel as unknown as import('vscode').OutputChannel
+    );
+
+    // Trigger a persist by saving a new session
+    await loaded.save('new-session', '/projects/baz');
+
+    // The persisted data should now be in the new format for both
+    expect(preloaded.update).toHaveBeenLastCalledWith(
+      WORKSPACE_STATE_KEYS.LAUNCHED_SESSIONS,
+      expect.objectContaining({
+        'old-session': expect.objectContaining({ timestamp: now }),
+        'new-session': expect.objectContaining({ cwd: '/projects/baz' }),
+      })
+    );
+
+    // Re-load from the migrated storage to verify round-trip
+    const reloaded = new LaunchedSessionStore(
+      preloaded as unknown as import('vscode').Memento,
+      outputChannel as unknown as import('vscode').OutputChannel
+    );
+    expect(reloaded.getAll()).toHaveLength(2);
+    expect(reloaded.getCwd('old-session')).toBeUndefined();
+    expect(reloaded.getCwd('new-session')).toBe('/projects/baz');
   });
 });

@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { JsonlParser } from '../monitoring/JsonlParser';
 import { SessionTracker } from '../monitoring/SessionTracker';
-import { AssistantRecord, UserRecord, SystemRecord, SummaryRecord } from '../models/types';
+import {
+  AssistantRecord,
+  UserRecord,
+  SystemRecord,
+  SummaryRecord,
+  HookEvent,
+} from '../models/types';
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -867,6 +873,27 @@ describe('SessionTracker per-session activity storage', () => {
     // Activity buffer should be cleaned up too
     expect(t.activitiesBySession.has('stale-act')).toBe(false);
   });
+
+  it('cleanup removes hookActiveForSession entry for stale sessions', () => {
+    const oldTimestamp = new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString();
+
+    feedRecords(
+      tracker,
+      'stale-hook-cleanup',
+      JsonlParser.parseString(makeToolUseRecord('stale-hook-cleanup', oldTimestamp, 'tu-stale'))
+    );
+
+    // Manually add to hookActiveForSession to simulate stale hook state
+    const t = tracker as any;
+    t.hookActiveForSession.add('stale-hook-cleanup');
+    expect(t.hookActiveForSession.has('stale-hook-cleanup')).toBe(true);
+
+    // Trigger cleanup — session is done (replay detection) + stale (>4 hours)
+    t.cleanupStaleSessions();
+
+    // hookActiveForSession entry should be cleaned up with the session
+    expect(t.hookActiveForSession.has('stale-hook-cleanup')).toBe(false);
+  });
 });
 
 describe('SessionTracker scope retry', () => {
@@ -1028,6 +1055,22 @@ describe('SessionTracker scoping semantics', () => {
     scanSpy.mockRestore();
     tracker.dispose();
   });
+
+  it('refresh forwards custom maxAgeMs to scanSessionFiles', () => {
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    const scanSpy = vi.spyOn(t.scanner, 'scanSessionFiles');
+    scanSpy.mockReturnValue([]);
+
+    const customMaxAge = 5 * 60 * 1000; // 5 minutes
+    tracker.refresh(customMaxAge);
+
+    expect(scanSpy).toHaveBeenCalledWith(undefined, customMaxAge);
+
+    scanSpy.mockRestore();
+    tracker.dispose();
+  });
 });
 
 describe('SessionTracker lastAssistantText', () => {
@@ -1093,6 +1136,95 @@ describe('SessionTracker lastAssistantText', () => {
     const session = state.sessions.find((s) => s.sessionId === 'ws-only');
     expect(session).toBeDefined();
     expect(session!.lastAssistantText).toBeUndefined();
+  });
+});
+
+describe('SessionTracker lastUserText', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  it('populates lastUserText from user text content block', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      tracker,
+      'user-text-1',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"user-text-1","sessionId":"user-text-1","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"fix the login flow for OAuth"}]}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'user-text-1');
+    expect(session).toBeDefined();
+    expect(session!.lastUserText).toBe('fix the login flow for OAuth');
+  });
+
+  it('does not set lastUserText from tool_result-only user records', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      tracker,
+      'tool-result-only',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"tool-result-only","sessionId":"tool-result-only","timestamp":"${now}","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu1","content":"file contents here"}]}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'tool-result-only');
+    expect(session).toBeDefined();
+    expect(session!.lastUserText).toBeUndefined();
+  });
+
+  it('overwrites lastUserText with most recent user text', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      tracker,
+      'overwrite-user',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"overwrite-user","sessionId":"overwrite-user","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"first message"}]}}`
+      )
+    );
+    feedRecords(
+      tracker,
+      'overwrite-user',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"overwrite-user","sessionId":"overwrite-user","timestamp":"${now}","message":{"role":"user","content":[{"type":"text","text":"second message"}]}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'overwrite-user');
+    expect(session).toBeDefined();
+    expect(session!.lastUserText).toBe('second message');
+  });
+
+  it('populates lastUserText from plain string user content', () => {
+    const now = new Date().toISOString();
+    feedRecords(
+      tracker,
+      'string-content',
+      JsonlParser.parseString(
+        `{"type":"user","slug":"string-content","sessionId":"string-content","timestamp":"${now}","message":{"role":"user","content":"help me debug this issue"}}`
+      )
+    );
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'string-content');
+    expect(session).toBeDefined();
+    expect(session!.lastUserText).toBe('help me debug this issue');
   });
 });
 
@@ -1537,5 +1669,554 @@ describe('SessionTracker artifact detection', () => {
     (vscode.workspace.getConfiguration as any).mockReturnValue({
       get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
     });
+  });
+});
+
+// ===========================================================================
+// Hook-driven status tests
+// ===========================================================================
+
+/** Push a hook event into a SessionTracker via its private applyHookEvent. */
+function feedHookEvent(tracker: SessionTracker, sessionId: string, event: HookEvent): void {
+  (tracker as any).applyHookEvent(sessionId, event);
+}
+
+/** Create a minimal HookEvent with required fields + overrides. */
+function makeHookEvent(overrides: Partial<HookEvent> & { e: string; sid: string }): HookEvent {
+  return { ts: Date.now() / 1000, ...overrides } as HookEvent;
+}
+
+describe('Hook-driven status', () => {
+  let tracker: SessionTracker;
+  let outputChannel: vscode.OutputChannel;
+
+  beforeEach(() => {
+    outputChannel = {
+      appendLine: vi.fn(),
+      dispose: vi.fn(),
+    } as unknown as vscode.OutputChannel;
+    tracker = new SessionTracker(outputChannel);
+  });
+
+  afterEach(() => {
+    tracker.dispose();
+  });
+
+  /** Bootstrap a session in the tracker via JSONL so applyHookEvent finds it. */
+  function bootstrapSession(sessionId: string): void {
+    const now = new Date().toISOString();
+    feedRecords(tracker, sessionId, [
+      {
+        type: 'assistant',
+        sessionId,
+        slug: sessionId,
+        timestamp: now,
+        message: {
+          model: 'claude-sonnet-4-6',
+          id: 'msg-1',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Hello' }],
+          stop_reason: null,
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      },
+    ]);
+  }
+
+  it('hook events drive session.info.status directly', () => {
+    bootstrapSession('hook-1');
+    feedHookEvent(
+      tracker,
+      'hook-1',
+      makeHookEvent({ e: 'PreToolUse', sid: 'hook-1', tool: 'Read' })
+    );
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'hook-1');
+    expect(session?.status).toBe('working');
+  });
+
+  it('JSONL records do NOT override hook-set status', () => {
+    bootstrapSession('hook-2');
+
+    // Hook sets status to working
+    feedHookEvent(
+      tracker,
+      'hook-2',
+      makeHookEvent({ e: 'PreToolUse', sid: 'hook-2', tool: 'Read' })
+    );
+
+    // JSONL end_turn would normally set done via state machine
+    const now = new Date().toISOString();
+    feedRecords(tracker, 'hook-2', [
+      {
+        type: 'assistant',
+        sessionId: 'hook-2',
+        slug: 'hook-2',
+        timestamp: now,
+        message: {
+          model: 'claude-sonnet-4-6',
+          id: 'msg-2',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'Done' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      },
+    ]);
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'hook-2');
+    // Hook guard prevents JSONL from overriding; status stays working
+    expect(session?.status).toBe('working');
+  });
+
+  it('JSONL-only sessions (no hooks) get correct status from state machine', () => {
+    const now = new Date().toISOString();
+    feedRecords(tracker, 'jsonl-only', [
+      {
+        type: 'assistant',
+        sessionId: 'jsonl-only',
+        slug: 'jsonl-only',
+        timestamp: now,
+        message: {
+          model: 'claude-sonnet-4-6',
+          id: 'msg-1',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: 'All done' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+      },
+    ]);
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'jsonl-only');
+    // No hooks → state machine drives status → done
+    expect(session?.status).toBe('done');
+  });
+
+  it('Stop sets DONE, Notification(idle_prompt) after Stop does NOT change status', () => {
+    bootstrapSession('idle-test');
+
+    feedHookEvent(tracker, 'idle-test', makeHookEvent({ e: 'Stop', sid: 'idle-test' }));
+    let state = tracker.getState();
+    let session = state.sessions.find((s) => s.sessionId === 'idle-test');
+    expect(session?.status).toBe('done');
+
+    // idle_prompt after Stop should be blocked by terminal guard
+    feedHookEvent(
+      tracker,
+      'idle-test',
+      makeHookEvent({ e: 'Notification', sid: 'idle-test', ntype: 'idle_prompt' })
+    );
+    state = tracker.getState();
+    session = state.sessions.find((s) => s.sessionId === 'idle-test');
+    expect(session?.status).toBe('done');
+  });
+
+  it('Notification(permission_prompt) still sets WAITING', () => {
+    bootstrapSession('perm-test');
+
+    feedHookEvent(
+      tracker,
+      'perm-test',
+      makeHookEvent({ e: 'Notification', sid: 'perm-test', ntype: 'permission_prompt' })
+    );
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'perm-test');
+    expect(session?.status).toBe('waiting');
+  });
+
+  // --- Terminal state guard tests ---
+
+  it('recent PostToolUse after Stop DOES reactivate', () => {
+    bootstrapSession('term-1');
+    feedHookEvent(tracker, 'term-1', makeHookEvent({ e: 'Stop', sid: 'term-1' }));
+
+    feedHookEvent(
+      tracker,
+      'term-1',
+      makeHookEvent({ e: 'PostToolUse', sid: 'term-1', tool: 'Read' })
+    );
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'term-1');
+    expect(session?.status).toBe('working');
+  });
+
+  it('SessionStart after Stop DOES reactivate', () => {
+    bootstrapSession('term-2');
+    feedHookEvent(tracker, 'term-2', makeHookEvent({ e: 'Stop', sid: 'term-2' }));
+
+    feedHookEvent(tracker, 'term-2', makeHookEvent({ e: 'SessionStart', sid: 'term-2' }));
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'term-2');
+    expect(session?.status).toBe('working');
+  });
+
+  it('UserPromptSubmit after SessionEnd DOES reactivate', () => {
+    bootstrapSession('term-3');
+    feedHookEvent(tracker, 'term-3', makeHookEvent({ e: 'SessionEnd', sid: 'term-3' }));
+    let state = tracker.getState();
+    let session = state.sessions.find((s) => s.sessionId === 'term-3');
+    expect(session?.status).toBe('idle');
+
+    feedHookEvent(tracker, 'term-3', makeHookEvent({ e: 'UserPromptSubmit', sid: 'term-3' }));
+    state = tracker.getState();
+    session = state.sessions.find((s) => s.sessionId === 'term-3');
+    expect(session?.status).toBe('working');
+  });
+
+  it('recent PreToolUse after SessionEnd DOES reactivate', () => {
+    bootstrapSession('term-4');
+    feedHookEvent(tracker, 'term-4', makeHookEvent({ e: 'SessionEnd', sid: 'term-4' }));
+
+    feedHookEvent(
+      tracker,
+      'term-4',
+      makeHookEvent({ e: 'PreToolUse', sid: 'term-4', tool: 'Bash' })
+    );
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'term-4');
+    expect(session?.status).toBe('working');
+  });
+
+  // --- Recency-based guard tests ---
+
+  it('recent hook PreToolUse wakes session from done to working', () => {
+    bootstrapSession('recency-1');
+    feedHookEvent(tracker, 'recency-1', makeHookEvent({ e: 'Stop', sid: 'recency-1' }));
+    let state = tracker.getState();
+    let session = state.sessions.find((s) => s.sessionId === 'recency-1');
+    expect(session?.status).toBe('done');
+
+    feedHookEvent(
+      tracker,
+      'recency-1',
+      makeHookEvent({ e: 'PreToolUse', sid: 'recency-1', tool: 'Bash' })
+    );
+    state = tracker.getState();
+    session = state.sessions.find((s) => s.sessionId === 'recency-1');
+    expect(session?.status).toBe('working');
+  });
+
+  it('stale hook PreToolUse does NOT wake session from done', () => {
+    bootstrapSession('recency-2');
+    feedHookEvent(tracker, 'recency-2', makeHookEvent({ e: 'Stop', sid: 'recency-2' }));
+    let state = tracker.getState();
+    let session = state.sessions.find((s) => s.sessionId === 'recency-2');
+    expect(session?.status).toBe('done');
+
+    // 5 minutes ago — exceeds HOOK_RECENCY_THRESHOLD_MS (2 min)
+    const staleTs = (Date.now() - 5 * 60 * 1000) / 1000;
+    feedHookEvent(
+      tracker,
+      'recency-2',
+      makeHookEvent({ e: 'PreToolUse', sid: 'recency-2', tool: 'Bash', ts: staleTs })
+    );
+    state = tracker.getState();
+    session = state.sessions.find((s) => s.sessionId === 'recency-2');
+    expect(session?.status).toBe('done');
+  });
+
+  it('full hook replay sequence ends at correct final status', () => {
+    bootstrapSession('recency-3');
+
+    feedHookEvent(tracker, 'recency-3', makeHookEvent({ e: 'SessionStart', sid: 'recency-3' }));
+    feedHookEvent(
+      tracker,
+      'recency-3',
+      makeHookEvent({ e: 'PreToolUse', sid: 'recency-3', tool: 'Read' })
+    );
+    feedHookEvent(
+      tracker,
+      'recency-3',
+      makeHookEvent({ e: 'PostToolUse', sid: 'recency-3', tool: 'Read' })
+    );
+    feedHookEvent(tracker, 'recency-3', makeHookEvent({ e: 'Stop', sid: 'recency-3' }));
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'recency-3');
+    expect(session?.status).toBe('done');
+  });
+
+  it('error threshold via hooks sets ERROR', () => {
+    bootstrapSession('err-1');
+
+    // 3 PostToolUseFailure events
+    for (let i = 0; i < 3; i++) {
+      feedHookEvent(
+        tracker,
+        'err-1',
+        makeHookEvent({ e: 'PostToolUseFailure', sid: 'err-1', tool: 'Bash', err: 'fail' })
+      );
+    }
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'err-1');
+    expect(session?.status).toBe('error');
+  });
+
+  it('replay detection sets DONE only for sessions without hook events', () => {
+    // Feed records with old timestamp (>5 min stale) — no hooks
+    const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    const sessionFile = {
+      sessionId: 'stale-1',
+      filePath: '/tmp/test/stale-1.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+    t.handleRecords({
+      sessionFile,
+      records: [
+        {
+          type: 'assistant',
+          sessionId: 'stale-1',
+          slug: 'stale-1',
+          timestamp: oldTime,
+          message: {
+            model: 'claude-sonnet-4-6',
+            id: 'msg-1',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Working...' }],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ],
+    });
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'stale-1');
+    expect(session?.status).toBe('done');
+  });
+
+  it('replay detection overrides stale hook-set status (JSONL is ground truth)', () => {
+    // Bootstrap with hook event first, then feed old records
+    const sessionFile = {
+      sessionId: 'stale-hook',
+      filePath: '/tmp/test/stale-hook.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    };
+    const t = tracker as any;
+    t.handleNewFile(sessionFile);
+
+    // Apply hook events to mark as hook-active BEFORE records arrive.
+    feedHookEvent(tracker, 'stale-hook', makeHookEvent({ e: 'SessionStart', sid: 'stale-hook' }));
+    feedHookEvent(
+      tracker,
+      'stale-hook',
+      makeHookEvent({ e: 'PreToolUse', sid: 'stale-hook', tool: 'Read' })
+    );
+
+    // Verify hook state is set
+    expect(t.hookActiveForSession.has('stale-hook')).toBe(true);
+
+    // Now feed old records (>5 min stale)
+    const oldTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    t.handleRecords({
+      sessionFile,
+      records: [
+        {
+          type: 'assistant',
+          sessionId: 'stale-hook',
+          slug: 'stale-hook',
+          timestamp: oldTime,
+          message: {
+            model: 'claude-sonnet-4-6',
+            id: 'msg-1',
+            type: 'message',
+            role: 'assistant',
+            content: [{ type: 'text', text: 'Working...' }],
+            stop_reason: null,
+            stop_sequence: null,
+            usage: { input_tokens: 10, output_tokens: 5 },
+          },
+        },
+      ],
+    });
+
+    const state = tracker.getState();
+    const session = state.sessions.find((s) => s.sessionId === 'stale-hook');
+    // JSONL is ground truth — stale records override hook state
+    expect(session?.status).toBe('done');
+    // hookActiveForSession should be cleared so state machine sync works normally
+    expect(t.hookActiveForSession.has('stale-hook')).toBe(false);
+  });
+});
+
+describe('SessionTracker.areSessionsInitiallyProcessed', () => {
+  it('returns true when all specified sessions have completed initial replay', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+
+    const now = new Date().toISOString();
+    const record: AssistantRecord = {
+      type: 'assistant',
+      sessionId: 's1',
+      timestamp: now,
+      message: {
+        model: 'claude-sonnet-4-6',
+        id: 'msg1',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hello' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0 },
+      },
+    };
+
+    feedRecords(tracker, 's1', [record]);
+    feedRecords(tracker, 's2', [{ ...record, sessionId: 's2' }]);
+
+    expect(tracker.areSessionsInitiallyProcessed(['s1', 's2'])).toBe(true);
+  });
+
+  it('returns false when any specified session has not completed initial replay', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+
+    const now = new Date().toISOString();
+    const record: AssistantRecord = {
+      type: 'assistant',
+      sessionId: 's1',
+      timestamp: now,
+      message: {
+        model: 'claude-sonnet-4-6',
+        id: 'msg1',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hello' }],
+        stop_reason: 'end_turn',
+        stop_sequence: null,
+        usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0 },
+      },
+    };
+
+    // Only process s1, register s2 without records (so isInitialReplayDone remains false)
+    feedRecords(tracker, 's1', [record]);
+
+    // Register s2 via handleNewFile only (no records → isInitialReplayDone = false)
+    const t = tracker as any;
+    t.handleNewFile({
+      sessionId: 's2',
+      filePath: '/tmp/test/s2.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    });
+
+    expect(tracker.areSessionsInitiallyProcessed(['s1', 's2'])).toBe(false);
+  });
+
+  it('returns true for session IDs not in the tracker (missing = ready)', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+
+    // No sessions registered at all
+    expect(tracker.areSessionsInitiallyProcessed(['unknown-1', 'unknown-2'])).toBe(true);
+  });
+});
+
+describe('SessionTracker eager slug extraction via peeked fields', () => {
+  it('handleNewFile with peekedSlug sets slugIsExplicit=true and uses peeked values', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    t.handleNewFile({
+      sessionId: 'abc-123',
+      filePath: '/tmp/test/abc-123.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+      peekedSlug: 'my-project',
+      peekedCwd: '/home/user/project',
+      peekedGitBranch: 'feature-branch',
+    });
+
+    const session = t.sessions.get('abc-123');
+    expect(session).toBeDefined();
+    expect(session.info.slug).toBe('my-project');
+    expect(session.info.cwd).toBe('/home/user/project');
+    expect(session.info.gitBranch).toBe('feature-branch');
+    expect(session.slugIsExplicit).toBe(true);
+  });
+
+  it('handleNewFile without peekedSlug uses sessionId prefix and slugIsExplicit=false', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    t.handleNewFile({
+      sessionId: 'abc-123-def',
+      filePath: '/tmp/test/abc-123-def.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date(),
+    });
+
+    const session = t.sessions.get('abc-123-def');
+    expect(session).toBeDefined();
+    expect(session.info.slug).toBe('abc-123-');
+    expect(session.info.cwd).toBe('');
+    expect(session.info.gitBranch).toBe('');
+    expect(session.slugIsExplicit).toBe(false);
+  });
+
+  it('two files with same peekedSlug and peekedCwd are grouped immediately', () => {
+    const outputChannel = { appendLine: vi.fn() } as any;
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    const baseTime = new Date('2026-02-27T10:00:00Z');
+
+    // File 1 — the earlier session (becomes primary)
+    t.handleNewFile({
+      sessionId: 'session-1',
+      filePath: '/tmp/test/session-1.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: baseTime,
+      peekedSlug: 'shared-slug',
+      peekedCwd: '/shared/cwd',
+      peekedGitBranch: 'main',
+    });
+
+    // File 2 — continuation with same slug+cwd
+    t.handleNewFile({
+      sessionId: 'session-2',
+      filePath: '/tmp/test/session-2.jsonl',
+      projectDir: 'test-project',
+      isSubAgent: false,
+      modifiedAt: new Date('2026-02-27T10:05:00Z'),
+      peekedSlug: 'shared-slug',
+      peekedCwd: '/shared/cwd',
+      peekedGitBranch: 'main',
+    });
+
+    // Both sessions should have slugIsExplicit = true
+    expect(t.sessions.get('session-1').slugIsExplicit).toBe(true);
+    expect(t.sessions.get('session-2').slugIsExplicit).toBe(true);
+
+    // getState should merge them — only one session card visible
+    const state = tracker.getState();
+    const sessionIds = state.sessions.map((s: any) => s.sessionId);
+    // session-2 should be merged into session-1 (same slug+cwd)
+    // Only the primary session should appear in the list
+    expect(sessionIds).toContain('session-1');
+    expect(sessionIds).not.toContain('session-2');
   });
 });

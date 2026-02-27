@@ -1033,4 +1033,69 @@ describe('SessionStateMachine', () => {
       expect(sm.status).toBe('working');
     });
   });
+
+  // =========================================================================
+  // isErrorThresholdReached getter
+  // =========================================================================
+
+  describe('isErrorThresholdReached', () => {
+    it('returns false when below threshold', () => {
+      // 2 errors (below threshold of 3)
+      for (let i = 0; i < 2; i++) {
+        sm.handleUserRecord(
+          makeUserRecord({
+            message: {
+              content: [
+                { type: 'tool_result', tool_use_id: `tu-${i}`, content: 'err', is_error: true },
+              ],
+            },
+          })
+        );
+      }
+      expect(sm.isErrorThresholdReached).toBe(false);
+    });
+
+    it('returns true when at threshold', () => {
+      for (let i = 0; i < 3; i++) {
+        sm.handleUserRecord(
+          makeUserRecord({
+            message: {
+              content: [
+                { type: 'tool_result', tool_use_id: `tu-${i}`, content: 'err', is_error: true },
+              ],
+            },
+          })
+        );
+      }
+      expect(sm.isErrorThresholdReached).toBe(true);
+    });
+
+    it('returns false after errors age out of window', () => {
+      for (let i = 0; i < 3; i++) {
+        sm.handleUserRecord(
+          makeUserRecord({
+            message: {
+              content: [
+                { type: 'tool_result', tool_use_id: `tu-${i}`, content: 'err', is_error: true },
+              ],
+            },
+          })
+        );
+      }
+      expect(sm.isErrorThresholdReached).toBe(true);
+
+      // Advance past the 60s error window
+      vi.advanceTimersByTime(61_000);
+      expect(sm.isErrorThresholdReached).toBe(false);
+    });
+
+    it('returns true via recordHookError', () => {
+      sm.recordHookError('Bash');
+      sm.recordHookError('Write');
+      expect(sm.isErrorThresholdReached).toBe(false);
+
+      sm.recordHookError('Edit');
+      expect(sm.isErrorThresholdReached).toBe(true);
+    });
+  });
 });

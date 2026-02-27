@@ -66,8 +66,12 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly workspaceState: vscode.Memento;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingAdoptions = new Set<string>();
+  /** Session IDs awaiting JSONL discovery — protects PTY buffers from premature pruning. */
+  private readonly pendingDiscoveryIds = new Set<string>();
   /** Session IDs ever launched/adopted by Conductor — survives session exit for launchedByConductor flag persistence. */
   private readonly conductorLaunchedIds: Set<string>;
+  /** Maps PTY session ID (resumedId) → displayed session's primary ID for routing. */
+  private readonly ptyIdToDisplayId = new Map<string, string>();
   /** sessionId → LaunchMode for Conductor-launched sessions. Persisted to workspaceState. */
   private readonly launchedSessionModes = new Map<string, LaunchMode>();
   private focusedSessionId: string | null = null;
@@ -242,8 +246,9 @@ export class DashboardPanel implements vscode.Disposable {
     // Wire PTY data from SessionLauncher → PtyBridge ring buffer + webview
     this.sessionLauncher.onPtyData(
       ({ sessionId, data }) => {
-        this.ptyBridge.pushData(sessionId, data);
-        this.postMessage({ type: 'pty:data', sessionId, data });
+        const displayId = this.ptyIdToDisplayId.get(sessionId) ?? sessionId;
+        this.ptyBridge.pushData(displayId, data);
+        this.postMessage({ type: 'pty:data', sessionId: displayId, data });
       },
       null,
       this.disposables
@@ -326,6 +331,15 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   /**
+   * Inject terminal key data by posting to the webview (routes through TerminalView's sessionId).
+   *
+   * @param data - Escape sequence string to inject into the active terminal
+   */
+  public injectTerminalKeys(data: string): void {
+    this.postMessage({ type: 'terminal:inject-keys', data });
+  }
+
+  /**
    * Notify the panel that a session was launched (from either the webview or command palette).
    * Posts launch-status to the webview and starts polling for the JSONL file.
    *
@@ -334,6 +348,7 @@ export class DashboardPanel implements vscode.Disposable {
    */
   public notifySessionLaunched(sessionId: string, cwd?: string): void {
     this.conductorLaunchedIds.add(sessionId);
+    this.pendingDiscoveryIds.add(sessionId);
     const resolvedCwd = cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this.launchedSessionStore.save(sessionId, resolvedCwd).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.PANEL} Failed to persist launched session: ${err}`);
@@ -352,12 +367,13 @@ export class DashboardPanel implements vscode.Disposable {
     this.clearLaunchDiscoveryTimer();
     let retries = 0;
     this.launchDiscoveryTimer = setInterval(() => {
-      this.sessionTracker.refresh();
+      this.sessionTracker.refresh(TIMING.LAUNCH_DISCOVERY_MAX_AGE_MS);
       const found = this.sessionTracker
         .getState(null)
         .sessions.some((s) => s.sessionId === sessionId);
       if (found || ++retries >= TIMING.LAUNCH_DISCOVERY_MAX_RETRIES) {
         this.clearLaunchDiscoveryTimer();
+        this.pendingDiscoveryIds.delete(sessionId);
       }
       this.postFullState();
     }, TIMING.LAUNCH_DISCOVERY_POLL_MS);
@@ -395,8 +411,9 @@ export class DashboardPanel implements vscode.Disposable {
    * Called on `ready` so the webview can restore terminal output after reload.
    */
   private replayPtyBuffers(): void {
+    const registeredIds = this.ptyBridge.getRegisteredSessionIds();
     const buffers: Record<string, string> = {};
-    for (const sessionId of this.ptyBridge.getRegisteredSessionIds()) {
+    for (const sessionId of registeredIds) {
       const data = this.ptyBridge.getBufferedData(sessionId);
       if (data) {
         buffers[sessionId] = data;
@@ -501,6 +518,13 @@ export class DashboardPanel implements vscode.Disposable {
         vscode.commands.executeCommand(
           'setContext',
           CONTEXT_KEYS.KEYBOARD_NAV_ACTIVE,
+          message.active
+        );
+        break;
+      case 'terminal:view-changed':
+        vscode.commands.executeCommand(
+          'setContext',
+          CONTEXT_KEYS.TERMINAL_VIEW_SHOWING,
           message.active
         );
         break;
@@ -923,7 +947,9 @@ export class DashboardPanel implements vscode.Disposable {
     const groupMembers = this.sessionTracker.getGroupMembers(sessionId);
     const primaryId = groupMembers[0]; // earliest member = primary
 
-    if (this.pendingAdoptions.has(primaryId)) return;
+    if (this.pendingAdoptions.has(primaryId)) {
+      return;
+    }
 
     const alreadyLaunched = this.findLaunchedGroupMember(sessionId);
     if (alreadyLaunched) {
@@ -950,6 +976,14 @@ export class DashboardPanel implements vscode.Disposable {
         groupMembers
       );
       this.conductorLaunchedIds.add(resumedId);
+
+      // Map PTY session ID → displayed session's primary ID for routing
+      if (resumedId !== sessionId) {
+        const primaryId = groupMembers[0];
+        this.ptyIdToDisplayId.set(resumedId, primaryId);
+        this.ptyBridge.registerSession(primaryId);
+      }
+
       this.launchedSessionStore.save(resumedId, sessionCwd).catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to persist adopted session: ${err}`);
       });
@@ -978,7 +1012,7 @@ export class DashboardPanel implements vscode.Disposable {
   private pruneOrphanedPtyBuffers(knownSessionIds: Set<string>): void {
     const toRemove: string[] = [];
     for (const sessionId of this.ptyBridge.getRegisteredSessionIds()) {
-      if (!knownSessionIds.has(sessionId)) {
+      if (!knownSessionIds.has(sessionId) && !this.pendingDiscoveryIds.has(sessionId)) {
         toRemove.push(sessionId);
       }
     }
@@ -1047,6 +1081,7 @@ export class DashboardPanel implements vscode.Disposable {
       .then(() => {
         // The resumed session shares the same sessionId, so register it
         this.conductorLaunchedIds.add(sessionId);
+        this.pendingDiscoveryIds.add(sessionId);
         this.launchedSessionStore.save(sessionId, cwd).catch((err: unknown) => {
           console.log(`${LOG_PREFIX.PANEL} Failed to persist resumed session: ${err}`);
         });
@@ -1123,6 +1158,7 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   private applyCustomNames(sessions: SessionInfo[]): SessionInfo[] {
+    const registeredPtyIds = this.ptyBridge.getRegisteredSessionIds();
     return sessions.map((session) => {
       // Check primary ID first, then fall through to continuation member IDs
       let customName = this.nameStore.getName(session.sessionId);
@@ -1133,17 +1169,20 @@ export class DashboardPanel implements vscode.Disposable {
         }
       }
 
-      const launchedByConductor =
+      let launchedByConductor =
         this.sessionLauncher.isLaunchedSession(session.sessionId) ||
         this.conductorLaunchedIds.has(session.sessionId);
+      if (!launchedByConductor && session.continuationSessionIds) {
+        launchedByConductor = session.continuationSessionIds.some(
+          (id) => this.sessionLauncher.isLaunchedSession(id) || this.conductorLaunchedIds.has(id)
+        );
+      }
       const launchMode = this.launchedSessionModes.get(session.sessionId);
 
-      const registeredPtyIds = this.ptyBridge.getRegisteredSessionIds();
       let hasActivePty = registeredPtyIds.has(session.sessionId);
       if (!hasActivePty && session.continuationSessionIds) {
         hasActivePty = session.continuationSessionIds.some((id) => registeredPtyIds.has(id));
       }
-
       if (customName || launchedByConductor || launchMode || hasActivePty) {
         return {
           ...session,
@@ -1186,6 +1225,7 @@ export class DashboardPanel implements vscode.Disposable {
     this.clearLaunchDiscoveryTimer();
     vscode.commands.executeCommand('setContext', CONTEXT_KEYS.PANEL_FOCUSED, false);
     vscode.commands.executeCommand('setContext', CONTEXT_KEYS.KEYBOARD_NAV_ACTIVE, false);
+    vscode.commands.executeCommand('setContext', CONTEXT_KEYS.TERMINAL_VIEW_SHOWING, false);
     DashboardPanel.currentPanel = undefined;
     this.panel.dispose();
     while (this.disposables.length) {

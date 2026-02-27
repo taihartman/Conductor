@@ -5,8 +5,10 @@ import { STATUS_CONFIG } from '../config/statusConfig';
 import { SIZES } from '../config/colors';
 import { KanbanColumn } from './KanbanColumn';
 import { UI_STRINGS } from '../config/strings';
-import { useDashboardStore, SORT_DIRECTIONS } from '../store/dashboardStore';
-import type { SortDirection } from '../store/dashboardStore';
+import { useDashboardStore } from '../store/dashboardStore';
+import { SORT_DIRECTIONS } from '@shared/sharedConstants';
+import type { SortDirection } from '@shared/sharedConstants';
+import { vscode } from '../vscode';
 
 /** Column definition for the Kanban board. */
 interface ColumnDef {
@@ -200,7 +202,11 @@ export function KanbanBoard({
             onUnhide={onUnhide}
             isHiddenTab={isHiddenTab}
             sortDirection={kanbanSortOrders[col.key] ?? SORT_DIRECTIONS.DESC}
-            onToggleSort={() => toggleKanbanSortOrder(col.key)}
+            onToggleSort={() => {
+              toggleKanbanSortOrder(col.key);
+              const sortOrders = useDashboardStore.getState().kanbanSortOrders;
+              vscode.postMessage({ type: 'kanban-sort-orders:set', sortOrders });
+            }}
           />
         </div>
       ))}

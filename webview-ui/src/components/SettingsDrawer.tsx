@@ -13,7 +13,6 @@ export const SHORTCUTS: ReadonlyArray<{ key: string; action: string }> = [
   { key: UI_STRINGS.HELP_KEY_SELECT, action: UI_STRINGS.HELP_SHORTCUT_SELECT },
   { key: UI_STRINGS.HELP_KEY_EXPAND, action: UI_STRINGS.HELP_SHORTCUT_EXPAND },
   { key: UI_STRINGS.HELP_KEY_NAV_ARROWS, action: UI_STRINGS.HELP_SHORTCUT_NAV_ARROWS },
-  { key: UI_STRINGS.HELP_KEY_NAV_SELECT, action: UI_STRINGS.HELP_SHORTCUT_NAV_SELECT },
 ] as const;
 
 /** Feature accordion entries: [title, description]. */
@@ -25,7 +24,6 @@ export const FEATURES: ReadonlyArray<{ title: string; description: string }> = [
   { title: UI_STRINGS.HELP_FEATURE_SESSION_MGMT, description: UI_STRINGS.HELP_DESC_SESSION_MGMT },
   { title: UI_STRINGS.HELP_FEATURE_LAUNCH, description: UI_STRINGS.HELP_DESC_LAUNCH },
   { title: UI_STRINGS.HELP_FEATURE_CONVERSATION, description: UI_STRINGS.HELP_DESC_CONVERSATION },
-  { title: UI_STRINGS.HELP_FEATURE_PLAN_APPROVAL, description: UI_STRINGS.HELP_DESC_PLAN_APPROVAL },
   { title: UI_STRINGS.HELP_FEATURE_ZEN, description: UI_STRINGS.HELP_DESC_ZEN },
   { title: UI_STRINGS.HELP_FEATURE_SUB_AGENT, description: UI_STRINGS.HELP_DESC_SUB_AGENT },
   { title: UI_STRINGS.HELP_FEATURE_ANALYTICS, description: UI_STRINGS.HELP_DESC_ANALYTICS },

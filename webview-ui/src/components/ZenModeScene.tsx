@@ -18,6 +18,8 @@ interface CompletionNote {
 interface ZenModeSceneProps {
   completionCount: number;
   onExit: () => void;
+  /** When true, renders as a passive visual — no focus steal, no click handler, hidden from a11y tree. */
+  decorative?: boolean;
 }
 
 const AMBIENT_NOTES = [
@@ -33,15 +35,18 @@ let noteIdCounter = 0;
 export function ZenModeScene({
   completionCount,
   onExit,
+  decorative = false,
 }: ZenModeSceneProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const prevCountRef = useRef(completionCount);
   const [completionNotes, setCompletionNotes] = useState<CompletionNote[]>([]);
 
-  // Auto-focus on mount
+  // Auto-focus only in interactive (full-screen) mode
   useEffect(() => {
-    containerRef.current?.focus();
-  }, []);
+    if (!decorative) {
+      containerRef.current?.focus();
+    }
+  }, [decorative]);
 
   // Spawn completion notes when count increments
   useEffect(() => {
@@ -82,10 +87,13 @@ export function ZenModeScene({
     <div
       ref={containerRef}
       className="zen-scene"
-      role="button"
-      tabIndex={0}
-      aria-label={UI_STRINGS.ZEN_EXIT_LABEL}
-      onClick={onExit}
+      {...(!decorative && {
+        role: 'button' as const,
+        tabIndex: 0,
+        'aria-label': UI_STRINGS.ZEN_EXIT_LABEL,
+        onClick: onExit,
+      })}
+      {...(decorative && { 'aria-hidden': true as const })}
       style={{
         flex: 1,
         display: 'flex',

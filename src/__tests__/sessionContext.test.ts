@@ -162,6 +162,15 @@ describe('getContextText', () => {
     expect(getContextText(session)).toBe('1h ago');
   });
 
+  it('returns lastAssistantText for idle status when available', () => {
+    const session = makeSession({
+      status: 'idle',
+      lastAssistantText: 'All done, files committed.',
+      lastActivityAt: '2026-02-25T11:00:00Z',
+    });
+    expect(getContextText(session)).toBe('All done, files committed.');
+  });
+
   it('returns CONTEXT_LAUNCHING for a launching session', () => {
     const session = makeSession({
       launchedByConductor: true,

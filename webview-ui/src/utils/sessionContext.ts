@@ -73,6 +73,9 @@ export function getContextText(session: SessionInfo): string {
       }
       return `${UI_STRINGS.CONTEXT_DONE} — ${timeAgo(session.lastActivityAt)}`;
     case SESSION_STATUSES.IDLE:
+      if (session.lastAssistantText) {
+        return session.lastAssistantText;
+      }
       return timeAgo(session.lastActivityAt);
     default:
       return '';

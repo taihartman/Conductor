@@ -419,6 +419,8 @@ export interface SessionInfo {
   autoName?: string;
   /** Whether this session was launched from within Conductor (has PTY ownership). */
   launchedByConductor?: boolean;
+  /** Whether this session currently has an active PTY terminal process. */
+  hasActivePty?: boolean;
   /** Launch mode used when this session was started by Conductor. */
   launchMode?: import('./sharedConstants').LaunchMode;
   /** Nested sub-agent sessions spawned by this parent. */
@@ -433,6 +435,8 @@ export interface SessionInfo {
   lastToolInput?: string;
   /** Most recent assistant text message (truncated to TEXT_MAX). */
   lastAssistantText?: string;
+  /** Most recent user text message (truncated to TEXT_MAX). */
+  lastUserText?: string;
   /** Structured question when status is 'waiting'. */
   pendingQuestion?: PendingQuestion;
 }

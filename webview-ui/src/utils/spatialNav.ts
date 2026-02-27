@@ -161,10 +161,14 @@ export function getCardPositions(): CardPosition[] {
 
   for (const el of elements) {
     const sessionId = el.getAttribute('data-session-id');
-    if (!sessionId) continue;
+    if (!sessionId) {
+      continue;
+    }
 
     const domRect = el.getBoundingClientRect();
-    if (domRect.width === 0 || domRect.height === 0) continue; // hidden element
+    if (domRect.width === 0 || domRect.height === 0) {
+      continue;
+    }
 
     positions.push({
       sessionId,

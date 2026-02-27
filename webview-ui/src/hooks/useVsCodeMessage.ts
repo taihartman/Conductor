@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useDashboardStore } from '../store/dashboardStore';
 import type { ExtensionToWebviewMessage } from '@shared/protocol';
 import type { NavDirection } from '@shared/sharedConstants';
+import { forceRelayout } from '../utils/layout';
 
 /** Optional handlers for keyboard navigation messages. */
 export interface NavMessageHandlers {
@@ -23,6 +24,8 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
     setAutoHidePatterns,
     setFocusedSession,
     setLaunchMode,
+    setOverviewMode,
+    setKanbanSortOrders,
     setHistoryEntries,
     setActiveTab,
     setUsageData,
@@ -86,6 +89,12 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
         case 'launch-mode:current':
           setLaunchMode(message.mode);
           break;
+        case 'overview-mode:current':
+          setOverviewMode(message.mode);
+          break;
+        case 'kanban-sort-orders:current':
+          setKanbanSortOrders(message.sortOrders);
+          break;
         case 'session:focus-command':
           setFocusedSession(message.sessionId);
           setActiveTab('sessions');
@@ -95,6 +104,9 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
           break;
         case 'usage:full':
           setUsageData(message.stats);
+          break;
+        case 'panel:visible':
+          forceRelayout();
           break;
         case 'nav:move':
           navHandlers?.handleNavMove(message.direction);
@@ -120,6 +132,8 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
     setAutoHidePatterns,
     setFocusedSession,
     setLaunchMode,
+    setOverviewMode,
+    setKanbanSortOrders,
     setHistoryEntries,
     setActiveTab,
     setUsageData,

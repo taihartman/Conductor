@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { JsonlParser } from '../monitoring/JsonlParser';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -148,6 +148,68 @@ describe('JsonlParser', () => {
       expect(types).toContain('system');
       expect(types).toContain('summary');
       expect(types).toContain('file-history-snapshot');
+    });
+  });
+
+  describe('peekFileMetadata', () => {
+    let tmpFile: string;
+
+    beforeEach(() => {
+      tmpFile = path.join(
+        os.tmpdir(),
+        `peek-test-${Date.now()}-${Math.random().toString(36).slice(2)}.jsonl`
+      );
+    });
+
+    afterEach(() => {
+      try {
+        fs.unlinkSync(tmpFile);
+      } catch {
+        // File may not have been created
+      }
+    });
+
+    it('extracts slug, cwd, and gitBranch from first record', () => {
+      const line =
+        '{"type":"user","slug":"my-project","cwd":"/home/user/project","gitBranch":"main","message":{"role":"user","content":[]}}\n';
+      fs.writeFileSync(tmpFile, line);
+
+      const result = JsonlParser.peekFileMetadata(tmpFile);
+      expect(result.slug).toBe('my-project');
+      expect(result.cwd).toBe('/home/user/project');
+      expect(result.gitBranch).toBe('main');
+    });
+
+    it('returns empty metadata for empty file', () => {
+      fs.writeFileSync(tmpFile, '');
+
+      const result = JsonlParser.peekFileMetadata(tmpFile);
+      expect(result).toEqual({});
+    });
+
+    it('returns empty metadata for nonexistent file', () => {
+      const result = JsonlParser.peekFileMetadata('/nonexistent/path/file.jsonl');
+      expect(result).toEqual({});
+    });
+
+    it('skips records without slug and finds slug in a later record', () => {
+      const lines = [
+        '{"type":"system","subtype":"init"}\n',
+        '{"type":"user","slug":"late-slug","cwd":"/work","message":{"role":"user","content":[]}}\n',
+      ].join('');
+      fs.writeFileSync(tmpFile, lines);
+
+      const result = JsonlParser.peekFileMetadata(tmpFile);
+      expect(result.slug).toBe('late-slug');
+      expect(result.cwd).toBe('/work');
+    });
+
+    it('handles malformed and partial JSON gracefully', () => {
+      const lines = ['{invalid json\n', '{"type":"user","slug":"ok"}\n'].join('');
+      fs.writeFileSync(tmpFile, lines);
+
+      const result = JsonlParser.peekFileMetadata(tmpFile);
+      expect(result.slug).toBe('ok');
     });
   });
 });

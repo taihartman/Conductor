@@ -3,8 +3,11 @@ import type { SessionInfo, TokenSummary } from '@shared/types';
 import { OverviewCard } from './OverviewCard';
 import { KanbanBoard } from './KanbanBoard';
 import { useDragReorder } from '../hooks/useDragReorder';
-import { useDashboardStore, OVERVIEW_MODES } from '../store/dashboardStore';
+import { useDashboardStore } from '../store/dashboardStore';
+import { OVERVIEW_MODES } from '@shared/sharedConstants';
+import type { OverviewMode } from '@shared/sharedConstants';
 import { UI_STRINGS } from '../config/strings';
+import { vscode } from '../vscode';
 
 interface OverviewPanelProps {
   sessions: SessionInfo[];
@@ -74,11 +77,12 @@ export function OverviewPanel({
         }}
       >
         <button
-          onClick={() =>
-            setOverviewMode(
-              overviewMode === OVERVIEW_MODES.LIST ? OVERVIEW_MODES.BOARD : OVERVIEW_MODES.LIST
-            )
-          }
+          onClick={() => {
+            const newMode: OverviewMode =
+              overviewMode === OVERVIEW_MODES.LIST ? OVERVIEW_MODES.BOARD : OVERVIEW_MODES.LIST;
+            setOverviewMode(newMode);
+            vscode.postMessage({ type: 'overview-mode:set', mode: newMode });
+          }}
           title={
             overviewMode === OVERVIEW_MODES.LIST
               ? UI_STRINGS.KANBAN_TOGGLE_BOARD

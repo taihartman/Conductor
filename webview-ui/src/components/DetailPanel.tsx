@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import type { SessionInfo } from '@shared/types';
 import { SESSION_STATUSES } from '@shared/sharedConstants';
 import { useDashboardStore } from '../store/dashboardStore';
@@ -8,6 +8,7 @@ import { ConversationView } from './ConversationView';
 import { AnalyticsDrawer } from './AnalyticsDrawer';
 import { ChatInput } from './ChatInput';
 import { TerminalView } from './TerminalView';
+import { isLaunchingSession } from '../utils/sessionContext';
 import { vscode } from '../vscode';
 
 interface DetailPanelProps {
@@ -32,7 +33,7 @@ export function DetailPanel({
   const viewMode = useDashboardStore(
     (s) =>
       s.viewModes.get(session.sessionId) ??
-      (session.launchedByConductor ? 'terminal' : 'conversation')
+      (session.hasActivePty || isLaunchingSession(session) ? 'terminal' : 'conversation')
   );
   const toggleViewMode = useDashboardStore((s) => s.toggleViewMode);
   const addPendingAdoption = useDashboardStore((s) => s.addPendingAdoption);
@@ -55,6 +56,14 @@ export function DetailPanel({
   })();
 
   const isTerminalMode = viewMode === 'terminal';
+
+  // Notify the extension when terminal view is shown/hidden (for keybinding `when` clause)
+  useEffect(() => {
+    vscode.postMessage({ type: 'terminal:view-changed', active: isTerminalMode });
+    return () => {
+      vscode.postMessage({ type: 'terminal:view-changed', active: false });
+    };
+  }, [isTerminalMode]);
 
   const handleToggleView = useCallback(() => {
     if (isTerminalMode) {

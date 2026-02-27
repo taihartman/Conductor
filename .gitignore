@@ -12,4 +12,7 @@ firebase-debug.log
 # Local/generated artifacts
 .claude/settings.local.json
 .playwright-mcp/
+playwright-report/
+test-results/
 *.png
+!media/*.png
