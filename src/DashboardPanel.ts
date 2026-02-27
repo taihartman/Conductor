@@ -21,6 +21,8 @@ import { ISessionVisibilityStore } from './persistence/ISessionVisibilityStore';
 import { ISessionLauncher } from './terminal/ISessionLauncher';
 import { IPtyBridge } from './terminal/IPtyBridge';
 import { ILaunchedSessionStore } from './persistence/ILaunchedSessionStore';
+import { ISessionHistoryStore } from './persistence/ISessionHistoryStore';
+import { ISessionHistoryService } from './persistence/ISessionHistoryService';
 import {
   PANEL_TITLE,
   LOG_PREFIX,
@@ -55,6 +57,8 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly ptyBridge: IPtyBridge;
   // TODO: Extract dependency bag object when parameter count exceeds 10
   private readonly launchedSessionStore: ILaunchedSessionStore;
+  private readonly sessionHistoryStore: ISessionHistoryStore;
+  private readonly sessionHistoryService: ISessionHistoryService;
   private readonly workspaceState: vscode.Memento;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingAdoptions = new Set<string>();
@@ -83,6 +87,8 @@ export class DashboardPanel implements vscode.Disposable {
    * @param sessionLauncher - Launches Claude Code sessions from within Conductor
    * @param ptyBridge - Relays PTY I/O for Conductor-launched sessions
    * @param launchedSessionStore - Persistence layer for Conductor-launched session IDs
+   * @param sessionHistoryStore - Persistence layer for session history metadata
+   * @param sessionHistoryService - Service that builds history entries for the webview
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
@@ -93,7 +99,9 @@ export class DashboardPanel implements vscode.Disposable {
     visibilityStore: ISessionVisibilityStore,
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge,
-    launchedSessionStore: ILaunchedSessionStore
+    launchedSessionStore: ILaunchedSessionStore,
+    sessionHistoryStore: ISessionHistoryStore,
+    sessionHistoryService: ISessionHistoryService
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -125,6 +133,8 @@ export class DashboardPanel implements vscode.Disposable {
       sessionLauncher,
       ptyBridge,
       launchedSessionStore,
+      sessionHistoryStore,
+      sessionHistoryService,
       context.workspaceState
     );
 
@@ -141,6 +151,8 @@ export class DashboardPanel implements vscode.Disposable {
     sessionLauncher: ISessionLauncher,
     ptyBridge: IPtyBridge,
     launchedSessionStore: ILaunchedSessionStore,
+    sessionHistoryStore: ISessionHistoryStore,
+    sessionHistoryService: ISessionHistoryService,
     workspaceState: vscode.Memento
   ) {
     this.panel = panel;
@@ -152,6 +164,8 @@ export class DashboardPanel implements vscode.Disposable {
     this.sessionLauncher = sessionLauncher;
     this.ptyBridge = ptyBridge;
     this.launchedSessionStore = launchedSessionStore;
+    this.sessionHistoryStore = sessionHistoryStore;
+    this.sessionHistoryService = sessionHistoryService;
     this.workspaceState = workspaceState;
     this.conductorLaunchedIds = new Set(this.launchedSessionStore.getAll());
     this.restoreLaunchedSessionModes();
@@ -232,6 +246,9 @@ export class DashboardPanel implements vscode.Disposable {
     // Prune PTY buffers for sessions that SessionTracker no longer knows about
     const knownIds = new Set(state.sessions.map((s) => s.sessionId));
     this.pruneOrphanedPtyBuffers(knownIds);
+
+    // Update history store with latest display names and metadata from live sessions
+    this.updateHistoryFromLiveSessions(state.sessions);
   }
 
   /**
@@ -263,6 +280,7 @@ export class DashboardPanel implements vscode.Disposable {
     this.launchedSessionStore.save(sessionId).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.PANEL} Failed to persist launched session: ${err}`);
     });
+    this.saveInitialHistoryMetadata(sessionId);
     this.ptyBridge.registerSession(sessionId);
     this.postMessage({
       type: 'session:launch-status',
@@ -395,6 +413,12 @@ export class DashboardPanel implements vscode.Disposable {
         break;
       case 'settings:update':
         this.handleSettingsUpdate(message.autoHidePatterns);
+        break;
+      case 'history:request':
+        this.handleHistoryRequest();
+        break;
+      case 'history:resume':
+        this.handleHistoryResume(message.sessionId);
         break;
     }
   }
@@ -756,13 +780,13 @@ export class DashboardPanel implements vscode.Disposable {
 
   /**
    * Adopt an external session by resuming it in a VS Code terminal.
-   * Resolves continuation chains and guards against duplicate adoptions.
+   * Passes all continuation group members as search candidates so ProcessDiscovery
+   * can find the terminal regardless of which member ID it was started with.
    *
-   * @param sessionId - The session ID to adopt (resolved to most recent continuation member)
+   * @param sessionId - The session ID to adopt (any group member)
    * @param text - Message to deliver via `--print` (empty = adopt only)
    */
   private async adoptSession(sessionId: string, text: string): Promise<void> {
-    const targetId = this.sessionTracker.getMostRecentContinuationMember(sessionId);
     const groupMembers = this.sessionTracker.getGroupMembers(sessionId);
     const primaryId = groupMembers[0]; // earliest member = primary
 
@@ -770,15 +794,25 @@ export class DashboardPanel implements vscode.Disposable {
     this.pendingAdoptions.add(primaryId);
 
     const state = this.sessionTracker.getState(null);
-    const sessionCwd = state.sessions.find((s) => s.sessionId === targetId)?.cwd;
+    // Get CWD from any group member that has one
+    const sessionCwd = groupMembers
+      .map((id) => state.sessions.find((s) => s.sessionId === id)?.cwd)
+      .find(Boolean);
 
     try {
-      await this.sessionLauncher.transfer(targetId, text, sessionCwd);
-      this.conductorLaunchedIds.add(targetId);
-      this.launchedSessionStore.save(targetId).catch((err: unknown) => {
+      // Pass all group members — transfer() will find which terminal is running which ID
+      const resumedId = await this.sessionLauncher.transfer(
+        sessionId,
+        text,
+        sessionCwd,
+        groupMembers
+      );
+      this.conductorLaunchedIds.add(resumedId);
+      this.launchedSessionStore.save(resumedId).catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to persist adopted session: ${err}`);
       });
-      this.ptyBridge.registerSession(targetId);
+      this.saveInitialHistoryMetadata(resumedId);
+      this.ptyBridge.registerSession(resumedId);
     } finally {
       this.pendingAdoptions.delete(primaryId);
     }
@@ -814,15 +848,128 @@ export class DashboardPanel implements vscode.Disposable {
       if (this.launchedSessionModes.delete(sessionId)) {
         modesChanged = true;
       }
-      this.launchedSessionStore.remove(sessionId).catch((err: unknown) => {
-        console.log(`${LOG_PREFIX.PANEL} Failed to remove pruned session from store: ${err}`);
-      });
+      // NOTE: We intentionally do NOT call launchedSessionStore.remove() here.
+      // The store's TTL handles natural expiry. Keeping entries allows the History
+      // tab to show sessions that have left SessionTracker's active memory.
     }
     if (modesChanged) {
       this.persistLaunchedSessionModes();
     }
     if (toRemove.length > 0) {
       console.log(`${LOG_PREFIX.PANEL} Pruned ${toRemove.length} orphaned PTY buffer(s)`);
+    }
+  }
+
+  // ── History helpers ──────────────────────────────────────────────────
+
+  /** Handle the webview requesting history entries for the History tab. */
+  private handleHistoryRequest(): void {
+    const activeIds = new Set(this.sessionTracker.getState(null).sessions.map((s) => s.sessionId));
+    const entries = this.sessionHistoryService.buildEntries(activeIds);
+    this.postMessage({ type: 'history:full', entries });
+  }
+
+  /**
+   * Handle the user clicking Resume on a history entry.
+   *
+   * If the session is already active in the dashboard, focuses it instead of
+   * launching a duplicate. Otherwise, calls `sessionLauncher.resume()` with
+   * the working directory from the history store.
+   *
+   * @param sessionId - The session ID to resume from history
+   */
+  private handleHistoryResume(sessionId: string): void {
+    // Check if the session is already active in SessionTracker
+    const state = this.sessionTracker.getState(null);
+    const activeSession = state.sessions.find((s) => s.sessionId === sessionId);
+    if (activeSession) {
+      console.log(`${LOG_PREFIX.PANEL} History resume → session ${sessionId} is active, focusing`);
+      this.focusSession(sessionId);
+      return;
+    }
+
+    // Look up the stored CWD from the history store
+    const historyEntry = this.sessionHistoryStore.get(sessionId);
+    const cwd = historyEntry?.cwd;
+
+    console.log(`${LOG_PREFIX.PANEL} History resume → launching session ${sessionId}`);
+    this.sessionLauncher
+      .resume(sessionId, '', cwd)
+      .then(() => {
+        // The resumed session shares the same sessionId, so register it
+        this.conductorLaunchedIds.add(sessionId);
+        this.launchedSessionStore.save(sessionId).catch((err: unknown) => {
+          console.log(`${LOG_PREFIX.PANEL} Failed to persist resumed session: ${err}`);
+        });
+        this.ptyBridge.registerSession(sessionId);
+        this.postMessage({
+          type: 'session:launch-status',
+          sessionId,
+          status: 'launched',
+        });
+        this.startLaunchDiscoveryPoll(sessionId);
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to resume session from history: ${err}`);
+        this.postMessage({
+          type: 'session:launch-status',
+          status: 'error',
+          error: String(err),
+        });
+      });
+  }
+
+  /**
+   * Save initial history metadata for a newly launched/adopted session.
+   * Uses workspace folder CWD as a best-effort value until the session's
+   * actual CWD is known from JSONL records.
+   *
+   * @param sessionId - The session ID to save initial metadata for
+   */
+  private saveInitialHistoryMetadata(sessionId: string): void {
+    const workspaceCwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    this.sessionHistoryStore
+      .save({
+        sessionId,
+        displayName: sessionId.slice(0, 8), // inline-ok: slug fallback until auto-name resolves
+        cwd: workspaceCwd,
+        filePath: '', // Will be updated when SessionTracker discovers the JSONL file
+        savedAt: Date.now(),
+      })
+      .catch((err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to save initial history metadata: ${err}`);
+      });
+  }
+
+  /**
+   * Update history store entries with the latest metadata from live sessions.
+   * Only updates entries that already exist in the store (Conductor-launched sessions).
+   *
+   * @param sessions - Current live sessions from SessionTracker
+   */
+  private updateHistoryFromLiveSessions(sessions: SessionInfo[]): void {
+    for (const session of sessions) {
+      const existing = this.sessionHistoryStore.get(session.sessionId);
+      if (!existing) continue;
+
+      const displayName =
+        session.customName || session.autoName || session.slug || existing.displayName;
+      const needsUpdate =
+        displayName !== existing.displayName ||
+        (session.cwd && session.cwd !== existing.cwd) ||
+        (session.filePath && session.filePath !== existing.filePath);
+
+      if (needsUpdate) {
+        this.sessionHistoryStore
+          .update(session.sessionId, {
+            displayName,
+            ...(session.cwd ? { cwd: session.cwd } : {}),
+            ...(session.filePath ? { filePath: session.filePath } : {}),
+          })
+          .catch((err: unknown) => {
+            console.log(`${LOG_PREFIX.PANEL} Failed to update history metadata: ${err}`);
+          });
+      }
     }
   }
 

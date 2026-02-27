@@ -12,7 +12,14 @@
  * elsewhere in the codebase.
  */
 
-import { SessionInfo, ActivityEvent, ConversationTurn, ToolStatEntry, TokenSummary } from './types';
+import {
+  SessionInfo,
+  ActivityEvent,
+  ConversationTurn,
+  ToolStatEntry,
+  TokenSummary,
+  HistoryEntry,
+} from './types';
 import type { LaunchMode } from './sharedConstants';
 
 /** Result of attempting to send user input to a Claude Code terminal. */
@@ -60,7 +67,9 @@ export type ExtensionToWebviewMessage =
   /** Persisted launch mode preference pushed to the webview on `ready`. */
   | { type: 'launch-mode:current'; mode: LaunchMode }
   /** Extension-initiated session focus (e.g. from Quick Pick). Webview should update its selection. */
-  | { type: 'session:focus-command'; sessionId: string };
+  | { type: 'session:focus-command'; sessionId: string }
+  /** Session history entries for the History tab. Sent on `history:request`. */
+  | { type: 'history:full'; entries: HistoryEntry[] };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -97,4 +106,8 @@ export type WebviewToExtensionMessage =
   /** Webview updates auto-hide patterns (persisted to VS Code settings). */
   | { type: 'settings:update'; autoHidePatterns: string[] }
   /** User changed the launch mode preference in the split button dropdown. */
-  | { type: 'session:set-launch-mode'; mode: LaunchMode };
+  | { type: 'session:set-launch-mode'; mode: LaunchMode }
+  /** Webview requests session history data (sent when switching to History tab). */
+  | { type: 'history:request' }
+  /** User clicked Resume on a history entry. */
+  | { type: 'history:resume'; sessionId: string };

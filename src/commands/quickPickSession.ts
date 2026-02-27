@@ -21,6 +21,8 @@ import type { ISessionOrderStore } from '../persistence/ISessionOrderStore';
 import type { ISessionLauncher } from '../terminal/ISessionLauncher';
 import type { IPtyBridge } from '../terminal/IPtyBridge';
 import type { ILaunchedSessionStore } from '../persistence/ILaunchedSessionStore';
+import type { ISessionHistoryStore } from '../persistence/ISessionHistoryStore';
+import type { ISessionHistoryService } from '../persistence/ISessionHistoryService';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -40,6 +42,8 @@ export interface CreateOrShowDeps {
   sessionLauncher: ISessionLauncher;
   ptyBridge: IPtyBridge;
   launchedSessionStore: ILaunchedSessionStore;
+  sessionHistoryStore: ISessionHistoryStore;
+  sessionHistoryService: ISessionHistoryService;
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +258,9 @@ export async function quickPickSession(
     visibilityStore,
     createOrShowDeps.sessionLauncher,
     createOrShowDeps.ptyBridge,
-    createOrShowDeps.launchedSessionStore
+    createOrShowDeps.launchedSessionStore,
+    createOrShowDeps.sessionHistoryStore,
+    createOrShowDeps.sessionHistoryService
   );
 
   panel.focusSession(selected.sessionId);

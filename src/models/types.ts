@@ -418,6 +418,27 @@ export interface SessionInfo {
 }
 
 /**
+ * A session history entry for the History tab.
+ *
+ * @remarks
+ * Populated by {@link SessionHistoryService} from persisted metadata.
+ * Sent to the webview via the `history:full` IPC message. Does NOT include
+ * `filePath` — that's an extension-only concern for validation.
+ */
+export interface HistoryEntry {
+  /** Session identifier (UUID). */
+  sessionId: string;
+  /** Display name (custom name, auto-name, or slug fallback). */
+  displayName: string;
+  /** Working directory of the session — used for resume. */
+  cwd: string;
+  /** ISO 8601 timestamp of the session's last file modification. */
+  lastActivityAt: string;
+  /** Whether the session is currently visible in the live dashboard. */
+  isActive: boolean;
+}
+
+/**
  * A single activity event displayed in the dashboard activity feed.
  *
  * @remarks

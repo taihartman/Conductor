@@ -16,6 +16,8 @@ export function useVsCodeMessage(): void {
     setAutoHidePatterns,
     setFocusedSession,
     setLaunchMode,
+    setHistoryEntries,
+    setActiveTab,
   } = useDashboardStore();
 
   useEffect(() => {
@@ -69,6 +71,10 @@ export function useVsCodeMessage(): void {
           break;
         case 'session:focus-command':
           setFocusedSession(message.sessionId);
+          setActiveTab('sessions');
+          break;
+        case 'history:full':
+          setHistoryEntries(message.entries);
           break;
       }
     }
@@ -88,5 +94,7 @@ export function useVsCodeMessage(): void {
     setAutoHidePatterns,
     setFocusedSession,
     setLaunchMode,
+    setHistoryEntries,
+    setActiveTab,
   ]);
 }

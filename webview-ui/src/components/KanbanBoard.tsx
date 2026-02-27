@@ -1,7 +1,8 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { SessionInfo, SessionStatus } from '@shared/types';
 import { SESSION_STATUSES } from '@shared/sharedConstants';
 import { STATUS_CONFIG } from '../config/statusConfig';
+import { SIZES } from '../config/colors';
 import { KanbanColumn } from './KanbanColumn';
 import { UI_STRINGS } from '../config/strings';
 
@@ -43,6 +44,44 @@ const COLUMNS: readonly ColumnDef[] = [
 
 /** Index of the fallback column for sessions with unrecognized status. */
 const FALLBACK_COLUMN_INDEX = COLUMNS.length - 1; // inline-ok: completed column
+
+/** Priority ordering for vertical (narrow) layout — most urgent first. */
+export const VERTICAL_COLUMN_ORDER = ['error', 'awaiting', 'performing', 'completed'] as const;
+
+/** Returns columns in the correct order for the current layout mode. */
+export function getOrderedColumns(isVertical: boolean): readonly ColumnDef[] {
+  if (!isVertical) return COLUMNS;
+  return VERTICAL_COLUMN_ORDER.map((key) => COLUMNS.find((c) => c.key === key)!);
+}
+
+/** In vertical mode, filters out columns with no sessions. */
+export function getVisibleColumns(
+  orderedColumns: readonly ColumnDef[],
+  grouped: Map<string, SessionInfo[]>,
+  isVertical: boolean,
+): readonly ColumnDef[] {
+  if (!isVertical) return orderedColumns;
+  return orderedColumns.filter((col) => (grouped.get(col.key)?.length ?? 0) > 0);
+}
+
+/**
+ * Sorts each column's sessions by `lastActivityAt` descending (most recent first).
+ * ISO 8601 strings sort lexicographically, so no Date parsing is needed.
+ */
+export function sortColumnSessions(
+  grouped: Map<string, SessionInfo[]>,
+): Map<string, SessionInfo[]> {
+  const sorted = new Map<string, SessionInfo[]>();
+  for (const [key, sessions] of grouped) {
+    sorted.set(
+      key,
+      [...sessions].sort((a, b) =>
+        b.lastActivityAt > a.lastActivityAt ? 1 : b.lastActivityAt < a.lastActivityAt ? -1 : 0,
+      ),
+    );
+  }
+  return sorted;
+}
 
 interface KanbanBoardProps {
   sessions: SessionInfo[];
@@ -92,35 +131,67 @@ export function KanbanBoard({
   onUnhide,
   isHiddenTab,
 }: KanbanBoardProps): React.ReactElement {
-  const grouped = useMemo(() => groupSessionsByColumn(sessions), [sessions]);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [isVertical, setIsVertical] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? 0;
+      const shouldBeVertical = width < SIZES.KANBAN_VERTICAL_BREAKPOINT;
+      setIsVertical((prev) => (prev === shouldBeVertical ? prev : shouldBeVertical));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const grouped = useMemo(() => {
+    const groups = groupSessionsByColumn(sessions);
+    return sortColumnSessions(groups);
+  }, [sessions]);
+
+  const visibleColumns = useMemo(() => {
+    const ordered = getOrderedColumns(isVertical);
+    return getVisibleColumns(ordered, grouped, isVertical);
+  }, [isVertical, grouped]);
 
   return (
     <div
+      ref={containerRef}
       style={{
         flex: 1,
         display: 'flex',
-        flexDirection: 'row',
+        flexDirection: isVertical ? 'column' : 'row',
         gap: '4px', // inline-ok
-        overflow: 'hidden',
+        overflow: isVertical ? 'auto' : 'hidden',
         minHeight: 0,
         padding: '0 var(--spacing-sm) var(--spacing-sm)', // inline-ok
       }}
     >
-      {COLUMNS.map((col) => (
-        <KanbanColumn
+      {visibleColumns.map((col) => (
+        <div
           key={col.key}
-          label={col.label}
-          sessions={grouped.get(col.key) || []}
-          borderColor={`var(${col.cssVar})`}
-          focusedSessionId={focusedSessionId}
-          costBySession={costBySession}
-          onSessionClick={onSessionClick}
-          onSessionDoubleClick={onSessionDoubleClick}
-          onRename={onRename}
-          onHide={onHide}
-          onUnhide={onUnhide}
-          isHiddenTab={isHiddenTab}
-        />
+          style={
+            isVertical
+              ? { maxHeight: SIZES.KANBAN_VERTICAL_ROW_MAX_HEIGHT, overflow: 'auto' }
+              : { flex: 1, minWidth: 0, display: 'flex' }
+          }
+        >
+          <KanbanColumn
+            label={col.label}
+            sessions={grouped.get(col.key) || []}
+            borderColor={`var(${col.cssVar})`}
+            focusedSessionId={focusedSessionId}
+            costBySession={costBySession}
+            onSessionClick={onSessionClick}
+            onSessionDoubleClick={onSessionDoubleClick}
+            onRename={onRename}
+            onHide={onHide}
+            onUnhide={onUnhide}
+            isHiddenTab={isHiddenTab}
+          />
+        </div>
       ))}
     </div>
   );

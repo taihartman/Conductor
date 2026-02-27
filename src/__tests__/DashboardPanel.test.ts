@@ -147,7 +147,7 @@ function createMockSessionLauncher(): any {
     resize: vi.fn(),
     launch: vi.fn(() => Promise.resolve('new-session-id')),
     resume: vi.fn(() => Promise.resolve()),
-    transfer: vi.fn(() => Promise.resolve()),
+    transfer: vi.fn((...args: any[]) => Promise.resolve(args[0] as string)),
     setPreSpawnCallback: vi.fn(),
     dispose: vi.fn(),
   };
@@ -178,6 +178,24 @@ function createMockLaunchedSessionStore(): any {
     remove: vi.fn(() => Promise.resolve()),
     prune: vi.fn(() => Promise.resolve()),
     dispose: vi.fn(),
+  };
+}
+
+function createMockSessionHistoryStore(): any {
+  return {
+    save: vi.fn(() => Promise.resolve()),
+    update: vi.fn(() => Promise.resolve()),
+    getAll: vi.fn(() => []),
+    get: vi.fn(() => undefined),
+    remove: vi.fn(() => Promise.resolve()),
+    prune: vi.fn(() => Promise.resolve()),
+    dispose: vi.fn(),
+  };
+}
+
+function createMockSessionHistoryService(): any {
+  return {
+    buildEntries: vi.fn(() => []),
   };
 }
 
@@ -229,7 +247,9 @@ describe('DashboardPanel message routing', () => {
       createMockVisibilityStore(),
       launcher,
       ptyBridge,
-      createMockLaunchedSessionStore()
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService()
     );
 
     // Clear the initial state:full post from createOrShow
@@ -279,8 +299,7 @@ describe('DashboardPanel message routing', () => {
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
       launcher.isLaunchedSession.mockReturnValue(false);
 
-      const transferPromise = Promise.resolve();
-      launcher.transfer.mockReturnValue(transferPromise);
+      launcher.transfer.mockResolvedValue('ext-session');
 
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'hi' });
 
@@ -291,8 +310,6 @@ describe('DashboardPanel message routing', () => {
       expect(adopting).toBeDefined();
       expect(adopting.sessionId).toBe('ext-session');
 
-      // Wait for transfer to complete
-      await transferPromise;
       // Flush microtask queue for .then()
       await vi.waitFor(() => {
         const sent = postedMessages.find(
@@ -301,7 +318,10 @@ describe('DashboardPanel message routing', () => {
         expect(sent).toBeDefined();
       });
 
-      expect(launcher.transfer).toHaveBeenCalledWith('ext-session', 'hi', undefined);
+      // transfer receives all group members as 4th arg
+      expect(launcher.transfer).toHaveBeenCalledWith('ext-session', 'hi', undefined, [
+        'ext-session',
+      ]);
       expect(ptyBridge.registerSession).toHaveBeenCalledWith('ext-session');
     });
 
@@ -310,8 +330,7 @@ describe('DashboardPanel message routing', () => {
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
       launcher.isLaunchedSession.mockReturnValue(false);
 
-      const transferPromise = Promise.reject(new Error('spawn failed'));
-      launcher.transfer.mockReturnValue(transferPromise);
+      launcher.transfer.mockRejectedValue(new Error('spawn failed'));
 
       sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'hi' });
 
@@ -349,9 +368,8 @@ describe('DashboardPanel message routing', () => {
 
   describe('session:adopt', () => {
     it('posts adopted status on success', async () => {
-      tracker.getMostRecentContinuationMember.mockReturnValue('ext-session');
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
-      launcher.transfer.mockResolvedValue(undefined);
+      launcher.transfer.mockResolvedValue('ext-session');
 
       sendMessage({ type: 'session:adopt', sessionId: 'ext-session' });
 
@@ -363,11 +381,12 @@ describe('DashboardPanel message routing', () => {
         expect(adopted.sessionId).toBe('ext-session');
       });
 
+      // transfer receives all group members as 4th arg
+      expect(launcher.transfer).toHaveBeenCalledWith('ext-session', '', undefined, ['ext-session']);
       expect(ptyBridge.registerSession).toHaveBeenCalledWith('ext-session');
     });
 
     it('posts error status on failure', async () => {
-      tracker.getMostRecentContinuationMember.mockReturnValue('ext-session');
       tracker.getGroupMembers.mockReturnValue(['ext-session']);
       launcher.transfer.mockRejectedValue(new Error('no claude'));
 
@@ -380,6 +399,30 @@ describe('DashboardPanel message routing', () => {
         expect(error).toBeDefined();
         expect(error.error).toContain('no claude');
       });
+    });
+
+    it('passes all continuation group members and uses returned ID for registration', async () => {
+      // Group has [A, B, C], transfer finds terminal on B and returns B
+      tracker.getGroupMembers.mockReturnValue(['member-a', 'member-b', 'member-c']);
+      launcher.transfer.mockResolvedValue('member-b');
+
+      sendMessage({ type: 'session:adopt', sessionId: 'member-a' });
+
+      await vi.waitFor(() => {
+        const adopted = postedMessages.find(
+          (m) => m.type === 'session:adopt-status' && m.status === 'adopted'
+        );
+        expect(adopted).toBeDefined();
+      });
+
+      // Should pass all group members as searchIds
+      expect(launcher.transfer).toHaveBeenCalledWith('member-a', '', undefined, [
+        'member-a',
+        'member-b',
+        'member-c',
+      ]);
+      // Should register with the returned ID (member-b), not the original (member-a)
+      expect(ptyBridge.registerSession).toHaveBeenCalledWith('member-b');
     });
   });
 
@@ -721,7 +764,9 @@ describe('DashboardPanel session ordering', () => {
       createMockVisibilityStore(),
       createMockSessionLauncher(),
       createMockPtyBridge(),
-      createMockLaunchedSessionStore()
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService()
     );
 
     postedMessages.length = 0;
@@ -812,5 +857,144 @@ describe('DashboardPanel session ordering', () => {
     expect(ids).toContain('new-1');
     // new-1 should be at the end
     expect(ids.indexOf('new-1')).toBe(2);
+  });
+});
+
+// ── History feature tests ────────────────────────────────────────────
+
+describe('DashboardPanel history support', () => {
+  let tracker: ReturnType<typeof createMockSessionTracker>;
+  let launcher: ReturnType<typeof createMockSessionLauncher>;
+  let ptyBridge: ReturnType<typeof createMockPtyBridge>;
+  let historyService: ReturnType<typeof createMockSessionHistoryService>;
+  let historyStore: ReturnType<typeof createMockSessionHistoryStore>;
+  let launchedStore: ReturnType<typeof createMockLaunchedSessionStore>;
+
+  beforeEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+
+    postedMessages.length = 0;
+    messageHandler = undefined;
+
+    for (const key of Object.keys(mockWorkspaceStateStore)) {
+      delete mockWorkspaceStateStore[key];
+    }
+
+    tracker = createMockSessionTracker();
+    launcher = createMockSessionLauncher();
+    ptyBridge = createMockPtyBridge();
+    historyService = createMockSessionHistoryService();
+    historyStore = createMockSessionHistoryStore();
+    launchedStore = createMockLaunchedSessionStore();
+
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      tracker,
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      launcher,
+      ptyBridge,
+      launchedStore,
+      historyStore,
+      historyService
+    );
+
+    postedMessages.length = 0;
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  describe('pruneOrphanedPtyBuffers does not remove from launchedSessionStore', () => {
+    it('keeps launchedSessionStore entries when sessions leave SessionTracker', () => {
+      // Register a PTY buffer for a session
+      ptyBridge.registerSession('orphan-id');
+
+      // Trigger postFullState with no sessions → prunes orphaned PTY buffers
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      // PTY buffer should be unregistered
+      expect(ptyBridge.unregisterSession).toHaveBeenCalledWith('orphan-id');
+      // But launchedSessionStore.remove should NOT be called
+      expect(launchedStore.remove).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('history:request', () => {
+    it('calls sessionHistoryService.buildEntries and posts history:full', () => {
+      const mockEntries = [
+        {
+          sessionId: 'hist-1',
+          displayName: 'Test',
+          cwd: '/test',
+          lastActivityAt: '2026-02-27T00:00:00Z',
+          isActive: false,
+        },
+      ];
+      historyService.buildEntries.mockReturnValue(mockEntries);
+
+      sendMessage({ type: 'history:request' });
+
+      expect(historyService.buildEntries).toHaveBeenCalled();
+      const historyMsg = lastPosted('history:full');
+      expect(historyMsg).toBeDefined();
+      expect(historyMsg.entries).toEqual(mockEntries);
+    });
+  });
+
+  describe('history:resume', () => {
+    it('focuses active session instead of relaunching', () => {
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'active-session', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      sendMessage({ type: 'history:resume', sessionId: 'active-session' });
+
+      // Should send a focus command, not call resume()
+      const focusMsg = lastPosted('session:focus-command');
+      expect(focusMsg).toBeDefined();
+      expect(focusMsg.sessionId).toBe('active-session');
+      expect(launcher.resume).not.toHaveBeenCalled();
+    });
+
+    it('calls sessionLauncher.resume() for inactive sessions', async () => {
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      historyStore.get.mockReturnValue({
+        sessionId: 'old-session',
+        cwd: '/old/workspace',
+        displayName: 'Old',
+        filePath: '/path/old.jsonl',
+        savedAt: Date.now(),
+      });
+
+      sendMessage({ type: 'history:resume', sessionId: 'old-session' });
+
+      // Should call resume with the stored CWD
+      await vi.waitFor(() => {
+        expect(launcher.resume).toHaveBeenCalledWith('old-session', '', '/old/workspace');
+      });
+    });
   });
 });

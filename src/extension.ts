@@ -8,6 +8,8 @@ import { SessionLauncher } from './terminal/SessionLauncher';
 import { ProcessDiscovery } from './terminal/ProcessDiscovery';
 import { PtyBridge } from './terminal/PtyBridge';
 import { LaunchedSessionStore } from './persistence/LaunchedSessionStore';
+import { SessionHistoryStore } from './persistence/SessionHistoryStore';
+import { SessionHistoryService } from './persistence/SessionHistoryService';
 import { AutoReconnectService } from './terminal/AutoReconnectService';
 import {
   OUTPUT_CHANNEL_NAME,
@@ -56,6 +58,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const launchedSessionStore = new LaunchedSessionStore(context.workspaceState, outputChannel);
   context.subscriptions.push(launchedSessionStore);
 
+  const sessionHistoryStore = new SessionHistoryStore(context.workspaceState, outputChannel);
+  context.subscriptions.push(sessionHistoryStore);
+
+  const sessionHistoryService = new SessionHistoryService(sessionHistoryStore, nameStore);
+
   const autoReconnect = new AutoReconnectService(
     sessionTracker,
     sessionLauncher,
@@ -75,7 +82,9 @@ export function activate(context: vscode.ExtensionContext): void {
       visibilityStore,
       sessionLauncher,
       ptyBridge,
-      launchedSessionStore
+      launchedSessionStore,
+      sessionHistoryStore,
+      sessionHistoryService
     );
   });
 
@@ -109,6 +118,8 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionLauncher,
       ptyBridge,
       launchedSessionStore,
+      sessionHistoryStore,
+      sessionHistoryService,
     }).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.EXTENSION} Quick Pick failed: ${err}`);
     });

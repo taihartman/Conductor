@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { groupSessionsByColumn } from '../../webview-ui/src/components/KanbanBoard';
+import {
+  groupSessionsByColumn,
+  sortColumnSessions,
+  getOrderedColumns,
+  getVisibleColumns,
+  VERTICAL_COLUMN_ORDER,
+} from '../../webview-ui/src/components/KanbanBoard';
 import type { SessionInfo } from '../../src/models/types';
 
 function makeSession(overrides: Partial<SessionInfo>): SessionInfo {
@@ -89,5 +95,98 @@ describe('groupSessionsByColumn', () => {
     const sessions = [makeSession({ sessionId: 'a', status: 'unknown' as any })];
     const result = groupSessionsByColumn(sessions);
     expect(result.get('completed')!.map((s) => s.sessionId)).toEqual(['a']);
+  });
+});
+
+describe('sortColumnSessions', () => {
+  it('sorts sessions by lastActivityAt descending (most recent first)', () => {
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'performing',
+        [
+          makeSession({ sessionId: 'old', lastActivityAt: '2026-02-25T10:00:00Z' }),
+          makeSession({ sessionId: 'newest', lastActivityAt: '2026-02-25T14:00:00Z' }),
+          makeSession({ sessionId: 'mid', lastActivityAt: '2026-02-25T12:00:00Z' }),
+        ],
+      ],
+    ]);
+    const result = sortColumnSessions(grouped);
+    expect(result.get('performing')!.map((s) => s.sessionId)).toEqual(['newest', 'mid', 'old']);
+  });
+
+  it('preserves order for sessions with identical lastActivityAt', () => {
+    const timestamp = '2026-02-25T12:00:00Z';
+    const grouped = new Map<string, SessionInfo[]>([
+      [
+        'completed',
+        [
+          makeSession({ sessionId: 'first', lastActivityAt: timestamp }),
+          makeSession({ sessionId: 'second', lastActivityAt: timestamp }),
+          makeSession({ sessionId: 'third', lastActivityAt: timestamp }),
+        ],
+      ],
+    ]);
+    const result = sortColumnSessions(grouped);
+    expect(result.get('completed')!.map((s) => s.sessionId)).toEqual(['first', 'second', 'third']);
+  });
+
+  it('handles empty column without error', () => {
+    const grouped = new Map<string, SessionInfo[]>([['awaiting', []]]);
+    const result = sortColumnSessions(grouped);
+    expect(result.get('awaiting')!).toHaveLength(0);
+  });
+});
+
+describe('getOrderedColumns (vertical layout ordering)', () => {
+  it('returns horizontal order when not vertical', () => {
+    const columns = getOrderedColumns(false);
+    expect(columns.map((c) => c.key)).toEqual(['performing', 'awaiting', 'error', 'completed']);
+  });
+
+  it('returns priority order when vertical', () => {
+    const columns = getOrderedColumns(true);
+    expect(columns.map((c) => c.key)).toEqual([...VERTICAL_COLUMN_ORDER]);
+  });
+
+  it('VERTICAL_COLUMN_ORDER prioritizes needs-attention first', () => {
+    expect(VERTICAL_COLUMN_ORDER[0]).toBe('error');
+  });
+});
+
+describe('getVisibleColumns (empty-row filtering)', () => {
+  it('returns all columns in horizontal mode even when empty', () => {
+    const columns = getOrderedColumns(false);
+    const grouped = new Map<string, SessionInfo[]>([
+      ['performing', []],
+      ['awaiting', []],
+      ['error', []],
+      ['completed', []],
+    ]);
+    const visible = getVisibleColumns(columns, grouped, false);
+    expect(visible.map((c) => c.key)).toEqual(['performing', 'awaiting', 'error', 'completed']);
+  });
+
+  it('excludes empty columns in vertical mode', () => {
+    const columns = getOrderedColumns(true);
+    const grouped = new Map<string, SessionInfo[]>([
+      ['performing', [makeSession({ sessionId: 'a', status: 'working' })]],
+      ['awaiting', []],
+      ['error', [makeSession({ sessionId: 'b', status: 'error' })]],
+      ['completed', []],
+    ]);
+    const visible = getVisibleColumns(columns, grouped, true);
+    expect(visible.map((c) => c.key)).toEqual(['error', 'performing']);
+  });
+
+  it('returns no columns when all are empty in vertical mode', () => {
+    const columns = getOrderedColumns(true);
+    const grouped = new Map<string, SessionInfo[]>([
+      ['performing', []],
+      ['awaiting', []],
+      ['error', []],
+      ['completed', []],
+    ]);
+    const visible = getVisibleColumns(columns, grouped, true);
+    expect(visible).toHaveLength(0);
   });
 });

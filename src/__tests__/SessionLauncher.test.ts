@@ -457,6 +457,129 @@ describe('SessionLauncher', () => {
       await launcher.transfer('session-xyz', 'msg', '/my/project');
       expect(discovery.findSessionOwner).toHaveBeenCalledWith('session-xyz', '/my/project');
     });
+
+    it('returns the sessionId when no process discovery provided', async () => {
+      const result = await launcher.transfer('session-abc', 'hello', '/test/workspace');
+      expect(result).toBe('session-abc');
+    });
+
+    it('returns the sessionId when no terminal match found', async () => {
+      const discovery = createMockProcessDiscovery({});
+      launcher.dispose();
+      launcher = new SessionLauncher(outputChannel, discovery);
+
+      const result = await launcher.transfer('session-abc', 'hello', '/test/workspace');
+      expect(result).toBe('session-abc');
+    });
+
+    it('returns the sessionId when terminal match found (no searchIds)', async () => {
+      const externalTerminal = { name: 'bash', dispose: vi.fn() };
+      const discovery = createMockProcessDiscovery({
+        terminal: externalTerminal as any,
+        claudePid: 9999,
+      });
+      launcher.dispose();
+      launcher = new SessionLauncher(outputChannel, discovery);
+
+      const result = await launcher.transfer('session-abc', 'hello', '/test/workspace');
+      expect(result).toBe('session-abc');
+    });
+
+    describe('with searchIds', () => {
+      it('finds terminal on 2nd member and resumes with matched ID', async () => {
+        const externalTerminal = { name: 'bash', dispose: vi.fn() };
+        const discovery: IProcessDiscovery = {
+          findSessionOwner: vi
+            .fn()
+            .mockResolvedValueOnce({}) // 1st ID — no match
+            .mockResolvedValueOnce({ terminal: externalTerminal, claudePid: 5555 }), // 2nd ID — match
+        };
+        launcher.dispose();
+        launcher = new SessionLauncher(outputChannel, discovery);
+
+        const result = await launcher.transfer('primary-id', 'msg', '/test/workspace', [
+          'member-a',
+          'member-b',
+          'member-c',
+        ]);
+
+        // Should have searched member-a then member-b
+        expect(discovery.findSessionOwner).toHaveBeenCalledTimes(2);
+        expect(discovery.findSessionOwner).toHaveBeenNthCalledWith(
+          1,
+          'member-a',
+          '/test/workspace'
+        );
+        expect(discovery.findSessionOwner).toHaveBeenNthCalledWith(
+          2,
+          'member-b',
+          '/test/workspace'
+        );
+
+        // Should have closed external terminal
+        expect(externalTerminal.dispose).toHaveBeenCalled();
+
+        // Should have resumed with matched ID (member-b), not primary-id
+        expect(launcher.isLaunchedSession('member-b')).toBe(true);
+        expect(result).toBe('member-b');
+      });
+
+      it('falls back to sessionId when no searchIds match', async () => {
+        const discovery: IProcessDiscovery = {
+          findSessionOwner: vi.fn().mockResolvedValue({}),
+        };
+        launcher.dispose();
+        launcher = new SessionLauncher(outputChannel, discovery);
+
+        const result = await launcher.transfer('primary-id', 'msg', '/test/workspace', [
+          'member-a',
+          'member-b',
+        ]);
+
+        // Should have searched all members
+        expect(discovery.findSessionOwner).toHaveBeenCalledTimes(2);
+
+        // Should fall back to resume with primary-id
+        expect(launcher.isLaunchedSession('primary-id')).toBe(true);
+        expect(result).toBe('primary-id');
+      });
+
+      it('returns resumed ID (not the sessionId param)', async () => {
+        const externalTerminal = { name: 'bash', dispose: vi.fn() };
+        const discovery: IProcessDiscovery = {
+          findSessionOwner: vi
+            .fn()
+            .mockResolvedValueOnce({ terminal: externalTerminal, claudePid: 1111 }),
+        };
+        launcher.dispose();
+        launcher = new SessionLauncher(outputChannel, discovery);
+
+        const result = await launcher.transfer('fallback-id', 'msg', '/test/workspace', [
+          'matched-id',
+        ]);
+
+        expect(result).toBe('matched-id');
+        expect(launcher.isLaunchedSession('matched-id')).toBe(true);
+      });
+
+      it('without searchIds behaves identically to before', async () => {
+        const externalTerminal = { name: 'bash', dispose: vi.fn() };
+        const discovery = createMockProcessDiscovery({
+          terminal: externalTerminal as any,
+          claudePid: 2222,
+        });
+        launcher.dispose();
+        launcher = new SessionLauncher(outputChannel, discovery);
+
+        const result = await launcher.transfer('session-abc', 'hello', '/test/workspace');
+
+        // Should search for session-abc (the sessionId)
+        expect(discovery.findSessionOwner).toHaveBeenCalledWith('session-abc', '/test/workspace');
+        expect(externalTerminal.dispose).toHaveBeenCalled();
+        expect(launcher.isLaunchedSession('session-abc')).toBe(true);
+        expect(result).toBe('session-abc');
+      });
+    });
   });
 
   describe('env isolation', () => {

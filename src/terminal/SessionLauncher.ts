@@ -206,14 +206,22 @@ export class SessionLauncher implements ISessionLauncher {
 
   /**
    * Transfer a running session from an external terminal into Conductor's PTY.
-   * Discovers the VS Code terminal owning the session, closes it, waits for
-   * the Claude process to exit, then resumes in Conductor's PTY.
-   * Falls back to direct resume() if no owning terminal is found.
-   * @param sessionId - The session ID to transfer
+   * When searchIds is provided, tries each ID in order against ProcessDiscovery.
+   * Resumes with the ID that was actually found in the terminal (not necessarily sessionId).
+   * Falls back to resume(sessionId) if no owning terminal is found.
+   *
+   * @param sessionId - Default session ID (used for resume fallback)
    * @param text - Optional message to deliver on resume
    * @param cwd - Working directory for the new terminal
+   * @param searchIds - Optional list of IDs to search for (e.g., continuation group members)
+   * @returns The session ID that was actually resumed
    */
-  async transfer(sessionId: string, text: string, cwd?: string): Promise<void> {
+  async transfer(
+    sessionId: string,
+    text: string,
+    cwd?: string,
+    searchIds?: readonly string[]
+  ): Promise<string> {
     if (isInsideClaudeSession()) {
       console.log(`${LOG_PREFIX.SESSION_LAUNCHER} Blocked: nested Claude Code session detected`);
       this.outputChannel.appendLine(
@@ -227,42 +235,61 @@ export class SessionLauncher implements ISessionLauncher {
         `${LOG_PREFIX.SESSION_LAUNCHER} No process discovery available, falling back to resume`
       );
       await this.resume(sessionId, text, cwd);
-      return;
+      return sessionId;
     }
 
-    const owner = await this.processDiscovery.findSessionOwner(sessionId, cwd);
+    // Search for the session — try all provided IDs or just sessionId
+    const idsToSearch = searchIds ?? [sessionId];
+    let owner: import('./IProcessDiscovery').ProcessOwnerResult = {};
+    let resumeWithId = sessionId;
+
+    for (const id of idsToSearch) {
+      owner = await this.processDiscovery.findSessionOwner(id, cwd);
+      if (owner.terminal) {
+        resumeWithId = id;
+        console.log(
+          `${LOG_PREFIX.SESSION_LAUNCHER} Matched group member ${id} → terminal "${owner.terminal.name}"`
+        );
+        break;
+      }
+    }
 
     if (!owner.terminal) {
       console.log(
         `${LOG_PREFIX.SESSION_LAUNCHER} No owning terminal found for ${sessionId}, falling back to resume`
       );
+      this.outputChannel.appendLine(
+        `${LOG_PREFIX.SESSION_LAUNCHER} No owning terminal found, resuming ${sessionId} directly`
+      );
       await this.resume(sessionId, text, cwd);
-      return;
+      return sessionId;
     }
 
     console.log(
-      `${LOG_PREFIX.SESSION_LAUNCHER} Transferring session ${sessionId}: closing terminal "${owner.terminal.name}"` +
+      `${LOG_PREFIX.SESSION_LAUNCHER} Transferring session ${resumeWithId}: closing terminal "${owner.terminal.name}"` +
         (owner.claudePid ? ` (claude pid: ${owner.claudePid})` : '')
     );
     this.outputChannel.appendLine(
-      `${LOG_PREFIX.SESSION_LAUNCHER} Transferring session ${sessionId}: closing external terminal`
+      `${LOG_PREFIX.SESSION_LAUNCHER} Transferring session ${resumeWithId}: closing external terminal`
     );
 
     owner.terminal.dispose();
     await delay(TIMING.TRANSFER_SETTLE_MS);
 
     try {
-      await this.resume(sessionId, text, cwd);
+      await this.resume(resumeWithId, text, cwd);
     } catch (err) {
       console.log(
-        `${LOG_PREFIX.SESSION_LAUNCHER} Resume failed after terminal close for ${sessionId}: ${err}`
+        `${LOG_PREFIX.SESSION_LAUNCHER} Resume failed after terminal close for ${resumeWithId}: ${err}`
       );
       this.outputChannel.appendLine(
-        `${LOG_PREFIX.SESSION_LAUNCHER} Transfer recovery: resume failed for session ${sessionId}. ` +
-          `Try running: claude --resume ${sessionId}`
+        `${LOG_PREFIX.SESSION_LAUNCHER} Transfer recovery: resume failed for session ${resumeWithId}. ` +
+          `Try running: claude --resume ${resumeWithId}`
       );
       throw err;
     }
+
+    return resumeWithId;
   }
 
   /**

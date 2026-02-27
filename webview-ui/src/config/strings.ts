@@ -90,11 +90,17 @@ export const UI_STRINGS = {
   CHAT_INPUT_OTHER_OPTION: 'Other \u2014 type a custom response below',
   TAB_SESSIONS: 'Sessions',
   TAB_HIDDEN: 'Hidden',
+  TAB_HISTORY: 'History',
   CONTEXT_MENU_HIDE: 'Hide',
   CONTEXT_MENU_UNHIDE: 'Unhide',
   CONTEXT_MENU_RENAME: 'Rename',
   CONTEXT_MENU_LABEL: 'Session options',
   HIDDEN_TAB_EMPTY: 'No hidden sessions',
+  HISTORY_EMPTY_TITLE: 'No Session History',
+  HISTORY_EMPTY_DESCRIPTION: 'Sessions launched from Conductor will appear here for 7 days.',
+  HISTORY_RESUME_BUTTON: 'Resume',
+  HISTORY_ACTIVE_BADGE: 'Active',
+  HISTORY_SEARCH_PLACEHOLDER: 'Filter history...',
   /** Badge text for merged continuation sessions. Use with template: `${count} parts`. */
   CONTINUATION_BADGE: '{count} parts',
   /** Segment divider label between continuations. Use with template: `Context cleared — continuation {n} of {total}`. */
@@ -136,4 +142,70 @@ export const UI_STRINGS = {
   /** Toggle button tooltips */
   KANBAN_TOGGLE_BOARD: 'Switch to board view',
   KANBAN_TOGGLE_LIST: 'Switch to list view',
+
+  // ── Help & Shortcuts section ──────────────────────────────────────
+  /** Section heading for the help area inside SettingsDrawer. */
+  HELP_SECTION_HEADING: 'Help & Shortcuts',
+  /** Sub-heading for keyboard shortcuts table. */
+  HELP_SHORTCUTS_HEADING: 'Keyboard Shortcuts',
+  /** Sub-heading for feature descriptions. */
+  HELP_FEATURES_HEADING: 'Features',
+
+  // Shortcut keys (use {modifier} placeholder resolved at render time)
+  HELP_KEY_SWITCH_SESSION: '{modifier}+Shift+;',
+  HELP_KEY_OPEN_DASHBOARD: '{modifier}+Shift+P \u2192 "Conductor: Open"',
+  HELP_KEY_REFRESH: '{modifier}+Shift+P \u2192 "Conductor: Refresh"',
+  HELP_KEY_LAUNCH: '{modifier}+Shift+P \u2192 "Conductor: Launch"',
+  HELP_KEY_RENAME: 'Double-click name',
+  HELP_KEY_SELECT: 'Click card',
+  HELP_KEY_EXPAND: 'Double-click card',
+
+  // Shortcut action descriptions
+  HELP_SHORTCUT_SWITCH_SESSION: 'Switch Session (Quick Pick)',
+  HELP_SHORTCUT_OPEN_DASHBOARD: 'Open Dashboard',
+  HELP_SHORTCUT_REFRESH: 'Refresh Sessions',
+  HELP_SHORTCUT_LAUNCH: 'Launch New Session',
+  HELP_SHORTCUT_RENAME: 'Rename Session',
+  HELP_SHORTCUT_SELECT: 'Select Session',
+  HELP_SHORTCUT_EXPAND: 'Expand Detail View',
+
+  // Feature names
+  HELP_FEATURE_KANBAN: 'Kanban Board',
+  HELP_FEATURE_QUICK_PICK: 'Quick Pick Switcher',
+  HELP_FEATURE_SEARCH: 'Search & Filter',
+  HELP_FEATURE_LAYOUT: 'Layout Modes',
+  HELP_FEATURE_SESSION_MGMT: 'Session Management',
+  HELP_FEATURE_LAUNCH: 'Launch Modes',
+  HELP_FEATURE_CONVERSATION: 'Conversation & Terminal',
+  HELP_FEATURE_PLAN_APPROVAL: 'Plan & Tool Approval',
+  HELP_FEATURE_ZEN: 'Zen Mode',
+  HELP_FEATURE_SUB_AGENT: 'Sub-Agent Ensemble',
+  HELP_FEATURE_ANALYTICS: 'Analytics Drawer',
+  HELP_FEATURE_AUTO_HIDE: 'Auto-Hide Patterns',
+
+  // Feature descriptions
+  HELP_DESC_KANBAN:
+    'Organizes sessions into status columns: Performing, Awaiting Input, Needs Attention, and Completed.',
+  HELP_DESC_QUICK_PICK:
+    'Press {modifier}+Shift+; to open a quick-pick list and jump between sessions instantly.',
+  HELP_DESC_SEARCH:
+    'Use the search bar to filter sessions by name. Toggle between Recent, Active, and All filter buttons.',
+  HELP_DESC_LAYOUT:
+    'Switch between vertical and horizontal split layouts. Click a session to select it, double-click to expand the detail view.',
+  HELP_DESC_SESSION_MGMT:
+    'Double-click a session name to rename it. Drag the handle to reorder. Long-press or right-click for a context menu.',
+  HELP_DESC_LAUNCH:
+    'Launch sessions in Normal, YOLO (bypass permissions), or Remote Control mode via the split-button chevron.',
+  HELP_DESC_CONVERSATION:
+    'Toggle between the AI conversation view and a live terminal view for each session.',
+  HELP_DESC_PLAN_APPROVAL:
+    'Approve or deny plan-mode requests and individual tool calls directly from the dashboard.',
+  HELP_DESC_ZEN:
+    'Click the owl mascot to enter a meditative view. Zen mode also auto-activates after 5 minutes of idle time.',
+  HELP_DESC_SUB_AGENT:
+    'When a session spawns sub-agents, click one to filter the conversation to that agent\u2019s activity.',
+  HELP_DESC_ANALYTICS:
+    'Open the analytics drawer for a per-model breakdown of token usage and estimated cost.',
+  HELP_DESC_AUTO_HIDE:
+    'Add name patterns above to automatically hide matching sessions from the session list.',
 } as const;

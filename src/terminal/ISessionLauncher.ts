@@ -30,15 +30,21 @@ export interface ISessionLauncher extends vscode.Disposable {
 
   /**
    * Transfer a running session from an external terminal into Conductor's PTY.
-   * Finds the VS Code terminal running the session, closes it, waits for the
-   * Claude process to exit, then resumes in Conductor's PTY.
+   * When searchIds is provided, tries each ID against ProcessDiscovery.
    * Falls back to direct resume() if no owning terminal is found.
    *
-   * @param sessionId - The session ID to transfer
+   * @param sessionId - The session ID to transfer (used for resume fallback)
    * @param text - The user's message to deliver via `--print`
    * @param cwd - Working directory for the terminal (defaults to workspace root)
+   * @param searchIds - Optional continuation group member IDs to search for
+   * @returns The session ID that was actually resumed
    */
-  transfer(sessionId: string, text: string, cwd?: string): Promise<void>;
+  transfer(
+    sessionId: string,
+    text: string,
+    cwd?: string,
+    searchIds?: readonly string[]
+  ): Promise<string>;
 
   /** Whether the given session was launched by Conductor (has PTY ownership). */
   isLaunchedSession(sessionId: string): boolean;

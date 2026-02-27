@@ -32,6 +32,8 @@ export const LOG_PREFIX = {
   AUTO_RECONNECT: '[Conductor:AutoReconnect]',
   PROCESS_DISCOVERY: '[Conductor:ProcessDiscovery]',
   QUICK_PICK: '[Conductor:QuickPick]',
+  HISTORY_STORE: '[Conductor:HistoryStore]',
+  HISTORY_SERVICE: '[Conductor:HistoryService]',
 } as const;
 
 /** Path segments used to locate Claude transcript files on disk. */
@@ -119,6 +121,8 @@ export const WORKSPACE_STATE_KEYS = {
   LAUNCH_MODE: 'conductor.launchMode',
   /** Map of sessionId → LaunchMode for Conductor-launched sessions (survives restarts). */
   LAUNCHED_SESSION_MODES: 'conductor.launchedSessionModes',
+  /** Map of sessionId → HistoryEntryMeta for session history browsing. */
+  SESSION_HISTORY: 'conductor.sessionHistory',
 } as const;
 
 /** Timing values (ms) for session state transitions. */

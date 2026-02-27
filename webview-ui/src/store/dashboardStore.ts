@@ -6,6 +6,7 @@ import type {
   ConversationTurn,
   ToolStatEntry,
   TokenSummary,
+  HistoryEntry,
 } from '@shared/types';
 import type { InputSendStatus } from '@shared/protocol';
 import type { LaunchMode } from '@shared/sharedConstants';
@@ -62,7 +63,9 @@ interface DashboardState {
   /** Per-session PTY ring buffer replay data (populated on session:launch-status). */
   ptyBuffers: Map<string, string>;
   /** Active tab in the overview panel. */
-  activeTab: 'sessions' | 'hidden';
+  activeTab: 'sessions' | 'hidden' | 'history';
+  /** Session history entries for the History tab (populated on demand). */
+  historyEntries: HistoryEntry[];
   /** Session ID from a Conductor-initiated launch, awaiting appearance in state:full. */
   pendingLaunchSessionId: string | null;
   /** Session IDs currently being adopted for terminal mode. */
@@ -108,7 +111,8 @@ interface DashboardState {
   appendPtyBuffer: (sessionId: string, data: string) => void;
   /** Bulk-replace PTY buffers (replay on webview reconnect). Size-capped per session. */
   setPtyBuffers: (buffers: Record<string, string>) => void;
-  setActiveTab: (tab: 'sessions' | 'hidden') => void;
+  setActiveTab: (tab: 'sessions' | 'hidden' | 'history') => void;
+  setHistoryEntries: (entries: HistoryEntry[]) => void;
   toggleSettingsDrawer: () => void;
   setAutoHidePatterns: (patterns: string[]) => void;
   setLaunchMode: (mode: LaunchMode) => void;
@@ -137,6 +141,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   viewModes: new Map(),
   ptyBuffers: new Map(),
   activeTab: 'sessions',
+  historyEntries: [],
   pendingLaunchSessionId: null,
   pendingAdoptions: new Set(),
   isNestedSession: false,
@@ -237,6 +242,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       return { viewModes: next };
     }),
   setActiveTab: (tab) => set({ activeTab: tab }),
+  setHistoryEntries: (entries) => set({ historyEntries: entries }),
   appendPtyBuffer: (sessionId, data) =>
     set((state) => {
       const next = new Map(state.ptyBuffers);

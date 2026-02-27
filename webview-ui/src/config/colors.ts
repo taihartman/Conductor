@@ -69,4 +69,8 @@ export const SIZES = {
   TOOL_OUTPUT_MAX_HEIGHT: '300px',
   /** Status indicator dot diameter */
   TOOL_STATUS_DOT: '7px',
+  /** Width (px) below which the Kanban board switches to vertical stacked layout */
+  KANBAN_VERTICAL_BREAKPOINT: 500,
+  /** Max-height for each vertical-mode Kanban row (fits ~3 cards, scrolls beyond) */
+  KANBAN_VERTICAL_ROW_MAX_HEIGHT: '200px',
 } as const;

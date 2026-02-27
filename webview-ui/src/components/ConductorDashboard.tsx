@@ -10,6 +10,7 @@ import { CollapsedBar } from './CollapsedBar';
 import { EmptyState } from './EmptyState';
 import { ZenModeScene } from './ZenModeScene';
 import { SettingsDrawer } from './SettingsDrawer';
+import { HistoryPanel } from './HistoryPanel';
 import { useZenNudge } from '../hooks/useZenNudge';
 import { useCompletionDetector } from '../hooks/useCompletionDetector';
 import { matchesSearchQuery } from '../utils/sessionFilter';
@@ -48,11 +49,27 @@ export function ConductorDashboard(): React.ReactElement {
   const autoHidePatterns = useDashboardStore((s) => s.autoHidePatterns);
   const launchMode = useDashboardStore((s) => s.launchMode);
   const setLaunchMode = useDashboardStore((s) => s.setLaunchMode);
+  const historyEntries = useDashboardStore((s) => s.historyEntries);
 
   // Tab-based filtering: main sessions vs hidden sessions
   const mainSessions = sessions.filter((s) => !s.isSubAgent && !s.isHidden);
   const hiddenSessions = sessions.filter((s) => !s.isSubAgent && s.isHidden);
-  const tabSessions = activeTab === 'sessions' ? mainSessions : hiddenSessions;
+  const tabSessions = activeTab === 'sessions' ? mainSessions : activeTab === 'hidden' ? hiddenSessions : mainSessions;
+
+  /** Wraps setActiveTab to send history:request when switching to the history tab. */
+  function handleTabChange(tab: 'sessions' | 'hidden' | 'history'): void {
+    setActiveTab(tab);
+    if (tab === 'history') {
+      vscode.postMessage({ type: 'history:request' });
+    }
+  }
+
+  /** Focus an active session from the history tab. */
+  function handleFocusActiveSession(sessionId: string): void {
+    setActiveTab('sessions');
+    setFocusedSession(sessionId);
+    vscode.postMessage({ type: 'session:focus', sessionId });
+  }
 
   const { nudgeActive, autoZenTriggered, resetIdle } = useZenNudge(mainSessions, zenExitedAt);
   const completionCount = useCompletionDetector(mainSessions);
@@ -158,7 +175,7 @@ export function ConductorDashboard(): React.ReactElement {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleKeyDown]);
 
-  // Auto-switch to "sessions" tab when hidden tab becomes empty
+  // Auto-switch to "sessions" tab when hidden tab becomes empty (not from history tab)
   useEffect(() => {
     if (hiddenSessions.length === 0 && activeTab === 'hidden') {
       setActiveTab('sessions');
@@ -195,7 +212,7 @@ export function ConductorDashboard(): React.ReactElement {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           hiddenCount={hiddenSessions.length}
           isNestedSession={isNestedSession}
           onToggleSettings={toggleSettingsDrawer}
@@ -240,7 +257,7 @@ export function ConductorDashboard(): React.ReactElement {
         onToggleOrientation={toggleLayoutOrientation}
         showOrientationToggle={detailViewMode === DETAIL_VIEW_MODES.SPLIT}
         activeTab={activeTab}
-        onTabChange={setActiveTab}
+        onTabChange={handleTabChange}
         hiddenCount={hiddenSessions.length}
         isNestedSession={isNestedSession}
         onToggleSettings={toggleSettingsDrawer}
@@ -260,7 +277,7 @@ export function ConductorDashboard(): React.ReactElement {
           }}
         >
           {/* Expanded mode: collapsed bar + full detail */}
-          {detailViewMode === DETAIL_VIEW_MODES.EXPANDED && focusedSession && (
+          {detailViewMode === DETAIL_VIEW_MODES.EXPANDED && focusedSession && activeTab !== 'history' && (
             <>
               <CollapsedBar
                 session={focusedSession}
@@ -285,7 +302,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Split mode: resizable panels */}
-          {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && (
+          {detailViewMode === DETAIL_VIEW_MODES.SPLIT && focusedSession && activeTab !== 'history' && (
             <Group
               orientation={layoutOrientation}
               defaultLayout={panelLayout ?? PANEL_DEFAULT_LAYOUT}
@@ -341,7 +358,7 @@ export function ConductorDashboard(): React.ReactElement {
           )}
 
           {/* Overview-only mode: no resize needed */}
-          {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && (
+          {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && activeTab !== 'history' && (
             <div
               style={{
                 flex: 1,
@@ -363,6 +380,24 @@ export function ConductorDashboard(): React.ReactElement {
                 onHide={handleHideSession}
                 onUnhide={handleUnhideSession}
                 isHiddenTab={activeTab === 'hidden'}
+              />
+            </div>
+          )}
+
+          {/* History tab: shows archived sessions */}
+          {activeTab === 'history' && (
+            <div
+              style={{
+                flex: 1,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column',
+                minHeight: 0,
+              }}
+            >
+              <HistoryPanel
+                entries={historyEntries}
+                onFocusActiveSession={handleFocusActiveSession}
               />
             </div>
           )}
