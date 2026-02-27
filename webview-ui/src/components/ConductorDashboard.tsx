@@ -24,6 +24,7 @@ const RECENT_THRESHOLD_MS = 2 * 60 * 60 * 1000;
 const PANEL_DEFAULT_LAYOUT: Layout = { overview: 40, detail: 60 };
 const PANEL_MIN_SIZE = '15%';
 const PANEL_MAX_SIZE = '85%';
+const NOOP = (): void => {};
 
 export function ConductorDashboard(): React.ReactElement {
   const sessions = useDashboardStore((s) => s.sessions);
@@ -302,7 +303,7 @@ export function ConductorDashboard(): React.ReactElement {
         onSearchChange={setSearchQuery}
         layoutOrientation={layoutOrientation}
         onToggleOrientation={toggleLayoutOrientation}
-        showOrientationToggle={detailViewMode === DETAIL_VIEW_MODES.SPLIT}
+        showOrientationToggle={detailViewMode !== DETAIL_VIEW_MODES.EXPANDED}
         activeTab={activeTab}
         onTabChange={handleTabChange}
         hiddenCount={hiddenSessions.length}
@@ -404,31 +405,56 @@ export function ConductorDashboard(): React.ReactElement {
             </Group>
           )}
 
-          {/* Overview-only mode: no resize needed */}
+          {/* Overview-only mode: split with decorative zen scene */}
           {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && (activeTab === 'sessions' || activeTab === 'hidden') && (
-            <div
-              style={{
-                flex: 1,
-                overflow: 'hidden',
-                display: 'flex',
-                flexDirection: 'column',
-                minHeight: 0,
-              }}
+            <Group
+              orientation={layoutOrientation}
+              defaultLayout={panelLayout ?? PANEL_DEFAULT_LAYOUT}
+              onLayoutChanged={setPanelLayout}
+              style={{ flex: 1, overflow: 'hidden' }}
             >
-              <OverviewPanel
-                sessions={filteredSessions}
-                tokenSummaries={tokenSummaries}
-                focusedSessionId={focusedSessionId}
-                onSessionClick={handleSessionClick}
-                onSessionDoubleClick={handleSessionDoubleClick}
-                onRename={handleRename}
-                onReorder={handleReorder}
-                searchQuery={searchQuery}
-                onHide={handleHideSession}
-                onUnhide={handleUnhideSession}
-                isHiddenTab={activeTab === 'hidden'}
-              />
-            </div>
+              <Panel
+                id="overview"
+                minSize={PANEL_MIN_SIZE}
+                maxSize={PANEL_MAX_SIZE}
+                style={{
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                  minWidth: 0,
+                }}
+              >
+                <OverviewPanel
+                  sessions={filteredSessions}
+                  tokenSummaries={tokenSummaries}
+                  focusedSessionId={focusedSessionId}
+                  onSessionClick={handleSessionClick}
+                  onSessionDoubleClick={handleSessionDoubleClick}
+                  onRename={handleRename}
+                  onReorder={handleReorder}
+                  searchQuery={searchQuery}
+                  onHide={handleHideSession}
+                  onUnhide={handleUnhideSession}
+                  isHiddenTab={activeTab === 'hidden'}
+                />
+              </Panel>
+              <Separator />
+              <Panel
+                id="detail"
+                minSize={PANEL_MIN_SIZE}
+                maxSize={PANEL_MAX_SIZE}
+                style={{
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                  minWidth: 0,
+                }}
+              >
+                <ZenModeScene completionCount={completionCount} onExit={NOOP} decorative />
+              </Panel>
+            </Group>
           )}
 
           {/* History tab: shows archived sessions */}

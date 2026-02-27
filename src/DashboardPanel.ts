@@ -31,10 +31,11 @@ import {
   PTY,
   SETTINGS,
   LAUNCH_MODES,
+  OVERVIEW_MODES,
   WORKSPACE_STATE_KEYS,
   CONTEXT_KEYS,
 } from './constants';
-import type { LaunchMode, NavDirection } from './constants';
+import type { LaunchMode, NavDirection, OverviewMode, SortDirection } from './constants';
 import { isInsideClaudeSession } from './terminal/SessionLauncher';
 
 /**
@@ -70,6 +71,8 @@ export class DashboardPanel implements vscode.Disposable {
   /** sessionId → LaunchMode for Conductor-launched sessions. Persisted to workspaceState. */
   private readonly launchedSessionModes = new Map<string, LaunchMode>();
   private focusedSessionId: string | null = null;
+  /** Tracks previous panel visibility to detect hidden→visible transitions. */
+  private wasPanelVisible = true;
   private lastSessionIdSet: string = '';
   private cachedOrder: string[] = [];
   private launchDiscoveryTimer: ReturnType<typeof setInterval> | undefined;
@@ -113,6 +116,7 @@ export class DashboardPanel implements vscode.Disposable {
     if (DashboardPanel.currentPanel) {
       console.log(`${LOG_PREFIX.PANEL} Revealing existing panel`);
       DashboardPanel.currentPanel.panel.reveal(column);
+      vscode.commands.executeCommand('setContext', CONTEXT_KEYS.PANEL_FOCUSED, true);
       return DashboardPanel.currentPanel;
     }
 
@@ -218,10 +222,22 @@ export class DashboardPanel implements vscode.Disposable {
           CONTEXT_KEYS.PANEL_FOCUSED,
           e.webviewPanel.active
         );
+
+        // Notify webview on hidden→visible transition so it can force a layout recalculation.
+        // Without this, ResizeObserver callbacks don't fire and the UI stays garbled.
+        const nowVisible = e.webviewPanel.visible;
+        if (nowVisible && !this.wasPanelVisible) {
+          console.log(`${LOG_PREFIX.PANEL} Panel became visible — sending panel:visible`);
+          this.postMessage({ type: 'panel:visible' });
+        }
+        this.wasPanelVisible = nowVisible;
       },
       null,
       this.disposables
     );
+
+    // Set initial focus context — onDidChangeViewState doesn't fire on creation
+    vscode.commands.executeCommand('setContext', CONTEXT_KEYS.PANEL_FOCUSED, true);
 
     // Wire PTY data from SessionLauncher → PtyBridge ring buffer + webview
     this.sessionLauncher.onPtyData(
@@ -314,10 +330,12 @@ export class DashboardPanel implements vscode.Disposable {
    * Posts launch-status to the webview and starts polling for the JSONL file.
    *
    * @param sessionId - The launched session's UUID
+   * @param cwd - Optional working directory to persist for auto-reconnect
    */
-  public notifySessionLaunched(sessionId: string): void {
+  public notifySessionLaunched(sessionId: string, cwd?: string): void {
     this.conductorLaunchedIds.add(sessionId);
-    this.launchedSessionStore.save(sessionId).catch((err: unknown) => {
+    const resolvedCwd = cwd ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    this.launchedSessionStore.save(sessionId, resolvedCwd).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.PANEL} Failed to persist launched session: ${err}`);
     });
     this.saveInitialHistoryMetadata(sessionId);
@@ -416,6 +434,8 @@ export class DashboardPanel implements vscode.Disposable {
         this.replayPtyBuffers();
         this.postCurrentSettings();
         this.postCurrentLaunchMode();
+        this.postCurrentOverviewMode();
+        this.postCurrentKanbanSortOrders();
         break;
       case 'session:focus':
         this.focusedSessionId = message.sessionId;
@@ -440,6 +460,12 @@ export class DashboardPanel implements vscode.Disposable {
         break;
       case 'session:set-launch-mode':
         this.handleSetLaunchMode(message.mode);
+        break;
+      case 'overview-mode:set':
+        this.handleSetOverviewMode(message.mode);
+        break;
+      case 'kanban-sort-orders:set':
+        this.handleSetKanbanSortOrders(message.sortOrders);
         break;
       case 'session:hide':
         this.handleHide(message.sessionId);
@@ -588,7 +614,7 @@ export class DashboardPanel implements vscode.Disposable {
           this.launchedSessionModes.set(launchedId, launchMode);
           this.persistLaunchedSessionModes();
         }
-        this.notifySessionLaunched(launchedId);
+        this.notifySessionLaunched(launchedId, cwd);
       })
       .catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to launch session: ${err}`);
@@ -604,7 +630,7 @@ export class DashboardPanel implements vscode.Disposable {
     console.log(`${LOG_PREFIX.PANEL} Hiding session ${sessionId}`);
     const state = this.sessionTracker.getState(this.focusedSessionId);
     const target = state.sessions.find((s) => s.sessionId === sessionId);
-    if (target?.isArtifact) {
+    if (target?.isArtifact && !target.launchedByConductor) {
       this.visibilityStore.unforceShowSession(sessionId).catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to hide artifact session: ${err}`);
       });
@@ -706,6 +732,54 @@ export class DashboardPanel implements vscode.Disposable {
         console.log(`${LOG_PREFIX.PANEL} Failed to persist launch mode: ${err}`);
       }
     );
+  }
+
+  // ── Overview mode helpers ───────────────────────────────────────────
+
+  /** Send the persisted overview mode preference to the webview. */
+  private postCurrentOverviewMode(): void {
+    const mode = this.workspaceState.get<OverviewMode>(
+      WORKSPACE_STATE_KEYS.OVERVIEW_MODE,
+      OVERVIEW_MODES.LIST
+    );
+    this.postMessage({ type: 'overview-mode:current', mode });
+  }
+
+  /**
+   * Persist the user's overview mode preference from the webview toggle.
+   * @param mode - The overview mode to persist
+   */
+  private handleSetOverviewMode(mode: OverviewMode): void {
+    console.log(`${LOG_PREFIX.PANEL} Setting overview mode: ${mode}`);
+    Promise.resolve(this.workspaceState.update(WORKSPACE_STATE_KEYS.OVERVIEW_MODE, mode)).catch(
+      (err: unknown) => {
+        console.log(`${LOG_PREFIX.PANEL} Failed to persist overview mode: ${err}`);
+      }
+    );
+  }
+
+  // ── Kanban sort order helpers ───────────────────────────────────────
+
+  /** Send the persisted kanban sort orders to the webview. */
+  private postCurrentKanbanSortOrders(): void {
+    const sortOrders = this.workspaceState.get<Record<string, SortDirection>>(
+      WORKSPACE_STATE_KEYS.KANBAN_SORT_ORDERS,
+      {}
+    );
+    this.postMessage({ type: 'kanban-sort-orders:current', sortOrders });
+  }
+
+  /**
+   * Persist the user's kanban sort orders from the webview.
+   * @param sortOrders - The per-column sort directions to persist
+   */
+  private handleSetKanbanSortOrders(sortOrders: Record<string, SortDirection>): void {
+    console.log(`${LOG_PREFIX.PANEL} Setting kanban sort orders`);
+    Promise.resolve(
+      this.workspaceState.update(WORKSPACE_STATE_KEYS.KANBAN_SORT_ORDERS, sortOrders)
+    ).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to persist kanban sort orders: ${err}`);
+    });
   }
 
   /** Restore launchedSessionModes from workspace state on construction. */
@@ -850,6 +924,15 @@ export class DashboardPanel implements vscode.Disposable {
     const primaryId = groupMembers[0]; // earliest member = primary
 
     if (this.pendingAdoptions.has(primaryId)) return;
+
+    const alreadyLaunched = this.findLaunchedGroupMember(sessionId);
+    if (alreadyLaunched) {
+      console.log(
+        `${LOG_PREFIX.PANEL} Session ${sessionId} already has a terminal (${alreadyLaunched}), skipping adopt`
+      );
+      return;
+    }
+
     this.pendingAdoptions.add(primaryId);
 
     const state = this.sessionTracker.getState(null);
@@ -867,11 +950,10 @@ export class DashboardPanel implements vscode.Disposable {
         groupMembers
       );
       this.conductorLaunchedIds.add(resumedId);
-      this.launchedSessionStore.save(resumedId).catch((err: unknown) => {
+      this.launchedSessionStore.save(resumedId, sessionCwd).catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to persist adopted session: ${err}`);
       });
       this.saveInitialHistoryMetadata(resumedId);
-      this.ptyBridge.registerSession(resumedId);
     } finally {
       this.pendingAdoptions.delete(primaryId);
     }
@@ -965,7 +1047,7 @@ export class DashboardPanel implements vscode.Disposable {
       .then(() => {
         // The resumed session shares the same sessionId, so register it
         this.conductorLaunchedIds.add(sessionId);
-        this.launchedSessionStore.save(sessionId).catch((err: unknown) => {
+        this.launchedSessionStore.save(sessionId, cwd).catch((err: unknown) => {
           console.log(`${LOG_PREFIX.PANEL} Failed to persist resumed session: ${err}`);
         });
         this.ptyBridge.registerSession(sessionId);
@@ -1055,12 +1137,20 @@ export class DashboardPanel implements vscode.Disposable {
         this.sessionLauncher.isLaunchedSession(session.sessionId) ||
         this.conductorLaunchedIds.has(session.sessionId);
       const launchMode = this.launchedSessionModes.get(session.sessionId);
-      if (customName || launchedByConductor || launchMode) {
+
+      const registeredPtyIds = this.ptyBridge.getRegisteredSessionIds();
+      let hasActivePty = registeredPtyIds.has(session.sessionId);
+      if (!hasActivePty && session.continuationSessionIds) {
+        hasActivePty = session.continuationSessionIds.some((id) => registeredPtyIds.has(id));
+      }
+
+      if (customName || launchedByConductor || launchMode || hasActivePty) {
         return {
           ...session,
           ...(customName ? { customName } : {}),
           ...(launchedByConductor ? { launchedByConductor: true } : {}),
           ...(launchMode ? { launchMode } : {}),
+          ...(hasActivePty ? { hasActivePty: true } : {}),
         };
       }
       return session;

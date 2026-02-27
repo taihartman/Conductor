@@ -30,19 +30,30 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     );
   }
 
-  /** Returns the set of manually hidden session IDs. */
+  /**
+   * Returns the set of manually hidden session IDs.
+   * @returns Read-only set of hidden session IDs
+   */
   getHiddenIds(): ReadonlySet<string> {
     return this.hiddenIds;
   }
 
-  /** Returns the set of artifact session IDs the user explicitly unhid. */
+  /**
+   * Returns the set of artifact session IDs the user explicitly unhid.
+   * @returns Read-only set of force-shown session IDs
+   */
   getForceShownIds(): ReadonlySet<string> {
     return this.forceShownIds;
   }
 
-  /** Adds a session to the hidden set. No-op if already hidden. */
+  /**
+   * Adds a session to the hidden set. No-op if already hidden.
+   * @param sessionId - The session ID to hide
+   */
   async hideSession(sessionId: string): Promise<void> {
-    if (this.hiddenIds.has(sessionId)) return;
+    if (this.hiddenIds.has(sessionId)) {
+      return;
+    }
     this.hiddenIds.add(sessionId);
     await this.persistHidden();
     console.log(`${LOG_PREFIX.VISIBILITY_STORE} Hidden session ${sessionId}`);
@@ -50,9 +61,14 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     this._onVisibilityChanged.fire();
   }
 
-  /** Removes a session from the hidden set. No-op if not hidden. */
+  /**
+   * Removes a session from the hidden set. No-op if not hidden.
+   * @param sessionId - The session ID to unhide
+   */
   async unhideSession(sessionId: string): Promise<void> {
-    if (!this.hiddenIds.has(sessionId)) return;
+    if (!this.hiddenIds.has(sessionId)) {
+      return;
+    }
     this.hiddenIds.delete(sessionId);
     await this.persistHidden();
     console.log(`${LOG_PREFIX.VISIBILITY_STORE} Unhidden session ${sessionId}`);
@@ -60,9 +76,14 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     this._onVisibilityChanged.fire();
   }
 
-  /** Adds an artifact session to the force-shown set. No-op if already present. */
+  /**
+   * Adds an artifact session to the force-shown set. No-op if already present.
+   * @param sessionId - The artifact session ID to force-show
+   */
   async forceShowSession(sessionId: string): Promise<void> {
-    if (this.forceShownIds.has(sessionId)) return;
+    if (this.forceShownIds.has(sessionId)) {
+      return;
+    }
     this.forceShownIds.add(sessionId);
     await this.persistForceShown();
     console.log(`${LOG_PREFIX.VISIBILITY_STORE} Force-shown session ${sessionId}`);
@@ -72,9 +93,14 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     this._onVisibilityChanged.fire();
   }
 
-  /** Removes an artifact session from the force-shown set. No-op if not present. */
+  /**
+   * Removes an artifact session from the force-shown set. No-op if not present.
+   * @param sessionId - The artifact session ID to un-force-show
+   */
   async unforceShowSession(sessionId: string): Promise<void> {
-    if (!this.forceShownIds.has(sessionId)) return;
+    if (!this.forceShownIds.has(sessionId)) {
+      return;
+    }
     this.forceShownIds.delete(sessionId);
     await this.persistForceShown();
     console.log(`${LOG_PREFIX.VISIBILITY_STORE} Un-force-shown session ${sessionId}`);
@@ -84,7 +110,11 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     this._onVisibilityChanged.fire();
   }
 
-  /** Removes IDs not in liveSessionIds. Does NOT fire onVisibilityChanged. */
+  /**
+   * Removes IDs not in liveSessionIds. Does NOT fire onVisibilityChanged.
+   * @param liveSessionIds - Set of currently active session IDs to keep
+   * @returns Whether any stale IDs were pruned
+   */
   async pruneStaleIds(liveSessionIds: Set<string>): Promise<boolean> {
     let changed = false;
 
@@ -116,7 +146,11 @@ export class SessionVisibilityStore implements ISessionVisibilityStore {
     this._onVisibilityChanged.dispose();
   }
 
-  /** Hydrates a set from workspaceState, handling corrupted data gracefully. */
+  /**
+   * Hydrates a set from workspaceState, handling corrupted data gracefully.
+   * @param key - The workspaceState key to load from
+   * @returns Hydrated set of session IDs
+   */
   private loadFromStorage(key: string): Set<string> {
     const raw = this.workspaceState.get<unknown>(key);
 
