@@ -26,6 +26,22 @@ interface TerminalViewProps {
 /** Delay before showing the no-PTY-data placeholder (ms). */
 const NO_PTY_DATA_DELAY_MS = 1500; // inline-ok: one-off timing constant
 
+/**
+ * Safely call fitAddon.fit(), guarding against zero-dimension containers.
+ * xterm.js FitAddon fails silently when the container has no width or height
+ * (common in narrow tiles or during layout transitions).
+ */
+function safeFit(fitAddon: FitAddon, container: HTMLElement | null): void {
+  if (!container) return;
+  const { clientWidth, clientHeight } = container;
+  if (clientWidth === 0 || clientHeight === 0) return;
+  try {
+    fitAddon.fit();
+  } catch {
+    // Ignore fit errors during layout transitions
+  }
+}
+
 export function TerminalView({ sessionId }: TerminalViewProps): React.ReactElement {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -88,18 +104,6 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
       return true;
     });
 
-    // Defer initial fit — useEffect runs before browser layout is complete.
-    // requestAnimationFrame ensures flex dimensions are computed before measuring.
-    const rafId = requestAnimationFrame(() => {
-      try {
-        fitAddon.fit();
-      } catch {
-        // Container might not have dimensions yet
-      }
-      // Auto-focus so keyboard input works immediately (e.g. after keyboard navigation)
-      terminal.focus();
-    });
-
     // Send keystrokes to extension
     terminal.onData((data) => {
       vscode.postMessage({ type: 'pty:input', sessionId, data });
@@ -110,32 +114,52 @@ export function TerminalView({ sessionId }: TerminalViewProps): React.ReactEleme
       vscode.postMessage({ type: 'pty:resize', sessionId, cols, rows });
     });
 
-    terminalRef.current = terminal;
-    fitAddonRef.current = fitAddon;
+    // Gate live pty:data writes and buffer replay until terminal has real dimensions.
+    // ResizeObserver is the authoritative signal that the container has completed
+    // layout — no timing guesses (rAF/setTimeout) needed. terminalRef.current stays
+    // null until after the first successful fit, which naturally gates the pty:data
+    // handler (line ~165) that uses terminalRef.current?.write().
+    let fitted = false;
 
-    // Replay buffered data if available
-    if (ptyBuffer) {
-      terminal.write(ptyBuffer);
-    }
+    const initializeAfterFit = (): void => {
+      if (fitted) return;
+      if (!containerRef.current || containerRef.current.clientWidth === 0 || containerRef.current.clientHeight === 0) return;
+      fitted = true;
+      safeFit(fitAddon, containerRef.current);
+      terminalRef.current = terminal;
+      fitAddonRef.current = fitAddon;
+      if (ptyBuffer) {
+        terminal.write(ptyBuffer);
+      }
+      terminal.focus();
+    };
 
-    // Observe container resize
+    // Observe container resize — also serves as the primary initialization trigger
     const resizeObserver = new ResizeObserver(() => {
-      try {
-        fitAddon.fit();
-      } catch {
-        // Ignore fit errors during layout transitions
+      if (!fitted) {
+        initializeAfterFit();
+      } else {
+        safeFit(fitAddon, containerRef.current);
       }
     });
     resizeObserver.observe(containerRef.current);
+
+    // Fallback: if the container already has dimensions when the observer is
+    // attached (e.g. same-size session switch), ResizeObserver may not fire.
+    // A single rAF picks it up; if ResizeObserver fires first, the fitted
+    // flag prevents double-replay.
+    const rafId = requestAnimationFrame(() => {
+      initializeAfterFit();
+    });
 
     // Also listen for synthetic window resize events (fired by forceRelayout()
     // when the panel transitions from hidden to visible). ResizeObserver alone
     // doesn't fire when the container dimensions haven't technically changed.
     const handleWindowResize = (): void => {
-      try {
-        fitAddon.fit();
-      } catch {
-        // Ignore fit errors during layout transitions
+      if (!fitted) {
+        initializeAfterFit();
+      } else {
+        safeFit(fitAddon, containerRef.current);
       }
     };
     window.addEventListener('resize', handleWindowResize);
