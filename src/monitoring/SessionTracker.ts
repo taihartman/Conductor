@@ -456,6 +456,36 @@ export class SessionTracker implements vscode.Disposable {
   }
 
   /**
+   * Return a human-readable string describing what directories are being monitored.
+   * Used by the webview empty state to help users diagnose detection issues.
+   *
+   * Contract (three cases):
+   * 1. Unscoped (`scopedProjectDirs === undefined`): returns `~/.claude/projects/`
+   * 2. Scoped and found (`scopedProjectDirs.length > 0`): returns comma-separated
+   *    home-relative paths, e.g. `~/.claude/projects/-home-user-myapp`
+   * 3. Scoped but empty (`scopedProjectDirs.length === 0`): returns
+   *    `~/.claude/projects/ (no workspace matches)` — signals that
+   *    additionalWorkspaces is configured but no matching project dir was found
+   *
+   * @returns A displayable string always suitable for showing in the UI
+   */
+  public getMonitoringScope(): string {
+    const home = os.homedir();
+    const projectsDir = this.scanner.getProjectsDir().replace(home, '~');
+
+    if (this.scopedProjectDirs === undefined) {
+      // Unscoped — watching everything under ~/.claude/projects/
+      return `${projectsDir}/`;
+    }
+    if (this.scopedProjectDirs.length === 0) {
+      // Scoped but empty — additionalWorkspaces configured but no dirs found yet
+      return `${projectsDir}/ (no workspace matches)`;
+    }
+    // Scoped to specific dirs
+    return this.scopedProjectDirs.map((d) => d.replace(home, '~')).join(', ');
+  }
+
+  /**
    * Determine whether a session is a system-generated artifact that should
    * be auto-hidden by default.
    *

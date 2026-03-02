@@ -1117,6 +1117,57 @@ describe('SessionTracker scoping semantics', () => {
   });
 });
 
+describe('getMonitoringScope', () => {
+  let outputChannel: vscode.OutputChannel;
+  const mockGetConfiguration = vscode.workspace.getConfiguration as ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    outputChannel = (vscode.window as any).createOutputChannel('test');
+    mockGetConfiguration.mockReturnValue({
+      get: vi.fn((_key: string, defaultValue?: unknown) => defaultValue),
+    });
+  });
+
+  afterEach(() => {
+    mockGetConfiguration.mockReset();
+  });
+
+  it('returns home-relative path to projects dir when unscoped', () => {
+    const tracker = new SessionTracker(outputChannel);
+    const scope = tracker.getMonitoringScope();
+    expect(scope).toBe('~/.claude/projects/');
+    tracker.dispose();
+  });
+
+  it('returns scoped dir paths when scopedProjectDirs is set', () => {
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+
+    // Use actual homedir so the replace logic works correctly
+    const home = require('os').homedir() as string;
+    const fakeDir = `${home}/.claude/projects/-home-user-myapp`;
+    t.scopedProjectDirs = [fakeDir];
+    const scope = tracker.getMonitoringScope();
+    expect(scope).toBe('~/.claude/projects/-home-user-myapp');
+    tracker.dispose();
+  });
+
+  it('returns path-like string when scoped but no matching dirs', () => {
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
+    const scope = tracker.getMonitoringScope();
+    // Scoped but empty — should contain the projects path and a hint
+    expect(scope).toContain('~/.claude/projects/');
+    expect(scope).toContain('no workspace matches');
+    tracker.dispose();
+  });
+});
+
 describe('SessionTracker lastAssistantText', () => {
   let tracker: SessionTracker;
   let outputChannel: vscode.OutputChannel;
