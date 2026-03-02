@@ -914,7 +914,13 @@ describe('SessionTracker scope retry', () => {
   });
 
   it('starts scope retry when scoped-but-empty', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent/workspace'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
     tracker.start();
     const t = tracker as any;
 
@@ -935,7 +941,13 @@ describe('SessionTracker scope retry', () => {
   });
 
   it('retry discovers the dir and restarts watcher', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent/workspace'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
     tracker.start();
     const t = tracker as any;
 
@@ -945,7 +957,7 @@ describe('SessionTracker scope retry', () => {
     // Initially scoped but empty
     expect(t.scopedProjectDirs).toEqual([]);
 
-    // Mock resolveProjectDirs to simulate the dir appearing
+    // Mock scanner to simulate the dir appearing
     const resolvedDir = '/home/user/.claude/projects/-nonexistent-workspace';
     vi.spyOn(t.scanner, 'getProjectDirForWorkspace').mockReturnValue(resolvedDir);
 
@@ -961,7 +973,13 @@ describe('SessionTracker scope retry', () => {
   });
 
   it('retry stops after success', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent/workspace'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
     tracker.start();
     const t = tracker as any;
 
@@ -980,7 +998,13 @@ describe('SessionTracker scope retry', () => {
   });
 
   it('dispose cleans up the retry timer', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent/workspace'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
     tracker.start();
     const t = tracker as any;
 
@@ -1015,16 +1039,36 @@ describe('SessionTracker scoping semantics', () => {
     tracker.dispose();
   });
 
-  it('resolveProjectDirs returns [] when workspace provided but dir does not exist', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+  it('resolveProjectDirs returns undefined when workspace arg is provided but additionalWorkspaces is empty', () => {
+    // After fix: workspacePath is ignored; no additionalWorkspaces → unscoped
+    const tracker = new SessionTracker(outputChannel, '/some/workspace');
     const t = tracker as any;
-    // Scoped (workspace provided) but empty (dir doesn't exist)
+    expect(t.scopedProjectDirs).toBeUndefined();
+    tracker.dispose();
+  });
+
+  it('resolveProjectDirs returns [] when additionalWorkspaces is configured but no matching dir', () => {
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
+    const t = tracker as any;
+    // Scoped (additionalWorkspaces set) but empty (dir doesn't exist)
     expect(t.scopedProjectDirs).toEqual([]);
     tracker.dispose();
   });
 
   it('refresh scans nothing when scoped but empty', () => {
-    const tracker = new SessionTracker(outputChannel, '/nonexistent/workspace');
+    mockGetConfiguration.mockReturnValue({
+      get: (key: string, defaultValue?: unknown) => {
+        if (key === 'conductor.additionalWorkspaces') return ['/nonexistent'];
+        return defaultValue ?? [];
+      },
+    });
+    const tracker = new SessionTracker(outputChannel);
     const t = tracker as any;
 
     // Spy on the scanner to verify what gets passed

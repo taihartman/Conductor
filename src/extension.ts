@@ -11,6 +11,7 @@ import { LaunchedSessionStore } from './persistence/LaunchedSessionStore';
 import { SessionHistoryStore } from './persistence/SessionHistoryStore';
 import { SessionHistoryService } from './persistence/SessionHistoryService';
 import { StatsCacheReader } from './persistence/StatsCacheReader';
+import { TileLayoutStore } from './persistence/TileLayoutStore';
 import { AutoReconnectService } from './terminal/AutoReconnectService';
 import { HookRegistrar } from './hooks/HookRegistrar';
 import {
@@ -67,6 +68,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const sessionHistoryService = new SessionHistoryService(sessionHistoryStore, nameStore);
   const statsCacheReader = new StatsCacheReader(outputChannel);
 
+  const tileLayoutStore = new TileLayoutStore(context.workspaceState, outputChannel);
+  context.subscriptions.push(tileLayoutStore);
+
   const autoReconnect = new AutoReconnectService(
     sessionTracker,
     sessionLauncher,
@@ -89,7 +93,8 @@ export function activate(context: vscode.ExtensionContext): void {
       launchedSessionStore,
       sessionHistoryStore,
       sessionHistoryService,
-      statsCacheReader
+      statsCacheReader,
+      tileLayoutStore
     );
   });
 
@@ -127,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
       sessionHistoryStore,
       sessionHistoryService,
       statsCacheReader,
+      tileLayoutStore,
     }).catch((err: unknown) => {
       console.log(`${LOG_PREFIX.EXTENSION} Quick Pick failed: ${err}`);
     });
@@ -203,9 +209,13 @@ export function activate(context: vscode.ExtensionContext): void {
   sessionTracker.start();
   autoReconnect.start();
 
+  autoReconnect.onSessionReconnected((sessionId) => {
+    DashboardPanel.currentPanel?.notifySessionReconnected(sessionId);
+  });
+
   const configWatcher = vscode.workspace.onDidChangeConfiguration((e) => {
     if (e.affectsConfiguration(SETTINGS.ADDITIONAL_WORKSPACES)) {
-      sessionTracker?.updateScope(workspacePath);
+      sessionTracker?.updateScope();
     }
   });
   context.subscriptions.push(configWatcher);

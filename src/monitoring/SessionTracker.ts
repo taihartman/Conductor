@@ -182,8 +182,6 @@ export class SessionTracker implements vscode.Disposable {
    * `[dir1, ...]` = scoped to specific directories.
    */
   private scopedProjectDirs: string[] | undefined;
-  /** Workspace path stored for scope retry when scoped-but-empty. */
-  private readonly workspacePath: string | undefined;
   /** Sessions removed by stale cleanup — prevents zombie resurrection on refresh.
    *  Maps sessionId → removal timestamp (ms) for bounded eviction. */
   private readonly removedSessionIds: Map<string, number> = new Map();
@@ -202,43 +200,43 @@ export class SessionTracker implements vscode.Disposable {
 
   constructor(
     outputChannel: vscode.OutputChannel,
-    workspacePath?: string,
+    _workspacePath?: string, // kept for call-site compatibility; ignored
     nameResolver?: ISessionNameResolver
   ) {
     this.outputChannel = outputChannel;
     this.scanner = new ProjectScanner();
     this.nameResolver = nameResolver ?? new SessionNameResolver();
-    this.workspacePath = workspacePath;
-    this.scopedProjectDirs = this.resolveProjectDirs(workspacePath);
+    this.scopedProjectDirs = this.resolveProjectDirs();
   }
 
   /**
-   * Combine the current workspace with `conductor.additionalWorkspaces` setting,
-   * resolve each to its Claude Code project directory, and deduplicate.
+   * Resolve project directories to watch based on `conductor.additionalWorkspaces`.
    *
-   * @param workspacePath - Current VS Code workspace path (first folder)
-   * @returns `undefined` when unscoped (no workspace AND no additional workspaces),
-   *          `string[]` when scoped (may be empty if dirs don't exist yet)
+   * @remarks
+   * Returns `undefined` (unscoped — watch all projects) unless the user has
+   * explicitly configured `conductor.additionalWorkspaces`. The previous
+   * implicit scoping to the current VS Code workspace has been removed: users
+   * should see all their Claude sessions by default.
+   *
+   * Return value contract:
+   * - `undefined` — unscoped; watch everything under ~/.claude/projects/
+   * - `string[]` with length > 0 — scoped to these specific directories
+   * - `string[]` with length === 0 — scoped, but no matching dirs found yet
+   *   (additionalWorkspaces is configured but dirs don't exist on disk)
+   *
+   * @returns `undefined` when unscoped, `string[]` when scoped (may be empty)
    */
-  private resolveProjectDirs(workspacePath?: string): string[] | undefined {
+  private resolveProjectDirs(): string[] | undefined {
     const additionalPaths =
       vscode.workspace.getConfiguration().get<string[]>(SETTINGS.ADDITIONAL_WORKSPACES, []) ?? [];
 
-    // No workspace and no additional workspaces → unscoped (scan all projects)
-    if (!workspacePath && additionalPaths.length === 0) {
+    // No additional workspaces configured → unscoped (show all Claude sessions)
+    if (additionalPaths.length === 0) {
       return undefined;
     }
 
-    // At least one scope source exists → scoped (may be empty if dirs don't exist yet)
+    // additionalWorkspaces configured → scope to only those directories
     const paths: string[] = [];
-
-    if (workspacePath) {
-      const dir = this.scanner.getProjectDirForWorkspace(workspacePath);
-      if (dir) {
-        paths.push(dir);
-      }
-    }
-
     for (const p of additionalPaths) {
       const dir = this.scanner.getProjectDirForWorkspace(p);
       if (dir) {
@@ -596,10 +594,10 @@ export class SessionTracker implements vscode.Disposable {
    * already tracked from removed directories are left to expire naturally via
    * inactivity timeout and stale cleanup — no jarring disappearances.
    *
-   * @param workspacePath - Current VS Code workspace path (first folder)
+   * Called when `conductor.additionalWorkspaces` changes at runtime.
    */
-  updateScope(workspacePath?: string): void {
-    const newDirs = this.resolveProjectDirs(workspacePath);
+  updateScope(): void {
+    const newDirs = this.resolveProjectDirs();
 
     // Compare old vs new: both undefined = same, both arrays = compare sets
     const oldIsUndefined = this.scopedProjectDirs === undefined;
@@ -675,6 +673,7 @@ export class SessionTracker implements vscode.Disposable {
           startedAt: file.modifiedAt.toISOString(),
           lastActivityAt: file.modifiedAt.toISOString(),
           turnCount: 0,
+          toolCallCount: 0,
           totalInputTokens: 0,
           totalOutputTokens: 0,
           totalCacheReadTokens: 0,
@@ -856,6 +855,7 @@ export class SessionTracker implements vscode.Disposable {
           }
         }
 
+        session.info.toolCallCount++;
         this.toolStats.recordToolCall(
           toolBlock.id,
           toolBlock.name,
@@ -1149,6 +1149,7 @@ export class SessionTracker implements vscode.Disposable {
     let totalCacheReadTokens = 0;
     let totalCacheCreationTokens = 0;
     let turnCount = 0;
+    let toolCallCount = 0;
     let earliestStart = primary.info.startedAt;
     let latestActivity = primary.info.lastActivityAt;
     let pendingQuestion = primary.info.pendingQuestion;
@@ -1166,6 +1167,7 @@ export class SessionTracker implements vscode.Disposable {
       totalCacheReadTokens += member.info.totalCacheReadTokens;
       totalCacheCreationTokens += member.info.totalCacheCreationTokens;
       turnCount += member.info.turnCount;
+      toolCallCount += member.info.toolCallCount;
 
       if (member.info.startedAt < earliestStart) {
         earliestStart = member.info.startedAt;
@@ -1199,6 +1201,7 @@ export class SessionTracker implements vscode.Disposable {
       startedAt: earliestStart,
       lastActivityAt: latestActivity,
       turnCount,
+      toolCallCount,
       totalInputTokens,
       totalOutputTokens,
       totalCacheReadTokens,
@@ -1497,7 +1500,7 @@ export class SessionTracker implements vscode.Disposable {
       `${LOG_PREFIX.SESSION_TRACKER} Starting scope retry (every ${SCOPE_RETRY_INTERVAL_MS / 1000}s)`
     );
     this.scopeRetryTimer = setInterval(() => {
-      const newDirs = this.resolveProjectDirs(this.workspacePath);
+      const newDirs = this.resolveProjectDirs();
       if (newDirs !== undefined && newDirs.length > 0) {
         console.log(
           `${LOG_PREFIX.SESSION_TRACKER} Scope retry succeeded — found ${newDirs.length} dir(s)`
