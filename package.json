@@ -1,9 +1,9 @@
 {
-  "name": "conductor",
-  "displayName": "Conductor",
+  "name": "agent-conductor",
+  "displayName": "Conductor Dashboard",
   "description": "Real-time dashboard visualizing Claude Code AI agent activity, tool usage, and token consumption",
-  "version": "0.1.0",
-  "publisher": "conductor",
+  "version": "0.1.2",
+  "publisher": "Taitopia",
   "license": "MIT",
   "keywords": [
     "claude",
