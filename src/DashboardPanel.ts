@@ -24,6 +24,7 @@ import { ILaunchedSessionStore } from './persistence/ILaunchedSessionStore';
 import { ISessionHistoryStore } from './persistence/ISessionHistoryStore';
 import { ISessionHistoryService } from './persistence/ISessionHistoryService';
 import { IStatsCacheReader } from './persistence/StatsCacheReader';
+import { ITileLayoutStore } from './persistence/ITileLayoutStore';
 import {
   PANEL_TITLE,
   LOG_PREFIX,
@@ -63,9 +64,12 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly sessionHistoryStore: ISessionHistoryStore;
   private readonly sessionHistoryService: ISessionHistoryService;
   private readonly statsCacheReader: IStatsCacheReader;
+  private readonly tileLayoutStore: ITileLayoutStore;
   private readonly workspaceState: vscode.Memento;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly pendingAdoptions = new Set<string>();
+  /** Session IDs currently subscribed to per-tile data updates. */
+  private readonly subscribedSessionIds = new Set<string>();
   /** Session IDs awaiting JSONL discovery — protects PTY buffers from premature pruning. */
   private readonly pendingDiscoveryIds = new Set<string>();
   /** Session IDs ever launched/adopted by Conductor — survives session exit for launchedByConductor flag persistence. */
@@ -74,6 +78,9 @@ export class DashboardPanel implements vscode.Disposable {
   private readonly ptyIdToDisplayId = new Map<string, string>();
   /** sessionId → LaunchMode for Conductor-launched sessions. Persisted to workspaceState. */
   private readonly launchedSessionModes = new Map<string, LaunchMode>();
+  /** Tracks recent Conductor resume operations for ghost continuation filtering.
+   * Key: cwd, Value: { resumedId: string, timestamp: number } */
+  private readonly recentResumes = new Map<string, { resumedId: string; timestamp: number }>();
   private focusedSessionId: string | null = null;
   /** Tracks previous panel visibility to detect hidden→visible transitions. */
   private wasPanelVisible = true;
@@ -100,6 +107,7 @@ export class DashboardPanel implements vscode.Disposable {
    * @param sessionHistoryStore - Persistence layer for session history metadata
    * @param sessionHistoryService - Service that builds history entries for the webview
    * @param statsCacheReader - Reads the Claude Code stats-cache.json for the Usage tab
+   * @param tileLayoutStore - Persistence layer for saved tile layout presets
    * @returns The singleton DashboardPanel instance
    */
   public static createOrShow(
@@ -113,7 +121,8 @@ export class DashboardPanel implements vscode.Disposable {
     launchedSessionStore: ILaunchedSessionStore,
     sessionHistoryStore: ISessionHistoryStore,
     sessionHistoryService: ISessionHistoryService,
-    statsCacheReader: IStatsCacheReader
+    statsCacheReader: IStatsCacheReader,
+    tileLayoutStore: ITileLayoutStore
   ): DashboardPanel {
     const column = vscode.window.activeTextEditor?.viewColumn;
 
@@ -149,6 +158,7 @@ export class DashboardPanel implements vscode.Disposable {
       sessionHistoryStore,
       sessionHistoryService,
       statsCacheReader,
+      tileLayoutStore,
       context.workspaceState
     );
 
@@ -168,6 +178,7 @@ export class DashboardPanel implements vscode.Disposable {
     sessionHistoryStore: ISessionHistoryStore,
     sessionHistoryService: ISessionHistoryService,
     statsCacheReader: IStatsCacheReader,
+    tileLayoutStore: ITileLayoutStore,
     workspaceState: vscode.Memento
   ) {
     this.panel = panel;
@@ -182,12 +193,26 @@ export class DashboardPanel implements vscode.Disposable {
     this.sessionHistoryStore = sessionHistoryStore;
     this.sessionHistoryService = sessionHistoryService;
     this.statsCacheReader = statsCacheReader;
+    this.tileLayoutStore = tileLayoutStore;
     this.workspaceState = workspaceState;
     this.conductorLaunchedIds = new Set(this.launchedSessionStore.getAll());
     this.restoreLaunchedSessionModes();
 
-    // Register PtyBridge before spawn to prevent data loss race condition
-    this.sessionLauncher.setPreSpawnCallback((sid) => this.ptyBridge.registerSession(sid));
+    // Register PtyBridge before spawn to prevent data loss race condition.
+    // For continuation sessions (auto-reconnect), route PTY data to the primary display ID.
+    this.sessionLauncher.setPreSpawnCallback((sid) => {
+      const members = this.sessionTracker.getGroupMembers(sid);
+      const primaryId = members.length > 1 ? members[0] : undefined;
+      if (primaryId && primaryId !== sid) {
+        this.ptyIdToDisplayId.set(sid, primaryId);
+        this.ptyBridge.registerSession(primaryId);
+        console.log(
+          `${LOG_PREFIX.PANEL} PTY ${sid.slice(0, 8)} → display ${primaryId.slice(0, 8)}`
+        );
+      } else {
+        this.ptyBridge.registerSession(sid);
+      }
+    });
 
     this.panel.webview.html = this.getHtml();
 
@@ -269,7 +294,8 @@ export class DashboardPanel implements vscode.Disposable {
   public postFullState(): void {
     const state = this.sessionTracker.getState(this.focusedSessionId);
     const named = this.applyCustomNames(state.sessions);
-    const visible = this.applyVisibility(named);
+    const filtered = this.filterGhostContinuations(named);
+    const visible = this.applyVisibility(filtered);
     const sessions = this.applyCustomOrder(visible);
     console.log(
       `${LOG_PREFIX.PANEL} Posting state → ${sessions.length} sessions, ${state.activities.length} activities, ${state.toolStats.length} tools, ${state.tokenSummaries.length} token summaries`
@@ -284,14 +310,30 @@ export class DashboardPanel implements vscode.Disposable {
       tokenSummaries: state.tokenSummaries,
       isNestedSession: isInsideClaudeSession(),
       focusedSessionId: this.focusedSessionId,
+      monitoringScope: this.sessionTracker.getMonitoringScope(),
     });
 
-    // Prune PTY buffers for sessions that SessionTracker no longer knows about
+    // Prune PTY buffers for sessions that SessionTracker no longer knows about.
+    // Include continuation member IDs so buffers registered under a continuation
+    // member (via preSpawnCallback) are not incorrectly pruned.
     const knownIds = new Set(state.sessions.map((s) => s.sessionId));
+    for (const session of state.sessions) {
+      if (session.continuationSessionIds) {
+        for (const id of session.continuationSessionIds) {
+          knownIds.add(id);
+        }
+      }
+    }
     this.pruneOrphanedPtyBuffers(knownIds);
 
     // Update history store with latest display names and metadata from live sessions
     this.updateHistoryFromLiveSessions(state.sessions);
+
+    // Emit per-session data for each tile subscription
+    for (const sessionId of this.subscribedSessionIds) {
+      this.postSessionActivities(sessionId);
+      this.postSessionConversation(sessionId);
+    }
   }
 
   /**
@@ -361,6 +403,31 @@ export class DashboardPanel implements vscode.Disposable {
       status: 'launched',
     });
     this.startLaunchDiscoveryPoll(sessionId);
+  }
+
+  /**
+   * Notify the webview that an auto-reconnected session has a terminal available.
+   * Resolves continuation member ID to primary/display ID before posting.
+   * @param sessionId The session ID of the reconnected session.
+   */
+  public notifySessionReconnected(sessionId: string): void {
+    this.conductorLaunchedIds.add(sessionId);
+    const members = this.sessionTracker.getGroupMembers(sessionId);
+    const displayId = members.length > 0 ? members[0] : sessionId;
+
+    // Track resume for ghost continuation filtering
+    const state = this.sessionTracker.getState(null);
+    const session = state.sessions.find((s) => s.sessionId === sessionId);
+    if (session?.cwd) {
+      this.recentResumes.set(session.cwd, { resumedId: sessionId, timestamp: Date.now() });
+    }
+
+    this.postMessage({
+      type: 'session:adopt-status',
+      sessionId: displayId,
+      status: 'adopted',
+    });
+    console.log(`${LOG_PREFIX.PANEL} Session ${sessionId} reconnected → display ${displayId}`);
   }
 
   private startLaunchDiscoveryPoll(sessionId: string): void {
@@ -453,6 +520,7 @@ export class DashboardPanel implements vscode.Disposable {
         this.postCurrentLaunchMode();
         this.postCurrentOverviewMode();
         this.postCurrentKanbanSortOrders();
+        this.postCurrentTileLayouts();
         break;
       case 'session:focus':
         this.focusedSessionId = message.sessionId;
@@ -494,11 +562,13 @@ export class DashboardPanel implements vscode.Disposable {
         this.handleAdopt(message.sessionId);
         break;
       case 'pty:input':
-        this.sessionLauncher.writeInput(message.sessionId, message.data);
+        this.sessionLauncher.writeInput(this.resolvePtySessionId(message.sessionId), message.data);
         break;
-      case 'pty:resize':
-        this.sessionLauncher.resize(message.sessionId, message.cols, message.rows);
+      case 'pty:resize': {
+        const ptyId = this.resolvePtySessionId(message.sessionId);
+        this.sessionLauncher.resize(ptyId, message.cols, message.rows);
         break;
+      }
       case 'settings:get':
         this.postCurrentSettings();
         break;
@@ -528,6 +598,20 @@ export class DashboardPanel implements vscode.Disposable {
           message.active
         );
         break;
+      case 'tile:subscribe':
+        this.handleTileSubscribe(message.sessionId);
+        break;
+      case 'tile:unsubscribe':
+        this.handleTileUnsubscribe(message.sessionId);
+        break;
+      case 'tile-layouts:save':
+        this.handleTileLayoutsSave(message.layouts);
+        break;
+      case 'session:show-terminal': {
+        const ptyId = this.resolvePtySessionId(message.sessionId);
+        this.sessionLauncher.showTerminal(ptyId);
+        break;
+      }
     }
   }
 
@@ -620,6 +704,11 @@ export class DashboardPanel implements vscode.Disposable {
     this.adoptSession(sessionId, text)
       .then(() => {
         this.postInputStatus(sessionId, 'sent');
+        this.postMessage({
+          type: 'session:adopt-status',
+          sessionId,
+          status: 'adopted',
+        });
       })
       .catch((err: unknown) => {
         console.log(`${LOG_PREFIX.PANEL} Failed to adopt session: ${err}`);
@@ -806,6 +895,67 @@ export class DashboardPanel implements vscode.Disposable {
     });
   }
 
+  // ── Tile layout helpers ─────────────────────────────────────────────
+
+  /** Send the persisted tile layout presets to the webview. */
+  private postCurrentTileLayouts(): void {
+    const layouts = this.tileLayoutStore.getLayouts();
+    this.postMessage({ type: 'tile-layouts:current', layouts });
+  }
+
+  /**
+   * Subscribe to per-session data updates for a tile.
+   * @param sessionId The session ID to subscribe to.
+   */
+  private handleTileSubscribe(sessionId: string): void {
+    this.subscribedSessionIds.add(sessionId);
+    console.log(
+      `${LOG_PREFIX.PANEL} Tile subscribe: ${sessionId.slice(0, 8)} (${this.subscribedSessionIds.size} total)`
+    );
+    this.postSessionActivities(sessionId);
+    this.postSessionConversation(sessionId);
+  }
+
+  /**
+   * Unsubscribe from per-session data updates for a tile.
+   * @param sessionId The session ID to unsubscribe from.
+   */
+  private handleTileUnsubscribe(sessionId: string): void {
+    this.subscribedSessionIds.delete(sessionId);
+    console.log(
+      `${LOG_PREFIX.PANEL} Tile unsubscribe: ${sessionId.slice(0, 8)} (${this.subscribedSessionIds.size} total)`
+    );
+  }
+
+  /**
+   * Persist tile layout presets from the webview.
+   * @param layouts The tile layout presets to persist.
+   */
+  private handleTileLayoutsSave(layouts: import('./models/types').SavedTileLayout[]): void {
+    console.log(`${LOG_PREFIX.PANEL} Saving ${layouts.length} tile layout(s)`);
+    this.tileLayoutStore.setLayouts(layouts).catch((err: unknown) => {
+      console.log(`${LOG_PREFIX.PANEL} Failed to persist tile layouts: ${err}`);
+    });
+  }
+
+  /**
+   * Send activities for a specific session (used by tile subscriptions).
+   * @param sessionId The session ID to send activities for.
+   */
+  private postSessionActivities(sessionId: string): void {
+    const activities = this.sessionTracker.getFilteredActivities(sessionId);
+    this.postMessage({ type: 'activity:full', events: activities, sessionId });
+  }
+
+  /**
+   * Send conversation for a specific session (used by tile subscriptions).
+   * @param sessionId The session ID to send conversation for.
+   */
+  private postSessionConversation(sessionId: string): void {
+    const conversation = this.sessionTracker.getFilteredConversation(sessionId);
+    this.postMessage({ type: 'conversation:full', turns: conversation, sessionId });
+  }
+
   /** Restore launchedSessionModes from workspace state on construction. */
   private restoreLaunchedSessionModes(): void {
     const stored = this.workspaceState.get<Record<string, string>>(
@@ -936,6 +1086,50 @@ export class DashboardPanel implements vscode.Disposable {
   }
 
   /**
+   * Filter out ghost continuation sessions created by Conductor resume operations.
+   *
+   * @remarks
+   * When `adoptSession` or `notifySessionReconnected` resumes a session with
+   * `claude --resume <id>`, Claude Code creates a new JSONL file with a fresh
+   * session ID. Until the ContinuationGrouper merges it (needs a slug record),
+   * the new session appears as a ghost card with 0 turns and 0 tokens.
+   *
+   * This is a transient display-time filter — never written to visibilityStore.
+   *
+   * @param sessions - Sessions to filter
+   * @returns Sessions with ghost continuations removed
+   */
+  private filterGhostContinuations(sessions: SessionInfo[]): SessionInfo[] {
+    const now = Date.now();
+    // Prune expired entries
+    for (const [cwd, entry] of this.recentResumes) {
+      if (now - entry.timestamp > TIMING.GHOST_CONTINUATION_WINDOW_MS) {
+        this.recentResumes.delete(cwd);
+      }
+    }
+    if (this.recentResumes.size === 0) {
+      return sessions;
+    }
+    return sessions.filter((s) => {
+      if (
+        s.turnCount === 0 &&
+        s.totalInputTokens === 0 &&
+        s.totalOutputTokens === 0 &&
+        !s.isSubAgent &&
+        !this.conductorLaunchedIds.has(s.sessionId) &&
+        s.cwd &&
+        this.recentResumes.has(s.cwd)
+      ) {
+        console.log(
+          `${LOG_PREFIX.PANEL} Filtering ghost continuation ${s.sessionId} (cwd: ${s.cwd})`
+        );
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /**
    * Adopt an external session by resuming it in a VS Code terminal.
    * Passes all continuation group members as search candidates so ProcessDiscovery
    * can find the terminal regardless of which member ID it was started with.
@@ -977,6 +1171,11 @@ export class DashboardPanel implements vscode.Disposable {
       );
       this.conductorLaunchedIds.add(resumedId);
 
+      // Track resume for ghost continuation filtering
+      if (sessionCwd) {
+        this.recentResumes.set(sessionCwd, { resumedId, timestamp: Date.now() });
+      }
+
       // Map PTY session ID → displayed session's primary ID for routing
       if (resumedId !== sessionId) {
         const primaryId = groupMembers[0];
@@ -1002,6 +1201,31 @@ export class DashboardPanel implements vscode.Disposable {
   private findLaunchedGroupMember(sessionId: string): string | undefined {
     const members = this.sessionTracker.getGroupMembers(sessionId);
     return members.find((id) => this.sessionLauncher.isLaunchedSession(id));
+  }
+
+  /**
+   * Resolve a webview display ID to the actual PTY session ID for input routing.
+   *
+   * @remarks
+   * The webview sends the display ID (primary session ID) for pty:input/pty:resize,
+   * but the actual PTY process may be running under a continuation member ID.
+   * This method checks the reverse mapping from ptyIdToDisplayId.
+   *
+   * @param displayId - The display session ID from the webview
+   * @returns The actual PTY session ID to route input to
+   */
+  private resolvePtySessionId(displayId: string): string {
+    // Fast path: displayId itself is a launched session (fresh launch, no continuation)
+    if (this.sessionLauncher.isLaunchedSession(displayId)) {
+      return displayId;
+    }
+    // Reverse lookup: find the PTY session ID that maps to this display ID
+    for (const [ptyId, dId] of this.ptyIdToDisplayId) {
+      if (dId === displayId && this.sessionLauncher.isLaunchedSession(ptyId)) {
+        return ptyId;
+      }
+    }
+    return displayId;
   }
 
   /**
@@ -1032,6 +1256,13 @@ export class DashboardPanel implements vscode.Disposable {
     }
     if (toRemove.length > 0) {
       console.log(`${LOG_PREFIX.PANEL} Pruned ${toRemove.length} orphaned PTY buffer(s)`);
+    }
+
+    // Clean up stale ptyIdToDisplayId entries for dead PTY sessions
+    for (const [ptyId] of this.ptyIdToDisplayId) {
+      if (!this.sessionLauncher.isLaunchedSession(ptyId)) {
+        this.ptyIdToDisplayId.delete(ptyId);
+      }
     }
   }
 
@@ -1223,6 +1454,7 @@ export class DashboardPanel implements vscode.Disposable {
   /** Dispose the panel, clear the singleton, and release all subscriptions. */
   dispose(): void {
     this.clearLaunchDiscoveryTimer();
+    this.recentResumes.clear();
     vscode.commands.executeCommand('setContext', CONTEXT_KEYS.PANEL_FOCUSED, false);
     vscode.commands.executeCommand('setContext', CONTEXT_KEYS.KEYBOARD_NAV_ACTIVE, false);
     vscode.commands.executeCommand('setContext', CONTEXT_KEYS.TERMINAL_VIEW_SHOWING, false);

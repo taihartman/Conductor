@@ -106,6 +106,7 @@ function createMockSessionTracker(): any {
     getMostRecentContinuationMember: vi.fn((id: string) => id),
     getGroupMembers: vi.fn((id: string) => [id]),
     refresh: vi.fn(),
+    getMonitoringScope: vi.fn().mockReturnValue('~/.claude/projects/'),
   };
 }
 
@@ -214,6 +215,15 @@ function createMockStatsCacheReader(): any {
   };
 }
 
+function createMockTileLayoutStore(): any {
+  return {
+    getLayouts: vi.fn(() => []),
+    setLayouts: vi.fn(() => Promise.resolve()),
+    onLayoutsChanged: vi.fn(() => ({ dispose: vi.fn() })),
+    dispose: vi.fn(),
+  };
+}
+
 function createMockContext(): any {
   return {
     extensionUri: { fsPath: '/ext', scheme: 'file', path: '/ext' },
@@ -266,7 +276,8 @@ describe('DashboardPanel message routing', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     // Clear the initial state:full post from createOrShow
@@ -646,7 +657,8 @@ describe('DashboardPanel message routing', () => {
         createMockLaunchedSessionStore(),
         createMockSessionHistoryStore(),
         createMockSessionHistoryService(),
-        createMockStatsCacheReader()
+        createMockStatsCacheReader(),
+        createMockTileLayoutStore()
       );
 
       // Trigger adoption with a session that has a different resumedId
@@ -797,6 +809,7 @@ describe('DashboardPanel message routing', () => {
             startedAt: '2026-01-01',
             status: 'idle',
             turnCount: 0,
+            toolCallCount: 0,
             totalInputTokens: 0,
             totalOutputTokens: 0,
             isArtifact: true,
@@ -825,6 +838,7 @@ describe('DashboardPanel message routing', () => {
             startedAt: '2026-01-01',
             status: 'idle',
             turnCount: 0,
+            toolCallCount: 0,
             totalInputTokens: 0,
             totalOutputTokens: 0,
             isArtifact: true,
@@ -1201,7 +1215,8 @@ describe('DashboardPanel session ordering', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     postedMessages.length = 0;
@@ -1334,7 +1349,8 @@ describe('DashboardPanel history support', () => {
       launchedStore,
       historyStore,
       historyService,
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     postedMessages.length = 0;
@@ -1408,7 +1424,8 @@ describe('DashboardPanel history support', () => {
         launchedStore,
         historyStore,
         historyService,
-        statsCacheReader
+        statsCacheReader,
+        createMockTileLayoutStore()
       );
       postedMessages.length = 0;
 
@@ -1530,7 +1547,8 @@ describe('DashboardPanel race condition guards', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     postedMessages.length = 0;
@@ -1636,7 +1654,8 @@ describe('DashboardPanel visibility relayout', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     postedMessages.length = 0;
@@ -1735,7 +1754,8 @@ describe('DashboardPanel focus context', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     expect(mockExecuteCommand).toHaveBeenCalledWith('setContext', 'conductor.panelFocused', true);
@@ -1754,7 +1774,8 @@ describe('DashboardPanel focus context', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     mockExecuteCommand.mockClear();
@@ -1771,9 +1792,554 @@ describe('DashboardPanel focus context', () => {
       createMockLaunchedSessionStore(),
       createMockSessionHistoryStore(),
       createMockSessionHistoryService(),
-      createMockStatsCacheReader()
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
     );
 
     expect(mockExecuteCommand).toHaveBeenCalledWith('setContext', 'conductor.panelFocused', true);
+  });
+});
+
+// ── PTY routing for continuation sessions ────────────────────────────
+
+describe('DashboardPanel PTY routing for continuation sessions', () => {
+  let tracker: ReturnType<typeof createMockSessionTracker>;
+  let launcher: ReturnType<typeof createMockSessionLauncher>;
+  let ptyBridge: ReturnType<typeof createMockPtyBridge>;
+
+  /** The preSpawnCallback captured from setPreSpawnCallback. */
+  let capturedPreSpawnCallback: ((sid: string) => void) | undefined;
+
+  beforeEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+    postedMessages.length = 0;
+    messageHandler = undefined;
+    viewStateHandler = undefined;
+
+    for (const key of Object.keys(mockWorkspaceStateStore)) {
+      delete mockWorkspaceStateStore[key];
+    }
+
+    tracker = createMockSessionTracker();
+    launcher = createMockSessionLauncher();
+    ptyBridge = createMockPtyBridge();
+
+    // Capture the preSpawnCallback when setPreSpawnCallback is called
+    capturedPreSpawnCallback = undefined;
+    launcher.setPreSpawnCallback.mockImplementation((cb: (sid: string) => void) => {
+      capturedPreSpawnCallback = cb;
+    });
+
+    DashboardPanel.createOrShow(
+      createMockContext(),
+      tracker,
+      createMockNameStore(),
+      createMockOrderStore(),
+      createMockVisibilityStore(),
+      launcher,
+      ptyBridge,
+      createMockLaunchedSessionStore(),
+      createMockSessionHistoryStore(),
+      createMockSessionHistoryService(),
+      createMockStatsCacheReader(),
+      createMockTileLayoutStore()
+    );
+
+    postedMessages.length = 0;
+  });
+
+  afterEach(() => {
+    DashboardPanel.currentPanel?.dispose();
+    DashboardPanel.currentPanel = undefined;
+  });
+
+  describe('preSpawnCallback', () => {
+    it('registers PtyBridge under primary ID for continuation sessions', () => {
+      // Session 'continuation-99' belongs to group ['primary-aa', 'continuation-99']
+      tracker.getGroupMembers.mockReturnValue(['primary-aa', 'continuation-99']);
+
+      capturedPreSpawnCallback!('continuation-99');
+
+      // PtyBridge should be registered under the primary display ID
+      expect(ptyBridge.registerSession).toHaveBeenCalledWith('primary-aa');
+      expect(ptyBridge.registerSession).not.toHaveBeenCalledWith('continuation-99');
+    });
+
+    it('registers PtyBridge under own ID for fresh launches (single-member group)', () => {
+      // Fresh launch: new UUID is the only member
+      tracker.getGroupMembers.mockReturnValue(['fresh-uuid']);
+
+      capturedPreSpawnCallback!('fresh-uuid');
+
+      expect(ptyBridge.registerSession).toHaveBeenCalledWith('fresh-uuid');
+    });
+
+    it('registers PtyBridge under own ID when sid IS the primary', () => {
+      // Session is the primary of its own group — no redirect needed
+      tracker.getGroupMembers.mockReturnValue(['primary-aa', 'continuation-99']);
+
+      capturedPreSpawnCallback!('primary-aa');
+
+      expect(ptyBridge.registerSession).toHaveBeenCalledWith('primary-aa');
+    });
+  });
+
+  describe('pty:input reverse routing', () => {
+    it('routes input to PTY session ID when display ID differs', () => {
+      // Set up: continuation session 'pty-id' maps to display 'display-id'
+      tracker.getGroupMembers.mockReturnValue(['display-id', 'pty-id']);
+      capturedPreSpawnCallback!('pty-id');
+
+      // The PTY session is launched — display-id is NOT launched
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'pty-id');
+
+      // Webview sends input with displayId
+      sendMessage({ type: 'pty:input', sessionId: 'display-id', data: 'hello' });
+
+      expect(launcher.writeInput).toHaveBeenCalledWith('pty-id', 'hello');
+    });
+
+    it('routes input directly when display ID is a launched session', () => {
+      // Fresh launch — display ID is the same as PTY session ID
+      tracker.getGroupMembers.mockReturnValue(['same-id']);
+      capturedPreSpawnCallback!('same-id');
+
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'same-id');
+
+      sendMessage({ type: 'pty:input', sessionId: 'same-id', data: 'world' });
+
+      expect(launcher.writeInput).toHaveBeenCalledWith('same-id', 'world');
+    });
+  });
+
+  describe('pty:resize reverse routing', () => {
+    it('routes resize to PTY session ID when display ID differs', () => {
+      tracker.getGroupMembers.mockReturnValue(['display-id', 'pty-id']);
+      capturedPreSpawnCallback!('pty-id');
+
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'pty-id');
+
+      sendMessage({ type: 'pty:resize', sessionId: 'display-id', cols: 120, rows: 40 });
+
+      expect(launcher.resize).toHaveBeenCalledWith('pty-id', 120, 40);
+    });
+  });
+
+  describe('pruneOrphanedPtyBuffers with continuation IDs', () => {
+    it('does not prune buffers registered under a continuation member ID', () => {
+      // Register buffer under primary (simulating preSpawnCallback for continuation)
+      tracker.getGroupMembers.mockReturnValue(['primary-aa', 'cont-bb']);
+      capturedPreSpawnCallback!('cont-bb');
+
+      // primary-aa should be registered in PtyBridge
+      expect(ptyBridge.hasSession('primary-aa')).toBe(true);
+
+      // Post state with sessions that include continuation IDs
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'primary-aa',
+            continuationSessionIds: ['cont-bb'],
+            status: 'working',
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      // postFullState triggers pruning
+      DashboardPanel.currentPanel!.postFullState();
+
+      // Buffer for primary-aa should NOT be pruned (it's in knownIds)
+      expect(ptyBridge.unregisterSession).not.toHaveBeenCalledWith('primary-aa');
+    });
+  });
+
+  describe('stale ptyIdToDisplayId cleanup', () => {
+    it('removes mapping for dead PTY sessions during prune', () => {
+      // Set up a continuation mapping
+      tracker.getGroupMembers.mockReturnValue(['display-id', 'pty-id']);
+      capturedPreSpawnCallback!('pty-id');
+
+      // Initially the PTY session is alive
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'pty-id');
+
+      // Verify reverse routing works
+      sendMessage({ type: 'pty:input', sessionId: 'display-id', data: 'test' });
+      expect(launcher.writeInput).toHaveBeenCalledWith('pty-id', 'test');
+      launcher.writeInput.mockClear();
+
+      // Now the PTY session dies
+      launcher.isLaunchedSession.mockReturnValue(false);
+
+      // Trigger a state update which invokes pruneOrphanedPtyBuffers
+      tracker.getState.mockReturnValue({
+        sessions: [
+          {
+            sessionId: 'display-id',
+            continuationSessionIds: ['pty-id'],
+            status: 'idle',
+          },
+        ],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      DashboardPanel.currentPanel!.postFullState();
+
+      // After cleanup, reverse routing should fall through to displayId
+      sendMessage({ type: 'pty:input', sessionId: 'display-id', data: 'after' });
+      expect(launcher.writeInput).toHaveBeenCalledWith('display-id', 'after');
+    });
+  });
+
+  describe('user:send-input — Path C adoption sends adopt-status', () => {
+    it('posts session:adopt-status after successful adoption via handleSendInput', async () => {
+      tracker.getMostRecentContinuationMember.mockReturnValue('ext-session');
+      tracker.getGroupMembers.mockReturnValue(['ext-session']);
+      launcher.isLaunchedSession.mockReturnValue(false);
+      launcher.transfer.mockResolvedValue('ext-session');
+
+      sendMessage({ type: 'user:send-input', sessionId: 'ext-session', text: 'hello' });
+
+      await vi.waitFor(() => {
+        const adoptStatus = postedMessages.find(
+          (m) => m.type === 'session:adopt-status' && m.status === 'adopted'
+        );
+        expect(adoptStatus).toBeDefined();
+        expect(adoptStatus.sessionId).toBe('ext-session');
+      });
+    });
+  });
+
+  describe('notifySessionReconnected', () => {
+    it('posts session:adopt-status with resolved display ID', () => {
+      tracker.getGroupMembers.mockReturnValue(['primary-id', 'cont-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('cont-id');
+
+      const adoptStatus = lastPosted('session:adopt-status');
+      expect(adoptStatus).toBeDefined();
+      expect(adoptStatus.sessionId).toBe('primary-id');
+      expect(adoptStatus.status).toBe('adopted');
+    });
+
+    it('falls back to sessionId when no group members', () => {
+      tracker.getGroupMembers.mockReturnValue([]);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('standalone-id');
+
+      const adoptStatus = lastPosted('session:adopt-status');
+      expect(adoptStatus).toBeDefined();
+      expect(adoptStatus.sessionId).toBe('standalone-id');
+      expect(adoptStatus.status).toBe('adopted');
+    });
+  });
+
+  describe('ghost continuation filtering', () => {
+    /** Helper to create a minimal SessionInfo for testing. */
+    function makeSession(
+      overrides: Partial<import('../models/types').SessionInfo> = {}
+    ): import('../models/types').SessionInfo {
+      return {
+        sessionId: 'ghost-session',
+        slug: 'ghost-se',
+        summary: '',
+        status: 'idle',
+        model: '',
+        gitBranch: '',
+        cwd: '/projects/myapp',
+        startedAt: new Date().toISOString(),
+        lastActivityAt: new Date().toISOString(),
+        turnCount: 0,
+        toolCallCount: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheCreationTokens: 0,
+        isSubAgent: false,
+        isArtifact: false,
+        filePath: '/tmp/test.jsonl',
+        ...overrides,
+      };
+    }
+
+    it('filters ghost session with matching cwd, 0 turns, 0 tokens after resume', () => {
+      // Simulate a resume operation via notifySessionReconnected
+      const resumedSession = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumedSession],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+      postedMessages.length = 0;
+
+      // Now a ghost session appears with the same cwd
+      const ghost = makeSession({ sessionId: 'ghost-session', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumedSession, ghost],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).not.toContain('ghost-session');
+      expect(sessionIds).toContain('original-id');
+    });
+
+    it('does NOT filter session with turns > 0', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+      postedMessages.length = 0;
+
+      const realSession = makeSession({
+        sessionId: 'real-session',
+        cwd: '/projects/myapp',
+        turnCount: 1,
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed, realSession],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).toContain('real-session');
+    });
+
+    it('does NOT filter session outside time window', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+
+      // Manually expire the resume entry by backdating it
+      const panel = DashboardPanel.currentPanel as any;
+      const entry = panel.recentResumes.get('/projects/myapp');
+      entry.timestamp = Date.now() - TIMING.GHOST_CONTINUATION_WINDOW_MS - 1;
+      postedMessages.length = 0;
+
+      const ghost = makeSession({ sessionId: 'ghost-session', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed, ghost],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).toContain('ghost-session');
+    });
+
+    it('does NOT filter sub-agent sessions', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+      postedMessages.length = 0;
+
+      const subAgent = makeSession({
+        sessionId: 'subagent-session',
+        cwd: '/projects/myapp',
+        isSubAgent: true,
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed, subAgent],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).toContain('subagent-session');
+    });
+
+    it('does NOT filter sessions in conductorLaunchedIds', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+      postedMessages.length = 0;
+
+      // Mark the session as conductor-launched
+      DashboardPanel.currentPanel!.notifySessionLaunched('launched-ghost', '/projects/myapp');
+      postedMessages.length = 0;
+
+      const launchedSession = makeSession({
+        sessionId: 'launched-ghost',
+        cwd: '/projects/myapp',
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed, launchedSession],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).toContain('launched-ghost');
+    });
+
+    it('does NOT filter session with no matching cwd', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+      postedMessages.length = 0;
+
+      const differentCwd = makeSession({
+        sessionId: 'other-cwd-session',
+        cwd: '/projects/other',
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed, differentCwd],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const fullState = lastPosted('state:full');
+      const sessionIds = fullState.sessions.map((s: any) => s.sessionId);
+      expect(sessionIds).toContain('other-cwd-session');
+    });
+
+    it('auto-prunes expired recentResumes entries', () => {
+      const resumed = makeSession({ sessionId: 'original-id', cwd: '/projects/myapp' });
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      tracker.getGroupMembers.mockReturnValue(['original-id']);
+
+      DashboardPanel.currentPanel!.notifySessionReconnected('original-id');
+
+      // Backdate the entry past the window
+      const panel = DashboardPanel.currentPanel as any;
+      const entry = panel.recentResumes.get('/projects/myapp');
+      entry.timestamp = Date.now() - TIMING.GHOST_CONTINUATION_WINDOW_MS - 1;
+
+      // Trigger postFullState which calls filterGhostContinuations
+      tracker.getState.mockReturnValue({
+        sessions: [resumed],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      // The entry should have been pruned
+      expect(panel.recentResumes.size).toBe(0);
+    });
+  });
+
+  describe('monitoringScope in state:full', () => {
+    it('postFullState includes monitoringScope from sessionTracker', () => {
+      const mockScope = '~/.claude/projects/-home-user-myapp/';
+      tracker.getMonitoringScope.mockReturnValue(mockScope);
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      expect(stateMsg.monitoringScope).toBe(mockScope);
+    });
+
+    it('postFullState includes default monitoringScope when unscoped', () => {
+      tracker.getMonitoringScope.mockReturnValue('~/.claude/projects/');
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+
+      DashboardPanel.currentPanel!.postFullState();
+
+      const stateMsg = lastPosted('state:full');
+      expect(stateMsg.monitoringScope).toBe('~/.claude/projects/');
+    });
   });
 });
