@@ -20,6 +20,7 @@ import {
   TokenSummary,
   HistoryEntry,
   StatsCache,
+  SavedTileLayout,
 } from './types';
 import type { LaunchMode, NavDirection, OverviewMode, SortDirection } from './sharedConstants';
 
@@ -52,6 +53,8 @@ export type ExtensionToWebviewMessage =
       isNestedSession: boolean;
       /** The session ID currently focused in the extension backend. Used by the webview to guard against stale data from debounced updates. */
       focusedSessionId: string | null;
+      /** Human-readable description of which directories are being monitored for sessions. */
+      monitoringScope: string;
     }
   | { type: 'activity:full'; events: ActivityEvent[]; sessionId: string | null }
   | { type: 'conversation:full'; turns: ConversationTurn[]; sessionId: string | null }
@@ -63,7 +66,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'pty:buffers'; buffers: Record<string, string> }
   /** Result of a session launch attempt (success with sessionId, or error). */
   | { type: 'session:launch-status'; sessionId?: string; status: LaunchStatus; error?: string }
-  /** Result of adopting an external session for terminal mode. */
+  /** Result of adopting an external session for terminal mode. Also sent for auto-reconnected sessions. */
   | { type: 'session:adopt-status'; sessionId: string; status: AdoptStatus; error?: string }
   /** Current settings values pushed to the webview. Sent on `ready` and after `settings:update`. */
   | { type: 'settings:current'; autoHidePatterns: string[] }
@@ -86,7 +89,9 @@ export type ExtensionToWebviewMessage =
   /** Sent when the panel transitions from hidden to visible, prompting a layout recalculation. */
   | { type: 'panel:visible' }
   /** Injected terminal key sequence from VS Code keybinding (bypasses VS Code interception). */
-  | { type: 'terminal:inject-keys'; data: string };
+  | { type: 'terminal:inject-keys'; data: string }
+  /** Persisted tile layout presets pushed to the webview on `ready`. */
+  | { type: 'tile-layouts:current'; layouts: SavedTileLayout[] };
 
 /**
  * Messages sent from the webview to the extension backend.
@@ -137,4 +142,12 @@ export type WebviewToExtensionMessage =
   /** Webview requests usage stats (sent when switching to Usage tab). */
   | { type: 'usage:request' }
   /** Webview notifies the extension when the terminal view is shown/hidden (for keybinding `when` clause). */
-  | { type: 'terminal:view-changed'; active: boolean };
+  | { type: 'terminal:view-changed'; active: boolean }
+  /** Webview subscribes to per-session data for a tile (triggers activity:full + conversation:full). */
+  | { type: 'tile:subscribe'; sessionId: string }
+  /** Webview unsubscribes from per-session data for a tile. */
+  | { type: 'tile:unsubscribe'; sessionId: string }
+  /** Webview persists saved tile layout presets. */
+  | { type: 'tile-layouts:save'; layouts: SavedTileLayout[] }
+  /** User wants to show the session's VS Code terminal tab (from context menu). */
+  | { type: 'session:show-terminal'; sessionId: string };

@@ -11,7 +11,6 @@ export const UI_STRINGS = {
   EMPTY_STATE_HEADING: 'No Sessions Detected',
   EMPTY_STATE_DESCRIPTION:
     'Start one or more Claude Code sessions in your terminal. The dashboard will automatically discover sessions and display their activity in real time.',
-  EMPTY_STATE_MONITORING: 'Monitoring ~/.claude/projects/',
   NO_SESSIONS_MATCH: 'No sessions match the current filter',
   CONTEXT_WORKING: 'Working...',
   CONTEXT_THINKING: 'Thinking...',
@@ -94,6 +93,9 @@ export const UI_STRINGS = {
   CONTEXT_MENU_HIDE: 'Hide',
   CONTEXT_MENU_UNHIDE: 'Unhide',
   CONTEXT_MENU_RENAME: 'Rename',
+  CONTEXT_MENU_COPY_SESSION_ID: 'Copy Session ID',
+  CONTEXT_MENU_COPY_RESUME_CMD: 'Copy Resume Command',
+  CONTEXT_MENU_SHOW_VS_TERMINAL: 'Show in VS Code Terminal',
   CONTEXT_MENU_LABEL: 'Session options',
   HIDDEN_TAB_EMPTY: 'No hidden sessions',
   HISTORY_EMPTY_TITLE: 'No Session History',
@@ -180,6 +182,7 @@ export const UI_STRINGS = {
   HELP_SHORTCUT_NAV_ARROWS: 'Navigate Between Sessions',
 
   // Feature names
+  HELP_FEATURE_KEYBOARD_NAV: 'Keyboard Navigation',
   HELP_FEATURE_KANBAN: 'Kanban Board',
   HELP_FEATURE_QUICK_PICK: 'Quick Pick Switcher',
   HELP_FEATURE_SEARCH: 'Search & Filter',
@@ -193,6 +196,8 @@ export const UI_STRINGS = {
   HELP_FEATURE_AUTO_HIDE: 'Auto-Hide Patterns',
 
   // Feature descriptions
+  HELP_DESC_KEYBOARD_NAV:
+    'Press {modifier}+Shift+Arrow keys to quickly move between sessions. This is the fastest way to navigate your session list.',
   HELP_DESC_KANBAN:
     'Organizes sessions into status columns: Performing, Awaiting Input, Needs Attention, and Completed.',
   HELP_DESC_QUICK_PICK:
@@ -243,4 +248,32 @@ export const UI_STRINGS = {
   USAGE_HOUR_6PM: '6p',
   /** End-of-axis midnight label for the Peak Hours chart. */
   USAGE_HOUR_MIDNIGHT_END: '12a',
+
+  // ── Tiling workspace ─────────────────────────────────────────────
+  /** Placeholder text shown in an empty tile (no session assigned). */
+  TILE_EMPTY_PROMPT: 'Drag a session here',
+  /** Tooltip for the close button on a tile panel. */
+  TILE_CLOSE_TOOLTIP: 'Close tile',
+  /** Toolbar button to enter tiling mode. */
+  TILE_ENTER_BUTTON: 'Enter Tiling Mode',
+  /** Toolbar button to exit tiling mode. */
+  TILE_EXIT_BUTTON: 'Exit Tiling Mode',
+  /** Label for the "Save Layout" button in the tiling workspace header. */
+  TILE_SAVE_LAYOUT: 'Save Layout',
+  /** Placeholder for the layout name input dialog. */
+  TILE_LAYOUT_NAME_PLACEHOLDER: 'Layout name...',
+  /** Label for the layout picker dropdown. */
+  TILE_RESTORE_LAYOUT: 'Restore Layout',
+  /** Shown when no saved layouts exist. */
+  TILE_NO_SAVED_LAYOUTS: 'No saved layouts',
+  /** Confirmation when a layout is saved. */
+  TILE_LAYOUT_SAVED: 'Layout saved',
+  /** Delete saved layout button tooltip. */
+  TILE_DELETE_LAYOUT: 'Delete layout',
 } as const;
+
+/**
+ * Default monitoring scope shown in the empty state before the first state:full
+ * message arrives from the extension, and used as the default for setFullState.
+ */
+export const DEFAULT_MONITORING_SCOPE = '~/.claude/projects/' as const;

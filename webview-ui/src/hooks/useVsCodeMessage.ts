@@ -29,6 +29,9 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
     setHistoryEntries,
     setActiveTab,
     setUsageData,
+    setSavedTileLayouts,
+    setSessionActivities,
+    setSessionConversation,
   } = useDashboardStore();
 
   useEffect(() => {
@@ -44,20 +47,29 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
             message.toolStats,
             message.tokenSummaries,
             message.isNestedSession,
-            message.focusedSessionId
+            message.focusedSessionId,
+            message.monitoringScope
           );
           break;
         case 'activity:full': {
-          const { focusedSessionId } = useDashboardStore.getState();
-          if (message.sessionId === focusedSessionId) {
+          const state = useDashboardStore.getState();
+          if (message.sessionId === state.focusedSessionId) {
             setActivities(message.events);
+          }
+          // Also store per-session data for tiled panels
+          if (state.tileRoot && message.sessionId) {
+            setSessionActivities(message.sessionId, message.events);
           }
           break;
         }
         case 'conversation:full': {
-          const { focusedSessionId } = useDashboardStore.getState();
-          if (message.sessionId === focusedSessionId) {
+          const state = useDashboardStore.getState();
+          if (message.sessionId === state.focusedSessionId) {
             setConversation(message.turns);
+          }
+          // Also store per-session data for tiled panels
+          if (state.tileRoot && message.sessionId) {
+            setSessionConversation(message.sessionId, message.turns);
           }
           break;
         }
@@ -105,6 +117,9 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
         case 'usage:full':
           setUsageData(message.stats);
           break;
+        case 'tile-layouts:current':
+          setSavedTileLayouts(message.layouts);
+          break;
         case 'panel:visible':
           forceRelayout();
           break;
@@ -137,6 +152,9 @@ export function useVsCodeMessage(navHandlers?: NavMessageHandlers): void {
     setHistoryEntries,
     setActiveTab,
     setUsageData,
+    setSavedTileLayouts,
+    setSessionActivities,
+    setSessionConversation,
     navHandlers,
   ]);
 }

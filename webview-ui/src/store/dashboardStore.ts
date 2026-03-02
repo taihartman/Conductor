@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { DEFAULT_MONITORING_SCOPE } from '../config/strings';
 import type { Layout } from 'react-resizable-panels';
 import type {
   SessionInfo,
@@ -8,10 +9,20 @@ import type {
   TokenSummary,
   HistoryEntry,
   StatsCache,
+  TileNode,
+  SavedTileLayout,
 } from '@shared/types';
 import type { InputSendStatus } from '@shared/protocol';
 import type { LaunchMode, OverviewMode, SortDirection } from '@shared/sharedConstants';
 import { LAUNCH_MODES, OVERVIEW_MODES, SORT_DIRECTIONS } from '@shared/sharedConstants';
+import {
+  generateTileId,
+  splitNode,
+  removeNode,
+  updateSizes,
+  setLeafSession,
+  findLeafBySessionId,
+} from '../utils/tileTree';
 
 export type FilterMode = 'recent' | 'active' | 'all';
 
@@ -23,6 +34,7 @@ export const DETAIL_VIEW_MODES = {
   OVERVIEW_ONLY: 'overview-only',
   SPLIT: 'split',
   EXPANDED: 'expanded',
+  TILING: 'tiling',
 } as const;
 
 export type DetailViewMode = (typeof DETAIL_VIEW_MODES)[keyof typeof DETAIL_VIEW_MODES];
@@ -67,6 +79,8 @@ interface DashboardState {
   pendingAdoptions: Set<string>;
   /** True when the extension host is running inside a Claude Code session. */
   isNestedSession: boolean;
+  /** Human-readable description of which directories are monitored for sessions. */
+  monitoringScope: string;
   /** Whether the settings drawer is open. */
   settingsDrawerOpen: boolean;
   /** User-defined auto-hide patterns from VS Code settings. */
@@ -82,6 +96,21 @@ interface DashboardState {
   /** Per-column sort direction for the Kanban board (missing keys default to 'desc'). */
   kanbanSortOrders: Record<string, SortDirection>;
 
+  // ---- Tiling workspace state ----
+
+  /** Root of the tile tree (null when not in tiling mode). */
+  tileRoot: TileNode | null;
+  /** ID of the active (focused) tile leaf. */
+  activeTileId: string | null;
+  /** Saved tile layout presets from the extension. */
+  savedTileLayouts: SavedTileLayout[];
+  /** Per-session activity data for tiled panels. */
+  activitiesBySession: Map<string, ActivityEvent[]>;
+  /** Per-session conversation data for tiled panels. */
+  conversationBySession: Map<string, ConversationTurn[]>;
+  /** Current drop target during a drag-to-tile operation (for visual feedback). */
+  dragToTileTarget: { tileId: string; edge: string } | null;
+
   setPendingLaunchSession: (sessionId: string | null) => void;
   addPendingAdoption: (sessionId: string) => void;
   removePendingAdoption: (sessionId: string) => void;
@@ -92,7 +121,8 @@ interface DashboardState {
     toolStats: ToolStatEntry[],
     tokenSummaries: TokenSummary[],
     isNestedSession: boolean,
-    focusedSessionId: string | null
+    focusedSessionId: string | null,
+    monitoringScope?: string
   ) => void;
   setActivities: (activities: ActivityEvent[]) => void;
   setConversation: (turns: ConversationTurn[]) => void;
@@ -109,7 +139,6 @@ interface DashboardState {
   setInputStatus: (status: { sessionId: string; status: InputSendStatus; error?: string }) => void;
   setPanelLayout: (layout: Layout) => void;
   setViewMode: (sessionId: string, mode: 'conversation' | 'terminal') => void;
-  toggleViewMode: (sessionId: string) => void;
   appendPtyBuffer: (sessionId: string, data: string) => void;
   /** Bulk-replace PTY buffers (replay on webview reconnect). Size-capped per session. */
   setPtyBuffers: (buffers: Record<string, string>) => void;
@@ -128,6 +157,43 @@ interface DashboardState {
   zenExitedAt: number | null;
   enterZenMode: () => void;
   exitZenMode: () => void;
+
+  // ---- Tiling actions ----
+
+  /** Enter tiling mode with an initial leaf for the given session. */
+  enterTilingMode: (sessionId: string) => void;
+  /** Exit tiling mode and return to overview-only. */
+  exitTilingMode: () => void;
+  /** Split a leaf tile, inserting a new leaf with the given session. */
+  splitTile: (
+    tileId: string,
+    direction: 'horizontal' | 'vertical',
+    sessionId: string,
+    insertBefore?: boolean
+  ) => void;
+  /** Close (remove) a tile leaf. Exits tiling if tree becomes empty. */
+  closeTile: (tileId: string) => void;
+  /** Update the sizes of a split node after a resize drag. */
+  setTileSizes: (splitId: string, sizes: [number, number]) => void;
+  /** Assign a session to a tile leaf. */
+  setTileSession: (tileId: string, sessionId: string | null) => void;
+  /** Set the active (focused) tile leaf ID. */
+  setActiveTile: (tileId: string | null) => void;
+  /** Replace the saved tile layouts list (from extension). */
+  setSavedTileLayouts: (layouts: SavedTileLayout[]) => void;
+  /** Restore a saved layout preset. */
+  restoreTileLayout: (layout: SavedTileLayout) => void;
+  /** Set per-session activities (for tiled panels). */
+  setSessionActivities: (sessionId: string, activities: ActivityEvent[]) => void;
+  /** Set per-session conversation (for tiled panels). */
+  setSessionConversation: (sessionId: string, turns: ConversationTurn[]) => void;
+  /** Update the active drop target during drag-to-tile operations. */
+  setDragToTileTarget: (target: { tileId: string; edge: string } | null) => void;
+}
+
+/** Resolve the desired detail view mode, preserving TILING when active. */
+function resolveDetailMode(current: DetailViewMode, desired: DetailViewMode): DetailViewMode {
+  return current === DETAIL_VIEW_MODES.TILING ? DETAIL_VIEW_MODES.TILING : desired;
 }
 
 export const useDashboardStore = create<DashboardState>((set) => ({
@@ -153,6 +219,7 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   pendingLaunchSessionId: null,
   pendingAdoptions: new Set(),
   isNestedSession: false,
+  monitoringScope: DEFAULT_MONITORING_SCOPE,
   settingsDrawerOpen: false,
   autoHidePatterns: [],
   launchMode: LAUNCH_MODES.NORMAL,
@@ -160,6 +227,14 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   keyboardFocusedSessionId: null,
   navAnchor: null,
   kanbanSortOrders: {},
+
+  // Tiling state
+  tileRoot: null,
+  activeTileId: null,
+  savedTileLayouts: [],
+  activitiesBySession: new Map(),
+  conversationBySession: new Map(),
+  dragToTileTarget: null,
 
   setPendingLaunchSession: (sessionId) => set({ pendingLaunchSessionId: sessionId }),
   addPendingAdoption: (sessionId) =>
@@ -181,7 +256,8 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     toolStats,
     tokenSummaries,
     isNestedSession,
-    msgFocusId
+    msgFocusId,
+    monitoringScope = DEFAULT_MONITORING_SCOPE
   ) =>
     set((state) => {
       const pending = state.pendingLaunchSessionId;
@@ -196,10 +272,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         toolStats,
         tokenSummaries,
         isNestedSession,
+        monitoringScope,
         ...(found
           ? {
               focusedSessionId: pending,
-              detailViewMode: DETAIL_VIEW_MODES.SPLIT,
+              detailViewMode: resolveDetailMode(state.detailViewMode, DETAIL_VIEW_MODES.SPLIT),
               filteredSubAgentId: null,
               pendingLaunchSessionId: null,
             }
@@ -209,18 +286,30 @@ export const useDashboardStore = create<DashboardState>((set) => ({
   setActivities: (activities) => set({ activities }),
   setConversation: (turns) => set({ conversation: turns }),
   setFocusedSession: (sessionId) =>
-    set({
+    set((state) => ({
       focusedSessionId: sessionId,
-      detailViewMode: sessionId ? DETAIL_VIEW_MODES.SPLIT : DETAIL_VIEW_MODES.OVERVIEW_ONLY,
+      detailViewMode: resolveDetailMode(
+        state.detailViewMode,
+        sessionId ? DETAIL_VIEW_MODES.SPLIT : DETAIL_VIEW_MODES.OVERVIEW_ONLY
+      ),
       filteredSubAgentId: null,
-    }),
+      // When in tiling mode and the session is already in a tile, focus that tile
+      ...(state.detailViewMode === DETAIL_VIEW_MODES.TILING && state.tileRoot && sessionId
+        ? {
+            activeTileId: findLeafBySessionId(state.tileRoot, sessionId)?.id ?? state.activeTileId,
+          }
+        : {}),
+    })),
   setFilterMode: (mode) => set({ filterMode: mode }),
   setDetailViewMode: (mode) => set({ detailViewMode: mode }),
   setFilteredSubAgentId: (id) =>
     set((state) => ({
       filteredSubAgentId: state.filteredSubAgentId === id ? null : id,
     })),
-  expandFocusedSession: () => set({ detailViewMode: DETAIL_VIEW_MODES.EXPANDED }),
+  expandFocusedSession: () =>
+    set((state) => ({
+      detailViewMode: resolveDetailMode(state.detailViewMode, DETAIL_VIEW_MODES.EXPANDED),
+    })),
   collapseFocusedSession: () =>
     set((state) => ({
       detailViewMode:
@@ -233,11 +322,11 @@ export const useDashboardStore = create<DashboardState>((set) => ({
         state.detailViewMode === DETAIL_VIEW_MODES.SPLIT ? null : state.filteredSubAgentId,
     })),
   clearFocus: () =>
-    set({
+    set((state) => ({
       focusedSessionId: null,
-      detailViewMode: DETAIL_VIEW_MODES.OVERVIEW_ONLY,
+      detailViewMode: resolveDetailMode(state.detailViewMode, DETAIL_VIEW_MODES.OVERVIEW_ONLY),
       filteredSubAgentId: null,
-    }),
+    })),
   toggleAnalyticsDrawer: () =>
     set((state) => ({ analyticsDrawerOpen: !state.analyticsDrawerOpen })),
   setSearchQuery: (query) => set({ searchQuery: query }),
@@ -254,13 +343,6 @@ export const useDashboardStore = create<DashboardState>((set) => ({
     set((state) => {
       const next = new Map(state.viewModes);
       next.set(sessionId, mode);
-      return { viewModes: next };
-    }),
-  toggleViewMode: (sessionId) =>
-    set((state) => {
-      const next = new Map(state.viewModes);
-      const current = next.get(sessionId) ?? 'terminal';
-      next.set(sessionId, current === 'conversation' ? 'terminal' : 'conversation');
       return { viewModes: next };
     }),
   setActiveTab: (tab) => set({ activeTab: tab }),
@@ -312,4 +394,100 @@ export const useDashboardStore = create<DashboardState>((set) => ({
       zenExitedAt: null,
     })),
   exitZenMode: () => set({ zenModeActive: false, zenExitedAt: Date.now() }),
+
+  // ---- Tiling actions ----
+
+  enterTilingMode: (sessionId) => {
+    const leafId = generateTileId('l');
+    const root: TileNode = { type: 'leaf', id: leafId, sessionId };
+    set({
+      tileRoot: root,
+      activeTileId: leafId,
+      detailViewMode: DETAIL_VIEW_MODES.TILING,
+    });
+  },
+
+  exitTilingMode: () =>
+    set({
+      tileRoot: null,
+      activeTileId: null,
+      detailViewMode: DETAIL_VIEW_MODES.OVERVIEW_ONLY,
+      activitiesBySession: new Map(),
+      conversationBySession: new Map(),
+    }),
+
+  splitTile: (tileId, direction, sessionId, insertBefore) =>
+    set((state) => {
+      if (!state.tileRoot) return {};
+      const newRoot = splitNode(state.tileRoot, tileId, direction, sessionId, insertBefore);
+      return { tileRoot: newRoot };
+    }),
+
+  closeTile: (tileId) =>
+    set((state) => {
+      if (!state.tileRoot) return {};
+      const newRoot = removeNode(state.tileRoot, tileId);
+      if (newRoot === null) {
+        // Tree is empty — exit tiling mode
+        return {
+          tileRoot: null,
+          activeTileId: null,
+          detailViewMode: DETAIL_VIEW_MODES.OVERVIEW_ONLY,
+          activitiesBySession: new Map(),
+          conversationBySession: new Map(),
+        };
+      }
+      return {
+        tileRoot: newRoot,
+        // If the closed tile was active, clear active
+        activeTileId: state.activeTileId === tileId ? null : state.activeTileId,
+      };
+    }),
+
+  setTileSizes: (splitId, sizes) =>
+    set((state) => {
+      if (!state.tileRoot) return {};
+      return { tileRoot: updateSizes(state.tileRoot, splitId, sizes) };
+    }),
+
+  setTileSession: (tileId, sessionId) =>
+    set((state) => {
+      if (!state.tileRoot) return {};
+      return { tileRoot: setLeafSession(state.tileRoot, tileId, sessionId) };
+    }),
+
+  setActiveTile: (tileId) => set({ activeTileId: tileId }),
+
+  setSavedTileLayouts: (layouts) => set({ savedTileLayouts: layouts }),
+
+  restoreTileLayout: (layout) => {
+    set({
+      tileRoot: layout.root,
+      activeTileId: null,
+      detailViewMode: DETAIL_VIEW_MODES.TILING,
+      layoutOrientation:
+        layout.layoutOrientation === 'vertical'
+          ? LAYOUT_ORIENTATIONS.VERTICAL
+          : LAYOUT_ORIENTATIONS.HORIZONTAL,
+      // Clear per-session caches — new subscriptions will repopulate
+      activitiesBySession: new Map(),
+      conversationBySession: new Map(),
+    });
+  },
+
+  setSessionActivities: (sessionId, activities) =>
+    set((state) => {
+      const next = new Map(state.activitiesBySession);
+      next.set(sessionId, activities);
+      return { activitiesBySession: next };
+    }),
+
+  setSessionConversation: (sessionId, turns) =>
+    set((state) => {
+      const next = new Map(state.conversationBySession);
+      next.set(sessionId, turns);
+      return { conversationBySession: next };
+    }),
+
+  setDragToTileTarget: (target) => set({ dragToTileTarget: target }),
 }));
