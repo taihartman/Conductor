@@ -1,8 +1,10 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import type { SessionInfo, TokenSummary } from '@shared/types';
 import { OverviewCard } from './OverviewCard';
 import { KanbanBoard } from './KanbanBoard';
 import { useDragReorder } from '../hooks/useDragReorder';
+import type { DragReorderOptions } from '../hooks/useDragReorder';
+import { findDropTarget, edgeToDirection } from '../hooks/useDragToTile';
 import { useDashboardStore } from '../store/dashboardStore';
 import { OVERVIEW_MODES } from '@shared/sharedConstants';
 import type { OverviewMode } from '@shared/sharedConstants';
@@ -38,6 +40,11 @@ export function OverviewPanel({
 }: OverviewPanelProps): React.ReactElement {
   const overviewMode = useDashboardStore((s) => s.overviewMode);
   const setOverviewMode = useDashboardStore((s) => s.setOverviewMode);
+  const tileRoot = useDashboardStore((s) => s.tileRoot);
+  const enterTilingMode = useDashboardStore((s) => s.enterTilingMode);
+  const splitTile = useDashboardStore((s) => s.splitTile);
+  const setTileSession = useDashboardStore((s) => s.setTileSession);
+  const setDragToTileTarget = useDashboardStore((s) => s.setDragToTileTarget);
 
   // Build cost lookup
   const costBySession = new Map<string, number>();
@@ -48,6 +55,41 @@ export function OverviewPanel({
   // sessions already pre-filtered by ConductorDashboard (no sub-agents, no hidden artifacts)
   const topLevelIds = sessions.map((s) => s.sessionId);
 
+  const dragToTileOptions = useMemo<DragReorderOptions>(
+    () => ({
+      onDragMove: (clientX, clientY) => {
+        if (tileRoot) {
+          const target = findDropTarget(clientX, clientY);
+          setDragToTileTarget(target);
+        }
+      },
+      onDropOutside: (sessionId, clientX, clientY) => {
+        if (!tileRoot) {
+          // First tile — enter tiling mode
+          enterTilingMode(sessionId);
+          vscode.postMessage({ type: 'tile:subscribe', sessionId });
+        } else {
+          const target = findDropTarget(clientX, clientY);
+          if (target) {
+            const direction = edgeToDirection(target.edge);
+            if (direction) {
+              const insertBefore = target.edge === 'left' || target.edge === 'top';
+              splitTile(target.tileId, direction, sessionId, insertBefore);
+            } else {
+              // center — replace tile session
+              setTileSession(target.tileId, sessionId);
+            }
+            vscode.postMessage({ type: 'tile:subscribe', sessionId });
+          }
+        }
+      },
+      onDragEnd: () => {
+        setDragToTileTarget(null);
+      },
+    }),
+    [tileRoot, enterTilingMode, splitTile, setTileSession, setDragToTileTarget]
+  );
+
   const {
     gridRef,
     draggingSessionId,
@@ -56,7 +98,7 @@ export function OverviewPanel({
     handlePointerMove,
     handlePointerUp,
     handlePointerCancel,
-  } = useDragReorder(topLevelIds, onReorder);
+  } = useDragReorder(topLevelIds, onReorder, dragToTileOptions);
 
   return (
     <div
@@ -135,6 +177,14 @@ export function OverviewPanel({
           onHide={onHide}
           onUnhide={onUnhide}
           isHiddenTab={isHiddenTab}
+          boardRef={gridRef}
+          onDragHandlePointerDown={
+            isHiddenTab ? undefined : handlePointerDown
+          }
+          draggingSessionId={draggingSessionId}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
         />
       ) : (
         <div

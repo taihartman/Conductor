@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect } from 'react';
-import type { SessionInfo } from '@shared/types';
+import type { SessionInfo, ConversationTurn } from '@shared/types';
 import { SESSION_STATUSES } from '@shared/sharedConstants';
 import { useDashboardStore } from '../store/dashboardStore';
 import { SessionStatsBar } from './SessionStatsBar';
@@ -15,14 +15,28 @@ interface DetailPanelProps {
   session: SessionInfo;
   isExpanded: boolean;
   onToggleExpand: () => void;
+  /** When set, reads per-session data from Maps instead of flat arrays. */
+  tileSessionId?: string;
 }
+
+/** Stable empty array to prevent Zustand selector infinite re-render loops. */
+const EMPTY_CONVERSATION: ConversationTurn[] = [];
 
 export function DetailPanel({
   session,
   isExpanded,
   onToggleExpand,
+  tileSessionId,
 }: DetailPanelProps): React.ReactElement {
-  const conversation = useDashboardStore((s) => s.conversation);
+  const conversation = useDashboardStore(
+    useCallback(
+      (s) =>
+        tileSessionId
+          ? (s.conversationBySession.get(tileSessionId) ?? EMPTY_CONVERSATION)
+          : s.conversation,
+      [tileSessionId]
+    )
+  );
   const toolStats = useDashboardStore((s) => s.toolStats);
   const tokenSummaries = useDashboardStore((s) => s.tokenSummaries);
   const filteredSubAgentId = useDashboardStore((s) => s.filteredSubAgentId);
@@ -35,7 +49,6 @@ export function DetailPanel({
       s.viewModes.get(session.sessionId) ??
       (session.hasActivePty || isLaunchingSession(session) ? 'terminal' : 'conversation')
   );
-  const toggleViewMode = useDashboardStore((s) => s.toggleViewMode);
   const addPendingAdoption = useDashboardStore((s) => s.addPendingAdoption);
   const isAdopting = useDashboardStore((s) => s.pendingAdoptions.has(session.sessionId));
   const isNestedSession = useDashboardStore((s) => s.isNestedSession);
@@ -55,6 +68,16 @@ export function DetailPanel({
     return null;
   })();
 
+  const setViewMode = useDashboardStore((s) => s.setViewMode);
+  const viewModes = useDashboardStore((s) => s.viewModes);
+
+  // Auto-switch to terminal when a session gains an active PTY (e.g. after auto-reconnect)
+  useEffect(() => {
+    if (session.hasActivePty && session.launchedByConductor && !viewModes.has(session.sessionId)) {
+      setViewMode(session.sessionId, 'terminal');
+    }
+  }, [session.hasActivePty, session.launchedByConductor, session.sessionId, viewModes, setViewMode]);
+
   const isTerminalMode = viewMode === 'terminal';
 
   // Notify the extension when terminal view is shown/hidden (for keybinding `when` clause)
@@ -65,13 +88,18 @@ export function DetailPanel({
     };
   }, [isTerminalMode]);
 
+  const handleKillTerminal = useCallback(() => {
+    vscode.postMessage({ type: 'session:terminal-kill', sessionId: session.sessionId });
+  }, [session.sessionId]);
+
   const handleToggleView = useCallback(() => {
+    const targetMode = isTerminalMode ? 'conversation' : 'terminal';
     if (isTerminalMode) {
-      // Switching FROM terminal → always toggle locally
-      toggleViewMode(session.sessionId);
+      // Switching FROM terminal → always set locally
+      setViewMode(session.sessionId, targetMode);
     } else if (session.launchedByConductor) {
-      // Conductor-launched: toggle locally (terminal already exists)
-      toggleViewMode(session.sessionId);
+      // Conductor-launched: set locally (terminal already exists)
+      setViewMode(session.sessionId, targetMode);
     } else if (isNestedSession) {
       // Nested session: cannot adopt — SessionLauncher would reject it
       return;
@@ -80,7 +108,7 @@ export function DetailPanel({
       addPendingAdoption(session.sessionId);
       vscode.postMessage({ type: 'session:adopt', sessionId: session.sessionId });
     }
-  }, [toggleViewMode, addPendingAdoption, session.sessionId, session.launchedByConductor, isTerminalMode, isNestedSession]);
+  }, [setViewMode, addPendingAdoption, session.sessionId, session.launchedByConductor, isTerminalMode, isNestedSession]);
 
   // Get cost from token summaries
   const tokenSummary = tokenSummaries.find((t) => t.sessionId === session.sessionId);
@@ -116,6 +144,7 @@ export function DetailPanel({
         isAdopting={isAdopting}
         isAdoptDisabled={isNestedSession && !session.launchedByConductor && !isTerminalMode}
         onToggleView={handleToggleView}
+        onKillTerminal={session.hasActivePty ? handleKillTerminal : undefined}
       />
 
       <div

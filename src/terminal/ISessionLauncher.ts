@@ -55,6 +55,17 @@ export interface ISessionLauncher extends vscode.Disposable {
   /** Event fired when a launched session's process exits. */
   readonly onSessionExit: vscode.Event<{ sessionId: string; code: number | null }>;
 
+  /** Show the VS Code terminal tab for a launched session (focus the terminal panel). */
+  showTerminal(sessionId: string): void;
+
+  /**
+   * Force-kill the terminal and PTY process for a launched session.
+   * Fires onSessionExit and removes the session from internal state.
+   * @param sessionId - The session to kill
+   * @returns true if session was found and killed, false if not found
+   */
+  killSession(sessionId: string): boolean;
+
   /** Write raw input data to a launched session's stdin. */
   writeInput(sessionId: string, data: string): void;
 

@@ -146,6 +146,24 @@ export const WORKSPACE_STATE_KEYS = {
   OVERVIEW_MODE: 'conductor.overviewMode',
   /** Persisted per-column kanban sort orders. */
   KANBAN_SORT_ORDERS: 'conductor.kanbanSortOrders',
+  /** Persisted saved tile layout presets. */
+  SAVED_TILE_LAYOUTS: 'conductor.savedTileLayouts',
+} as const;
+
+/** Tile sizing constraints (px) for the tiling workspace. */
+export const TILE_SIZING = {
+  /** Minimum tile width — enough for terminal without drawer. */
+  MIN_WIDTH: 350,
+  /** Minimum tile height — header + stats bar + usable content area. */
+  MIN_HEIGHT: 200,
+  /** Width threshold (px) below which the analytics drawer auto-closes. */
+  AUTO_CLOSE_DRAWER_WIDTH: 500,
+  /** Width threshold (px) below which the ensemble sidebar auto-hides. */
+  AUTO_HIDE_ENSEMBLE_WIDTH: 450,
+  /** Edge threshold fraction for drag-to-split drop zone detection. */
+  DROP_EDGE_THRESHOLD: 0.25,
+  /** Debounce time (ms) for forceRelayout() broadcasts in tiling mode. */
+  RELAYOUT_DEBOUNCE_MS: 50,
 } as const;
 
 /** Timing values (ms) for session state transitions. */
@@ -180,6 +198,10 @@ export const TIMING = {
   TRANSFER_SETTLE_MS: 1_500,
   /** Maximum ancestor depth when walking the process tree to find a VS Code terminal. */
   PROCESS_TREE_MAX_DEPTH: 10,
+  /** Window (ms) after a Conductor resume during which new ungrouped sessions
+   * with matching cwd are suppressed as ghost continuations. 30s allows time
+   * for the slug record to be parsed and the ContinuationGrouper to merge. */
+  GHOST_CONTINUATION_WINDOW_MS: 30_000,
 } as const;
 
 /** Well-known record and tool names used for special-case handling. */
@@ -310,6 +332,8 @@ export {
   OVERVIEW_MODES,
   SORT_DIRECTIONS,
   TERMINAL_KEYS,
+  TILE_NODE_TYPES,
+  SPLIT_DIRECTIONS,
 } from './models/sharedConstants';
 export type {
   LaunchMode,

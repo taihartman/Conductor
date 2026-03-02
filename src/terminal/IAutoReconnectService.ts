@@ -7,4 +7,6 @@ import * as vscode from 'vscode';
 export interface IAutoReconnectService extends vscode.Disposable {
   /** Begin watching for initial session discovery, then auto-reconnect. */
   start(): void;
+  /** Fires with the session ID when a session is successfully reconnected. */
+  readonly onSessionReconnected: vscode.Event<string>;
 }

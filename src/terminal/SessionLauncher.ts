@@ -312,6 +312,56 @@ export class SessionLauncher implements ISessionLauncher {
   }
 
   /**
+   * Show the VS Code terminal tab for a launched session (focus the terminal panel).
+   * @param sessionId - Target session
+   */
+  showTerminal(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      console.log(`${LOG_PREFIX.SESSION_LAUNCHER} showTerminal: no session ${sessionId}`);
+      return;
+    }
+    session.terminal.show(false);
+  }
+
+  /**
+   * Force-kill the terminal and PTY process for a launched session.
+   * Fires onSessionExit and removes the session from internal state.
+   * @param sessionId - The session to kill
+   * @returns true if session was found and killed, false if not found
+   */
+  killSession(sessionId: string): boolean {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      console.log(`${LOG_PREFIX.SESSION_LAUNCHER} killSession: no session ${sessionId}`);
+      return false;
+    }
+    console.log(`${LOG_PREFIX.SESSION_LAUNCHER} Force-killing session ${sessionId}`);
+    this.outputChannel.appendLine(
+      `${LOG_PREFIX.SESSION_LAUNCHER} Force-killing session ${sessionId}`
+    );
+    try {
+      if (session.ptyProcess) {
+        session.ptyProcess.kill();
+      } else {
+        session.terminal.dispose();
+      }
+    } catch {
+      // Process may already be dead — cleanup still needed
+    }
+    session.pseudoTerminal?.exit(0);
+    session.pseudoTerminal?.dispose();
+    try {
+      session.closeListener.dispose();
+    } catch {
+      // Listener may already have been triggered by user closing the tab
+    }
+    this._onSessionExit.fire({ sessionId, code: null }); // fire BEFORE delete (matches pty exit handler)
+    this.sessions.delete(sessionId);
+    return true;
+  }
+
+  /**
    * Send raw input data to a launched session's stdin.
    * @param sessionId - Target session
    * @param data - Raw data to write
@@ -599,7 +649,6 @@ export class SessionLauncher implements ISessionLauncher {
         [CLAUDE_ENV.ENTRYPOINT]: '',
       },
     });
-    terminal.show(false);
 
     const closeListener = vscode.window.onDidCloseTerminal((t) => {
       if (t === terminal && this.sessions.has(sessionId)) {

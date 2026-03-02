@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { useDashboardStore } from '../../webview-ui/src/store/dashboardStore';
+import { useDashboardStore, DETAIL_VIEW_MODES } from '../../webview-ui/src/store/dashboardStore';
 
 /** Reset the Zustand store between tests. */
 function resetStore(): void {
@@ -277,5 +277,124 @@ describe('DashboardStore — setFullState focus-match guard', () => {
     expect(state.toolStats).toEqual(toolStats);
     expect(state.tokenSummaries).toEqual(tokenSummaries);
     expect(state.isNestedSession).toBe(true);
+  });
+});
+
+describe('DashboardStore — TILING mode guards', () => {
+  beforeEach(() => {
+    resetStore();
+  });
+
+  /** Put the store into tiling mode with a known tile tree. */
+  function setupTilingMode(): void {
+    useDashboardStore.getState().enterTilingMode('session-a');
+    // Split the root tile to add a second session
+    const { tileRoot } = useDashboardStore.getState();
+    if (tileRoot && tileRoot.type === 'leaf') {
+      useDashboardStore.getState().splitTile(tileRoot.id, 'horizontal', 'session-b');
+    }
+  }
+
+  describe('setFocusedSession', () => {
+    it('preserves TILING detailViewMode when in tiling mode', () => {
+      setupTilingMode();
+      useDashboardStore.getState().setFocusedSession('session-a');
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+    });
+
+    it('updates activeTileId when session is in a tile', () => {
+      setupTilingMode();
+      const { tileRoot } = useDashboardStore.getState();
+      expect(tileRoot).not.toBeNull();
+
+      useDashboardStore.getState().setFocusedSession('session-b');
+      const state = useDashboardStore.getState();
+      expect(state.detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+      // activeTileId should point to the tile containing session-b
+      expect(state.activeTileId).not.toBeNull();
+    });
+
+    it('leaves activeTileId unchanged when session is not in a tile', () => {
+      setupTilingMode();
+      const originalActiveTileId = useDashboardStore.getState().activeTileId;
+
+      useDashboardStore.getState().setFocusedSession('session-not-in-tile');
+      const state = useDashboardStore.getState();
+      expect(state.detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+      expect(state.activeTileId).toBe(originalActiveTileId);
+    });
+
+    it('preserves TILING when clearing focus (null)', () => {
+      setupTilingMode();
+      useDashboardStore.getState().setFocusedSession(null);
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+    });
+
+    it('still transitions to SPLIT in non-tiling mode (regression)', () => {
+      useDashboardStore.getState().setFocusedSession('session-a');
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.SPLIT);
+    });
+
+    it('still transitions to OVERVIEW_ONLY when unfocusing in non-tiling mode (regression)', () => {
+      useDashboardStore.getState().setFocusedSession('session-a');
+      useDashboardStore.getState().setFocusedSession(null);
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.OVERVIEW_ONLY);
+    });
+  });
+
+  describe('expandFocusedSession', () => {
+    it('preserves TILING mode (no-op for expand)', () => {
+      setupTilingMode();
+      useDashboardStore.getState().expandFocusedSession();
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+    });
+
+    it('still expands in non-tiling mode (regression)', () => {
+      useDashboardStore.getState().setFocusedSession('session-a');
+      useDashboardStore.getState().expandFocusedSession();
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.EXPANDED);
+    });
+  });
+
+  describe('clearFocus', () => {
+    it('preserves TILING mode', () => {
+      setupTilingMode();
+      useDashboardStore.getState().clearFocus();
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+    });
+
+    it('still transitions to OVERVIEW_ONLY in non-tiling mode (regression)', () => {
+      useDashboardStore.getState().setFocusedSession('session-a');
+      useDashboardStore.getState().clearFocus();
+      expect(useDashboardStore.getState().detailViewMode).toBe(DETAIL_VIEW_MODES.OVERVIEW_ONLY);
+    });
+  });
+
+  describe('setFullState pending-claim', () => {
+    it('preserves TILING mode when pending session is claimed', () => {
+      setupTilingMode();
+      useDashboardStore.getState().setPendingLaunchSession('launched-1');
+
+      useDashboardStore
+        .getState()
+        .setFullState([{ sessionId: 'launched-1' } as any], [], [], [], [], false, null);
+
+      const state = useDashboardStore.getState();
+      expect(state.focusedSessionId).toBe('launched-1');
+      expect(state.detailViewMode).toBe(DETAIL_VIEW_MODES.TILING);
+      expect(state.pendingLaunchSessionId).toBeNull();
+    });
+
+    it('still sets SPLIT when claiming in non-tiling mode (regression)', () => {
+      useDashboardStore.getState().setPendingLaunchSession('launched-1');
+
+      useDashboardStore
+        .getState()
+        .setFullState([{ sessionId: 'launched-1' } as any], [], [], [], [], false, null);
+
+      const state = useDashboardStore.getState();
+      expect(state.focusedSessionId).toBe('launched-1');
+      expect(state.detailViewMode).toBe(DETAIL_VIEW_MODES.SPLIT);
+    });
   });
 });

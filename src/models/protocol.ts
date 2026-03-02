@@ -150,4 +150,6 @@ export type WebviewToExtensionMessage =
   /** Webview persists saved tile layout presets. */
   | { type: 'tile-layouts:save'; layouts: SavedTileLayout[] }
   /** User wants to show the session's VS Code terminal tab (from context menu). */
-  | { type: 'session:show-terminal'; sessionId: string };
+  | { type: 'session:show-terminal'; sessionId: string }
+  /** User requests force-kill of a stuck terminal. */
+  | { type: 'session:terminal-kill'; sessionId: string };

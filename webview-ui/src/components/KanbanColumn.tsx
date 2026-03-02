@@ -19,6 +19,8 @@ interface KanbanColumnProps {
   isHiddenTab?: boolean;
   sortDirection: SortDirection;
   onToggleSort: () => void;
+  onDragHandlePointerDown?: (e: React.PointerEvent, sessionId: string) => void;
+  draggingSessionId?: string | null;
 }
 
 export function KanbanColumn({
@@ -35,6 +37,8 @@ export function KanbanColumn({
   isHiddenTab,
   sortDirection,
   onToggleSort,
+  onDragHandlePointerDown,
+  draggingSessionId,
 }: KanbanColumnProps): React.ReactElement {
   const isDesc = sortDirection === SORT_DIRECTIONS.DESC;
   const sortTooltip = isDesc ? UI_STRINGS.KANBAN_SORT_NEWEST : UI_STRINGS.KANBAN_SORT_OLDEST;
@@ -137,6 +141,12 @@ export function KanbanColumn({
               onHide={onHide}
               onUnhide={onUnhide}
               isHiddenTab={isHiddenTab}
+              onDragHandlePointerDown={
+                onDragHandlePointerDown
+                  ? (e: React.PointerEvent) => onDragHandlePointerDown(e, session.sessionId)
+                  : undefined
+              }
+              isDragging={draggingSessionId === session.sessionId}
             />
           ))
         )}

@@ -612,6 +612,14 @@ export class DashboardPanel implements vscode.Disposable {
         this.sessionLauncher.showTerminal(ptyId);
         break;
       }
+      case 'session:terminal-kill': {
+        const ptyId = this.resolvePtySessionId(message.sessionId);
+        const killed = this.sessionLauncher.killSession(ptyId);
+        console.log(`${LOG_PREFIX.PANEL} Force-killed terminal for session ${ptyId}: ${killed}`);
+        // onSessionExit fired by killSession triggers postFullState() via the existing
+        // session-exit subscription, which updates hasActivePty in the webview.
+        break;
+      }
     }
   }
 
@@ -1286,23 +1294,59 @@ export class DashboardPanel implements vscode.Disposable {
   /**
    * Handle the user clicking Resume on a history entry.
    *
-   * If the session is already active in the dashboard, focuses it instead of
-   * launching a duplicate. Otherwise, calls `sessionLauncher.resume()` with
-   * the working directory from the history store.
+   * Uses the full continuation group to detect if the session (or any of its
+   * continuations) is already active, preventing duplicate `claude --resume`
+   * spawns when the history ID is an older group member.
    *
    * @param sessionId - The session ID to resume from history
    */
   private handleHistoryResume(sessionId: string): void {
-    // Check if the session is already active in SessionTracker
+    // Resolve full continuation group — history ID may be an older member
+    const groupMembers = this.sessionTracker.getGroupMembers(sessionId);
     const state = this.sessionTracker.getState(null);
-    const activeSession = state.sessions.find((s) => s.sessionId === sessionId);
-    if (activeSession) {
-      console.log(`${LOG_PREFIX.PANEL} History resume → session ${sessionId} is active, focusing`);
-      this.focusSession(sessionId);
+
+    // Check if any group member is currently active in the tracker
+    const activeMemberId = groupMembers.find((id) =>
+      state.sessions.some((s) => s.sessionId === id)
+    );
+
+    if (activeMemberId) {
+      // Session (or its continuation) is already running
+      const launchedMember = this.findLaunchedGroupMember(sessionId);
+      if (launchedMember) {
+        // Already has a Conductor terminal — just focus it
+        console.log(
+          `${LOG_PREFIX.PANEL} History resume → ${sessionId} already has terminal, focusing`
+        );
+        this.focusSession(sessionId);
+        return;
+      }
+
+      // Active but no terminal — adopt it (link up the external terminal)
+      console.log(
+        `${LOG_PREFIX.PANEL} History resume → ${sessionId} active, no terminal, adopting`
+      );
+      this.adoptSession(sessionId, '')
+        .then(() => {
+          this.postMessage({
+            type: 'session:adopt-status',
+            sessionId,
+            status: 'adopted',
+          });
+        })
+        .catch((err: unknown) => {
+          console.log(`${LOG_PREFIX.PANEL} History resume adopt failed: ${err}`);
+          this.postMessage({
+            type: 'session:adopt-status',
+            sessionId,
+            status: 'error',
+            error: String(err),
+          });
+        });
       return;
     }
 
-    // Look up the stored CWD from the history store
+    // Session not active — launch it via resume
     const historyEntry = this.sessionHistoryStore.get(sessionId);
     const cwd = historyEntry?.cwd;
 
@@ -1310,7 +1354,6 @@ export class DashboardPanel implements vscode.Disposable {
     this.sessionLauncher
       .resume(sessionId, '', cwd)
       .then(() => {
-        // The resumed session shares the same sessionId, so register it
         this.conductorLaunchedIds.add(sessionId);
         this.pendingDiscoveryIds.add(sessionId);
         this.launchedSessionStore.save(sessionId, cwd).catch((err: unknown) => {

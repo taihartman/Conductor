@@ -399,6 +399,8 @@ export interface SessionInfo {
   lastActivityAt: string;
   /** Number of completed assistant turns. */
   turnCount: number;
+  /** Number of tool calls made during this session. */
+  toolCallCount: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalCacheReadTokens: number;
@@ -591,4 +593,42 @@ export interface TokenSummary {
   cacheCreationTokens: number;
   /** Estimated cost in USD, rounded to 4 decimal places. */
   estimatedCostUsd: number;
+}
+
+// ---------------------------------------------------------------------------
+// Tiling workspace types
+// ---------------------------------------------------------------------------
+
+/**
+ * Recursive binary tree representing tiled panel arrangement.
+ *
+ * @remarks
+ * Each node is either a **leaf** (renders a session) or a **split** (two children
+ * with a direction and size ratio). Used by the TilingWorkspace component to
+ * render nested react-resizable-panels.
+ */
+export type TileNode =
+  | { type: 'leaf'; id: string; sessionId: string | null }
+  | {
+      type: 'split';
+      id: string;
+      direction: 'horizontal' | 'vertical';
+      children: [TileNode, TileNode];
+      /** Percentage sizes for each child, e.g. [50, 50]. */
+      sizes: [number, number];
+    };
+
+/**
+ * Saved layout preset with session hints and orientation.
+ *
+ * @remarks
+ * Persisted to workspaceState via {@link TileLayoutStore}.
+ * When restoring, sessions that no longer exist get `sessionId: null`.
+ */
+export interface SavedTileLayout {
+  name: string;
+  root: TileNode;
+  layoutOrientation: 'horizontal' | 'vertical';
+  /** ISO 8601 timestamp of when the layout was saved. */
+  createdAt: string;
 }

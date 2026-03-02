@@ -61,6 +61,16 @@ export const COLORS = {
   USAGE_BAR_TODAY: 'rgba(0, 122, 204, 0.7)',
   /** Usage tab section heading underline. */
   USAGE_SECTION_BORDER: 'rgba(255, 255, 255, 0.08)',
+  /** Active tile border highlight (matches VS Code focus ring). */
+  TILE_ACTIVE_BORDER: 'var(--vscode-focusBorder, #007fd4)',
+  /** Drop zone edge highlight during drag-to-split. */
+  TILE_DROP_ZONE_ACTIVE: 'rgba(0, 122, 204, 0.25)',
+  /** Drop zone center highlight (replace session in tile). */
+  TILE_DROP_ZONE_CENTER: 'rgba(0, 122, 204, 0.15)',
+  /** Empty tile placeholder background. */
+  TILE_EMPTY_BG: 'rgba(255, 255, 255, 0.02)',
+  /** Empty tile placeholder border (dashed). */
+  TILE_EMPTY_BORDER: 'rgba(255, 255, 255, 0.1)',
 } as const;
 
 /** Terminal-specific configuration for xterm.js Canvas 2D renderer. */

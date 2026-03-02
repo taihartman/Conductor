@@ -188,6 +188,26 @@ export type SortDirection = (typeof SORT_DIRECTIONS)[keyof typeof SORT_DIRECTION
 // Terminal key escape sequences
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Tile node type discriminators
+// ---------------------------------------------------------------------------
+
+/** Tile node type discriminators for the tiling workspace binary tree. */
+export const TILE_NODE_TYPES = {
+  LEAF: 'leaf',
+  SPLIT: 'split',
+} as const;
+
+/** Split direction discriminators for tiling workspace splits. */
+export const SPLIT_DIRECTIONS = {
+  HORIZONTAL: 'horizontal',
+  VERTICAL: 'vertical',
+} as const;
+
+// ---------------------------------------------------------------------------
+// Terminal key escape sequences
+// ---------------------------------------------------------------------------
+
 /** Escape sequences for terminal key forwarding (used by both extension and webview). */
 export const TERMINAL_KEYS = {
   /** CSI u encoded Shift+Enter for multi-line input in Claude Code. */

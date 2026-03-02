@@ -38,12 +38,24 @@ function makeIndicatorStyle(left: string, top: string, height: string): React.CS
   };
 }
 
+export interface DragReorderOptions {
+  /** Called when the pointer is released outside the overview grid. */
+  onDropOutside?: (sessionId: string, clientX: number, clientY: number) => void;
+  /** Called on every pointer move while dragging (for drop zone tracking). */
+  onDragMove?: (clientX: number, clientY: number) => void;
+  /** Called when the drag ends (cleanup drop zone highlighting). */
+  onDragEnd?: () => void;
+}
+
 export function useDragReorder(
   sessionIds: string[],
-  onReorder: (sessionIds: string[]) => void
+  onReorder: (sessionIds: string[]) => void,
+  options?: DragReorderOptions
 ): DragReorderResult {
   const gridRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<DragState | null>(null);
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
   const [indicatorStyle, setIndicatorStyle] = useState<React.CSSProperties | null>(null);
 
@@ -209,32 +221,49 @@ export function useDragReorder(
       const idx = computeDropIndex(e.clientX, e.clientY);
       drag.dropIndex = idx;
       positionIndicator(idx);
+
+      optionsRef.current?.onDragMove?.(e.clientX, e.clientY);
     },
     [createGhost, computeDropIndex, positionIndicator]
   );
 
   const handlePointerUp = useCallback(
-    (_e: React.PointerEvent) => {
+    (e: React.PointerEvent) => {
       const drag = dragRef.current;
       if (!drag) return;
 
-      if (drag.active && drag.dropIndex >= 0) {
-        const dragIdx = sessionIds.indexOf(drag.sessionId);
-        if (dragIdx >= 0) {
-          const newIds = [...sessionIds];
-          newIds.splice(dragIdx, 1);
-          const insertAt = drag.dropIndex > dragIdx ? drag.dropIndex - 1 : drag.dropIndex;
-          newIds.splice(insertAt, 0, drag.sessionId);
-          onReorder(newIds);
+      if (drag.active) {
+        // Check if pointer is outside the overview grid
+        const gridRect = gridRef.current?.getBoundingClientRect();
+        const isOutsideGrid =
+          gridRect &&
+          (e.clientX < gridRect.left ||
+            e.clientX > gridRect.right ||
+            e.clientY < gridRect.top ||
+            e.clientY > gridRect.bottom);
+
+        if (isOutsideGrid && optionsRef.current?.onDropOutside) {
+          optionsRef.current.onDropOutside(drag.sessionId, e.clientX, e.clientY);
+        } else if (drag.dropIndex >= 0) {
+          const dragIdx = sessionIds.indexOf(drag.sessionId);
+          if (dragIdx >= 0) {
+            const newIds = [...sessionIds];
+            newIds.splice(dragIdx, 1);
+            const insertAt = drag.dropIndex > dragIdx ? drag.dropIndex - 1 : drag.dropIndex;
+            newIds.splice(insertAt, 0, drag.sessionId);
+            onReorder(newIds);
+          }
         }
       }
 
+      optionsRef.current?.onDragEnd?.();
       cleanup();
     },
     [sessionIds, onReorder, cleanup]
   );
 
   const handlePointerCancel = useCallback(() => {
+    optionsRef.current?.onDragEnd?.();
     cleanup();
   }, [cleanup]);
 

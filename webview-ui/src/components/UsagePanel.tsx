@@ -1,5 +1,5 @@
-import React from 'react';
-import type { StatsCache, StatsDailyActivity } from '@shared/types';
+import React, { useMemo } from 'react';
+import type { SessionInfo, StatsCache, StatsDailyActivity } from '@shared/types';
 import { UI_STRINGS } from '../config/strings';
 import { COLORS } from '../config/colors';
 import {
@@ -16,9 +16,10 @@ const DAILY_TREND_DAYS = 7;
 
 interface UsagePanelProps {
   stats: StatsCache | null;
+  sessions: SessionInfo[];
 }
 
-export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
+export function UsagePanel({ stats, sessions }: UsagePanelProps): React.ReactElement {
   if (!stats) {
     return (
       <div
@@ -41,7 +42,26 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
   }
 
   const todayStr = new Date().toISOString().slice(0, 10); // inline-ok: date format
-  const todayActivity = stats.dailyActivity.find((d) => d.date === todayStr);
+  const cachedToday = stats.dailyActivity.find((d) => d.date === todayStr);
+
+  // Compute live today stats from in-memory sessions
+  const liveToday = useMemo(() => {
+    const todaySessions = sessions.filter(
+      (s) => !s.isSubAgent && !s.isArtifact && s.startedAt.startsWith(todayStr),
+    );
+    return {
+      sessionCount: todaySessions.length,
+      messageCount: todaySessions.reduce((sum, s) => sum + s.turnCount, 0),
+      toolCallCount: todaySessions.reduce((sum, s) => sum + s.toolCallCount, 0),
+    };
+  }, [sessions, todayStr]);
+
+  // Merge cached and live: take the max of each counter so we never regress
+  const todayActivity = {
+    sessionCount: Math.max(cachedToday?.sessionCount ?? 0, liveToday.sessionCount),
+    messageCount: Math.max(cachedToday?.messageCount ?? 0, liveToday.messageCount),
+    toolCallCount: Math.max(cachedToday?.toolCallCount ?? 0, liveToday.toolCallCount),
+  };
 
   // Build a complete 7-day range ending today, filling gaps with zero-activity entries
   const today = new Date(todayStr + 'T00:00:00Z');
@@ -51,9 +71,12 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
     return d.toISOString().slice(0, 10); // inline-ok: date format
   });
   const activityMap = new Map(stats.dailyActivity.map((d) => [d.date, d]));
-  const recentDays = completeDays.map(
-    (date) => activityMap.get(date) ?? { date, messageCount: 0, sessionCount: 0, toolCallCount: 0 },
-  );
+  const recentDays = completeDays.map((date) => {
+    if (date === todayStr) {
+      return { date, ...todayActivity };
+    }
+    return activityMap.get(date) ?? { date, messageCount: 0, sessionCount: 0, toolCallCount: 0 };
+  });
 
   return (
     <div
@@ -75,9 +98,9 @@ export function UsagePanel({ stats }: UsagePanelProps): React.ReactElement {
       <section>
         <SectionHeading>{UI_STRINGS.USAGE_SECTION_TODAY}</SectionHeading>
         <div style={{ display: 'flex', gap: 'var(--spacing-md)', flexWrap: 'wrap' }}>
-          <StatCard label={UI_STRINGS.USAGE_LABEL_SESSIONS} value={todayActivity?.sessionCount ?? 0} />
-          <StatCard label={UI_STRINGS.USAGE_LABEL_MESSAGES} value={todayActivity?.messageCount ?? 0} />
-          <StatCard label={UI_STRINGS.USAGE_LABEL_TOOL_CALLS} value={todayActivity?.toolCallCount ?? 0} />
+          <StatCard label={UI_STRINGS.USAGE_LABEL_SESSIONS} value={todayActivity.sessionCount} />
+          <StatCard label={UI_STRINGS.USAGE_LABEL_MESSAGES} value={todayActivity.messageCount} />
+          <StatCard label={UI_STRINGS.USAGE_LABEL_TOOL_CALLS} value={todayActivity.toolCallCount} />
         </div>
       </section>
 

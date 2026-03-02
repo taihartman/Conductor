@@ -103,6 +103,7 @@ function createSession(id: string, status: string, cwd = '/workspace'): any {
     startedAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
     turnCount: 1,
+    toolCallCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,
@@ -500,5 +501,65 @@ describe('AutoReconnectService', () => {
     // Only tracked-s1 is reconnectable (unknown-s2 is not in the session map)
     expect(launcher.resume).toHaveBeenCalledTimes(1);
     expect(launcher.resume).toHaveBeenCalledWith('tracked-s1', '', '/workspace');
+  });
+
+  describe('onSessionReconnected event', () => {
+    it('fires with sessionId after successful resume', async () => {
+      launchedStore._set('s1');
+      tracker.getState.mockReturnValue({
+        sessions: [createSession('s1', 'working')],
+      });
+
+      const reconnectedIds: string[] = [];
+      service.onSessionReconnected((id) => reconnectedIds.push(id));
+
+      service.start();
+      await fireAndSettle(tracker);
+
+      expect(reconnectedIds).toEqual(['s1']);
+    });
+
+    it('does not fire for failed resume', async () => {
+      launchedStore._set('s1');
+      tracker.getState.mockReturnValue({
+        sessions: [createSession('s1', 'working')],
+      });
+      launcher.resume.mockRejectedValue(new Error('process not found'));
+
+      const reconnectedIds: string[] = [];
+      service.onSessionReconnected((id) => reconnectedIds.push(id));
+
+      service.start();
+      await fireAndSettle(tracker);
+
+      expect(reconnectedIds).toEqual([]);
+    });
+
+    it('fires for each successfully reconnected session', async () => {
+      launchedStore._set('s1');
+      launchedStore._set('s2');
+      launchedStore._set('s3');
+      tracker.getState.mockReturnValue({
+        sessions: [
+          createSession('s1', 'working'),
+          createSession('s2', 'working'),
+          createSession('s3', 'working'),
+        ],
+      });
+      launcher.resume.mockImplementation((id: string) => {
+        if (id === 's2') return Promise.reject(new Error('fail'));
+        return Promise.resolve();
+      });
+
+      const reconnectedIds: string[] = [];
+      service.onSessionReconnected((id) => reconnectedIds.push(id));
+
+      service.start();
+      await fireAndSettle(tracker);
+
+      expect(reconnectedIds).toContain('s1');
+      expect(reconnectedIds).toContain('s3');
+      expect(reconnectedIds).not.toContain('s2');
+    });
   });
 });

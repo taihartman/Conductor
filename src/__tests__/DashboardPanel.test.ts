@@ -1472,7 +1472,7 @@ describe('DashboardPanel history support', () => {
   });
 
   describe('history:resume', () => {
-    it('focuses active session instead of relaunching', () => {
+    it('focuses active session with terminal instead of relaunching', () => {
       tracker.getState.mockReturnValue({
         sessions: [{ sessionId: 'active-session', startedAt: '2026-01-01' }],
         activities: [],
@@ -1480,6 +1480,8 @@ describe('DashboardPanel history support', () => {
         toolStats: [],
         tokenSummaries: [],
       });
+      // Session has a Conductor terminal → focus path
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'active-session');
 
       sendMessage({ type: 'history:resume', sessionId: 'active-session' });
 
@@ -1511,6 +1513,87 @@ describe('DashboardPanel history support', () => {
       // Should call resume with the stored CWD
       await vi.waitFor(() => {
         expect(launcher.resume).toHaveBeenCalledWith('old-session', '', '/old/workspace');
+      });
+    });
+
+    it('focuses active group member when history ID is an older continuation member', () => {
+      // "session-v1" is the history ID, but "session-v2" is the active continuation
+      // getGroupMembers returns both members for any group ID
+      tracker.getGroupMembers.mockImplementation((id: string) => {
+        if (id === 'session-v1' || id === 'session-v2') {
+          return ['session-v1', 'session-v2'];
+        }
+        return [id];
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'session-v2', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      // session-v2 has a terminal
+      launcher.isLaunchedSession.mockImplementation((id: string) => id === 'session-v2');
+
+      sendMessage({ type: 'history:resume', sessionId: 'session-v1' });
+
+      // Should focus, NOT spawn a new resume
+      const focusMsg = lastPosted('session:focus-command');
+      expect(focusMsg).toBeDefined();
+      expect(launcher.resume).not.toHaveBeenCalled();
+    });
+
+    it('adopts when active group member exists but has no Conductor terminal', async () => {
+      // "session-v1" is in history; "session-v2" is active but running in external terminal
+      tracker.getGroupMembers.mockImplementation((id: string) => {
+        if (id === 'session-v1' || id === 'session-v2') {
+          return ['session-v1', 'session-v2'];
+        }
+        return [id];
+      });
+      tracker.getState.mockReturnValue({
+        sessions: [{ sessionId: 'session-v2', startedAt: '2026-01-01' }],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      // No Conductor terminal for any group member
+      launcher.isLaunchedSession.mockReturnValue(false);
+      // transfer() succeeds (used internally by adoptSession)
+      launcher.transfer.mockResolvedValue('session-v2');
+
+      sendMessage({ type: 'history:resume', sessionId: 'session-v1' });
+
+      // Should call transfer (adopt path), not resume
+      await vi.waitFor(() => {
+        expect(launcher.transfer).toHaveBeenCalled();
+      });
+      expect(launcher.resume).not.toHaveBeenCalled();
+    });
+
+    it('resumes inactive session by exact ID with no group matches', async () => {
+      // No group members active
+      tracker.getGroupMembers.mockReturnValue(['standalone-session']);
+      tracker.getState.mockReturnValue({
+        sessions: [],
+        activities: [],
+        conversation: [],
+        toolStats: [],
+        tokenSummaries: [],
+      });
+      historyStore.get.mockReturnValue({
+        sessionId: 'standalone-session',
+        cwd: '/workspace',
+        displayName: 'Test',
+        filePath: '/path/test.jsonl',
+        savedAt: Date.now(),
+      });
+
+      sendMessage({ type: 'history:resume', sessionId: 'standalone-session' });
+
+      await vi.waitFor(() => {
+        expect(launcher.resume).toHaveBeenCalledWith('standalone-session', '', '/workspace');
       });
     });
   });

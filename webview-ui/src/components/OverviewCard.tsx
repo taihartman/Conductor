@@ -20,6 +20,7 @@ import { useDashboardStore } from '../store/dashboardStore';
 import { useLongPress } from '../hooks/useLongPress';
 import { useInlineEdit } from '../hooks/useInlineEdit';
 import { getContextText } from '../utils/sessionContext';
+import { vscode } from '../vscode';
 
 interface OverviewCardProps {
   session: SessionInfo;
@@ -67,6 +68,13 @@ export function OverviewCard({
     onLongPress: (pos) => setContextMenu(pos),
   });
 
+  const showTerminalItem: ContextMenuItem[] = session.launchedByConductor
+    ? [{
+        label: UI_STRINGS.CONTEXT_MENU_SHOW_VS_TERMINAL,
+        action: () => vscode.postMessage({ type: 'session:show-terminal', sessionId: session.sessionId }),
+      }]
+    : [];
+
   const contextMenuItems: ContextMenuItem[] = isHiddenTab
     ? [
         ...(onUnhide
@@ -76,6 +84,15 @@ export function OverviewCard({
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
           action: () => startEditing(getSessionDisplayName(session)),
         },
+        ...showTerminalItem,
+        {
+          label: UI_STRINGS.CONTEXT_MENU_COPY_SESSION_ID,
+          action: () => navigator.clipboard.writeText(session.sessionId),
+        },
+        {
+          label: UI_STRINGS.CONTEXT_MENU_COPY_RESUME_CMD,
+          action: () => navigator.clipboard.writeText(`claude --resume ${session.sessionId}`),
+        },
       ]
     : [
         ...(onHide
@@ -84,6 +101,15 @@ export function OverviewCard({
         {
           label: UI_STRINGS.CONTEXT_MENU_RENAME,
           action: () => startEditing(getSessionDisplayName(session)),
+        },
+        ...showTerminalItem,
+        {
+          label: UI_STRINGS.CONTEXT_MENU_COPY_SESSION_ID,
+          action: () => navigator.clipboard.writeText(session.sessionId),
+        },
+        {
+          label: UI_STRINGS.CONTEXT_MENU_COPY_RESUME_CMD,
+          action: () => navigator.clipboard.writeText(`claude --resume ${session.sessionId}`),
         },
       ];
 

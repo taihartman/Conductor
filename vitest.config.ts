@@ -12,6 +12,8 @@ export default defineConfig({
     alias: {
       vscode: path.resolve(__dirname, 'src/__tests__/__mocks__/vscode.ts'),
       '@shared': path.resolve(__dirname, 'src/models'),
+      // Unify React resolution so vi.mock('react') intercepts webview-ui's imports too
+      react: path.resolve(__dirname, 'webview-ui/node_modules/react'),
     },
   },
 });

@@ -39,6 +39,9 @@ export class AutoReconnectService implements IAutoReconnectService {
   private settleTimer: ReturnType<typeof setTimeout> | undefined;
   private attempted = false;
 
+  private readonly _onSessionReconnected = new vscode.EventEmitter<string>();
+  public readonly onSessionReconnected: vscode.Event<string> = this._onSessionReconnected.event;
+
   constructor(
     sessionTracker: SessionTracker,
     sessionLauncher: ISessionLauncher,
@@ -210,6 +213,7 @@ export class AutoReconnectService implements IAutoReconnectService {
     try {
       await this.sessionLauncher.resume(sessionId, '', cwd);
       console.log(`${LOG_PREFIX.AUTO_RECONNECT} Resumed session ${sessionId}`);
+      this._onSessionReconnected.fire(sessionId);
     } catch (err) {
       console.log(`${LOG_PREFIX.AUTO_RECONNECT} Failed to resume ${sessionId}: ${err}`);
       throw err;
@@ -220,6 +224,7 @@ export class AutoReconnectService implements IAutoReconnectService {
   dispose(): void {
     this.cancelFallbackTimer();
     this.cancelSettleTimer();
+    this._onSessionReconnected.dispose();
     while (this.disposables.length) {
       const d = this.disposables.pop();
       d?.dispose();

@@ -367,6 +367,90 @@ describe('SessionLauncher', () => {
     });
   });
 
+  describe('killSession', () => {
+    it('returns false for unknown session ID', () => {
+      const result = launcher.killSession('unknown-session');
+      expect(result).toBe(false);
+    });
+
+    it('does not fire onSessionExit for unknown session ID', () => {
+      const exitEvents: { sessionId: string; code: number | null }[] = [];
+      launcher.onSessionExit((e) => exitEvents.push(e));
+
+      launcher.killSession('unknown-session');
+      expect(exitEvents).toHaveLength(0);
+    });
+
+    it('returns true for a launched session', async () => {
+      const sessionId = await launcher.launch('/test/workspace');
+      const result = launcher.killSession(sessionId);
+      expect(result).toBe(true);
+    });
+
+    it('fires onSessionExit with code null before removing session', async () => {
+      const exitEvents: { sessionId: string; code: number | null }[] = [];
+      let wasLaunchedDuringEvent = false;
+
+      launcher.onSessionExit((e) => {
+        exitEvents.push(e);
+        // Session should still be discoverable via isLaunchedSession at the time of event
+        // (callers may check this in the event handler — matches pty exit handler behavior)
+        wasLaunchedDuringEvent = launcher.isLaunchedSession(e.sessionId);
+      });
+
+      const sessionId = await launcher.launch('/test/workspace');
+      launcher.killSession(sessionId);
+
+      expect(exitEvents).toHaveLength(1);
+      expect(exitEvents[0]).toEqual({ sessionId, code: null });
+      // Event fires BEFORE delete — so wasLaunchedDuringEvent should be true
+      expect(wasLaunchedDuringEvent).toBe(true);
+    });
+
+    it('removes the session from isLaunchedSession after kill', async () => {
+      const sessionId = await launcher.launch('/test/workspace');
+      expect(launcher.isLaunchedSession(sessionId)).toBe(true);
+
+      launcher.killSession(sessionId);
+      expect(launcher.isLaunchedSession(sessionId)).toBe(false);
+    });
+
+    it('kills the pty process', async () => {
+      const sessionId = await launcher.launch('/test/workspace');
+      launcher.killSession(sessionId);
+      expect(mockPtyProcess.kill).toHaveBeenCalled();
+    });
+
+    it('returns false and is a no-op when called twice for the same session', async () => {
+      const sessionId = await launcher.launch('/test/workspace');
+      const first = launcher.killSession(sessionId);
+      const second = launcher.killSession(sessionId);
+      expect(first).toBe(true);
+      expect(second).toBe(false);
+    });
+
+    describe('fallback mode (no pty process)', () => {
+      beforeEach(() => {
+        launcher.dispose();
+        launcher = new SessionLauncher(outputChannel);
+        (launcher as any).nodePtyModule = null;
+      });
+
+      it('returns true and fires onSessionExit in shellPath mode', async () => {
+        const exitEvents: { sessionId: string; code: number | null }[] = [];
+        launcher.onSessionExit((e) => exitEvents.push(e));
+
+        const sessionId = await launcher.launch('/test/workspace');
+        const result = launcher.killSession(sessionId);
+
+        expect(result).toBe(true);
+        expect(exitEvents).toHaveLength(1);
+        expect(exitEvents[0]).toEqual({ sessionId, code: null });
+        expect(launcher.isLaunchedSession(sessionId)).toBe(false);
+      });
+    });
+  });
+
   describe('transfer', () => {
     it('falls back to resume when no process discovery provided', async () => {
       // Default launcher has no processDiscovery

@@ -102,6 +102,12 @@ interface KanbanBoardProps {
   onHide?: (sessionId: string) => void;
   onUnhide?: (sessionId: string) => void;
   isHiddenTab?: boolean;
+  onDragHandlePointerDown?: (e: React.PointerEvent, sessionId: string) => void;
+  draggingSessionId?: string | null;
+  boardRef?: React.RefObject<HTMLDivElement | null>;
+  onPointerMove?: (e: React.PointerEvent) => void;
+  onPointerUp?: (e: React.PointerEvent) => void;
+  onPointerCancel?: (e: React.PointerEvent) => void;
 }
 
 /**
@@ -139,8 +145,15 @@ export function KanbanBoard({
   onHide,
   onUnhide,
   isHiddenTab,
+  onDragHandlePointerDown,
+  draggingSessionId,
+  boardRef,
+  onPointerMove,
+  onPointerUp,
+  onPointerCancel,
 }: KanbanBoardProps): React.ReactElement {
-  const containerRef = useRef<HTMLDivElement>(null);
+  const internalRef = useRef<HTMLDivElement>(null);
+  const containerRef = boardRef ?? internalRef;
   const [isVertical, setIsVertical] = useState(false);
   const kanbanSortOrders = useDashboardStore((s) => s.kanbanSortOrders);
   const toggleKanbanSortOrder = useDashboardStore((s) => s.toggleKanbanSortOrder);
@@ -170,6 +183,9 @@ export function KanbanBoard({
   return (
     <div
       ref={containerRef}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={onPointerCancel}
       style={{
         flex: 1,
         display: 'flex',
@@ -201,6 +217,8 @@ export function KanbanBoard({
             onHide={onHide}
             onUnhide={onUnhide}
             isHiddenTab={isHiddenTab}
+            onDragHandlePointerDown={onDragHandlePointerDown}
+            draggingSessionId={draggingSessionId}
             sortDirection={kanbanSortOrders[col.key] ?? SORT_DIRECTIONS.DESC}
             onToggleSort={() => {
               toggleKanbanSortOrder(col.key);

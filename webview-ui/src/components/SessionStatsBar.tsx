@@ -22,6 +22,8 @@ interface SessionStatsBarProps {
   /** True when adoption is permanently blocked (e.g. nested Claude session). */
   isAdoptDisabled?: boolean;
   onToggleView?: () => void;
+  /** Called when the user clicks the force-kill terminal button. Only rendered in terminal mode. */
+  onKillTerminal?: () => void;
 }
 
 export function SessionStatsBar({
@@ -35,6 +37,7 @@ export function SessionStatsBar({
   isAdopting,
   isAdoptDisabled,
   onToggleView,
+  onKillTerminal,
 }: SessionStatsBarProps): React.ReactElement {
   const config = STATUS_CONFIG[session.status];
 
@@ -137,6 +140,26 @@ export function SessionStatsBar({
             : isTerminalMode
               ? UI_STRINGS.CONVERSATION_VIEW_TOGGLE
               : UI_STRINGS.TERMINAL_VIEW_TOGGLE}
+        </button>
+      )}
+
+      {isTerminalMode && onKillTerminal && (
+        <button
+          onClick={onKillTerminal}
+          title={UI_STRINGS.TERMINAL_FORCE_KILL_TOOLTIP}
+          style={{
+            padding: '2px 6px',
+            fontSize: '14px', // inline-ok
+            borderRadius: '3px',
+            border: '1px solid var(--border)',
+            backgroundColor: 'var(--bg-card)',
+            color: 'var(--fg-secondary)',
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            lineHeight: 1,
+          }}
+        >
+          {UI_STRINGS.TERMINAL_FORCE_KILL}
         </button>
       )}
 

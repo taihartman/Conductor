@@ -17,6 +17,7 @@ export const SHORTCUTS: ReadonlyArray<{ key: string; action: string }> = [
 
 /** Feature accordion entries: [title, description]. */
 export const FEATURES: ReadonlyArray<{ title: string; description: string }> = [
+  { title: UI_STRINGS.HELP_FEATURE_KEYBOARD_NAV, description: UI_STRINGS.HELP_DESC_KEYBOARD_NAV },
   { title: UI_STRINGS.HELP_FEATURE_KANBAN, description: UI_STRINGS.HELP_DESC_KANBAN },
   { title: UI_STRINGS.HELP_FEATURE_QUICK_PICK, description: UI_STRINGS.HELP_DESC_QUICK_PICK },
   { title: UI_STRINGS.HELP_FEATURE_SEARCH, description: UI_STRINGS.HELP_DESC_SEARCH },

@@ -24,6 +24,7 @@ import type { ILaunchedSessionStore } from '../persistence/ILaunchedSessionStore
 import type { ISessionHistoryStore } from '../persistence/ISessionHistoryStore';
 import type { ISessionHistoryService } from '../persistence/ISessionHistoryService';
 import type { IStatsCacheReader } from '../persistence/StatsCacheReader';
+import type { ITileLayoutStore } from '../persistence/ITileLayoutStore';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -46,6 +47,7 @@ export interface CreateOrShowDeps {
   sessionHistoryStore: ISessionHistoryStore;
   sessionHistoryService: ISessionHistoryService;
   statsCacheReader: IStatsCacheReader;
+  tileLayoutStore: ITileLayoutStore;
 }
 
 // ---------------------------------------------------------------------------
@@ -263,7 +265,8 @@ export async function quickPickSession(
     createOrShowDeps.launchedSessionStore,
     createOrShowDeps.sessionHistoryStore,
     createOrShowDeps.sessionHistoryService,
-    createOrShowDeps.statsCacheReader
+    createOrShowDeps.statsCacheReader,
+    createOrShowDeps.tileLayoutStore
   );
 
   panel.focusSession(selected.sessionId);

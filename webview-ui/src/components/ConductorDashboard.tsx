@@ -12,6 +12,7 @@ import { ZenModeScene } from './ZenModeScene';
 import { SettingsDrawer } from './SettingsDrawer';
 import { HistoryPanel } from './HistoryPanel';
 import { UsagePanel } from './UsagePanel';
+import { TilingWorkspace } from './TilingWorkspace';
 import { useZenNudge } from '../hooks/useZenNudge';
 import { useCompletionDetector } from '../hooks/useCompletionDetector';
 import { matchesSearchQuery } from '../utils/sessionFilter';
@@ -57,6 +58,8 @@ export function ConductorDashboard(): React.ReactElement {
   const historyEntries = useDashboardStore((s) => s.historyEntries);
   const usageData = useDashboardStore((s) => s.usageData);
   const pendingLaunchSessionId = useDashboardStore((s) => s.pendingLaunchSessionId);
+  const tileRoot = useDashboardStore((s) => s.tileRoot);
+  const exitTilingMode = useDashboardStore((s) => s.exitTilingMode);
 
   // Tab-based filtering: main sessions vs hidden sessions
   const mainSessions = sessions.filter((s) => !s.isSubAgent && !s.isHidden);
@@ -87,6 +90,7 @@ export function ConductorDashboard(): React.ReactElement {
       startedAt: new Date().toISOString(),
       lastActivityAt: new Date().toISOString(),
       turnCount: 0,
+      toolCallCount: 0,
       totalInputTokens: 0,
       totalOutputTokens: 0,
       totalCacheReadTokens: 0,
@@ -204,18 +208,20 @@ export function ConductorDashboard(): React.ReactElement {
     mascotButtonRef.current?.focus();
   }, [resetIdle, exitZenMode]);
 
-  // Escape key handler — zen mode takes priority
+  // Escape key handler — zen mode takes priority, then tiling, then collapse
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         if (zenModeActive) {
           handleZenExit();
+        } else if (detailViewMode === DETAIL_VIEW_MODES.TILING) {
+          exitTilingMode();
         } else {
           collapseFocusedSession();
         }
       }
     },
-    [zenModeActive, handleZenExit, collapseFocusedSession]
+    [zenModeActive, handleZenExit, detailViewMode, exitTilingMode, collapseFocusedSession]
   );
 
   useEffect(() => {
@@ -405,6 +411,56 @@ export function ConductorDashboard(): React.ReactElement {
             </Group>
           )}
 
+          {/* Tiling mode: overview + tiling workspace */}
+          {detailViewMode === DETAIL_VIEW_MODES.TILING && tileRoot && (activeTab === 'sessions' || activeTab === 'hidden') && (
+            <Group
+              orientation={layoutOrientation}
+              defaultLayout={panelLayout ?? PANEL_DEFAULT_LAYOUT}
+              onLayoutChanged={setPanelLayout}
+              style={{ flex: 1, overflow: 'hidden' }}
+            >
+              <Panel
+                id="overview"
+                minSize={PANEL_MIN_SIZE}
+                maxSize="40%"
+                style={{
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                  minWidth: 0,
+                }}
+              >
+                <OverviewPanel
+                  sessions={filteredSessions}
+                  tokenSummaries={tokenSummaries}
+                  focusedSessionId={focusedSessionId}
+                  onSessionClick={handleSessionClick}
+                  onSessionDoubleClick={handleSessionDoubleClick}
+                  onRename={handleRename}
+                  onReorder={handleReorder}
+                  searchQuery={searchQuery}
+                  onHide={handleHideSession}
+                  onUnhide={handleUnhideSession}
+                  isHiddenTab={activeTab === 'hidden'}
+                />
+              </Panel>
+              <Separator />
+              <Panel
+                id="detail"
+                style={{
+                  overflow: 'hidden',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  minHeight: 0,
+                  minWidth: 0,
+                }}
+              >
+                <TilingWorkspace root={tileRoot} />
+              </Panel>
+            </Group>
+          )}
+
           {/* Overview-only mode: split with decorative zen scene */}
           {detailViewMode === DETAIL_VIEW_MODES.OVERVIEW_ONLY && (activeTab === 'sessions' || activeTab === 'hidden') && (
             <Group
@@ -486,7 +542,7 @@ export function ConductorDashboard(): React.ReactElement {
                 minHeight: 0,
               }}
             >
-              <UsagePanel stats={usageData} />
+              <UsagePanel stats={usageData} sessions={sessions} />
             </div>
           )}
         </div>

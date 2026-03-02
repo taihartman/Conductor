@@ -16,6 +16,7 @@ function makeSession(overrides: Partial<SessionInfo>): SessionInfo {
     startedAt: '2026-02-25T12:00:00Z',
     lastActivityAt: '2026-02-25T12:00:00Z',
     turnCount: 0,
+    toolCallCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,

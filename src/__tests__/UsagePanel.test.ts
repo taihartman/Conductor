@@ -1,4 +1,20 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// UsagePanel uses React hooks (useMemo) which require a React rendering context.
+// Since vitest runs in Node (no DOM), stub useMemo as a passthrough.
+// The vitest.config.ts react alias ensures this mock intercepts the webview-ui's React.
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>();
+  return {
+    ...actual,
+    default: {
+      ...actual,
+      useMemo: (fn: () => unknown) => fn(),
+    },
+    useMemo: (fn: () => unknown) => fn(),
+  };
+});
+
 import { UsagePanel } from '../../webview-ui/src/components/UsagePanel';
 
 describe('UsagePanel', () => {
@@ -7,7 +23,7 @@ describe('UsagePanel', () => {
   });
 
   it('returns a React element when called with null stats', () => {
-    const element = UsagePanel({ stats: null });
+    const element = UsagePanel({ stats: null, sessions: [] });
     expect(element).toBeDefined();
     expect(element.type).toBe('div');
   });
@@ -39,7 +55,7 @@ describe('UsagePanel', () => {
       hourCounts: { '9': 5, '10': 8, '14': 3 },
     };
 
-    const element = UsagePanel({ stats });
+    const element = UsagePanel({ stats, sessions: [] });
     expect(element).toBeDefined();
     expect(element.type).toBe('div');
     // With populated stats, it should have children (sections)

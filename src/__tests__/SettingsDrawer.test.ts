@@ -4,8 +4,8 @@ import { UI_STRINGS } from '../../webview-ui/src/config/strings';
 
 describe('SettingsDrawer help data', () => {
   describe('SHORTCUTS array', () => {
-    it('contains exactly 9 shortcut entries', () => {
-      expect(SHORTCUTS).toHaveLength(9);
+    it('contains exactly 8 shortcut entries', () => {
+      expect(SHORTCUTS).toHaveLength(8);
     });
 
     it('every entry has a non-empty key and action', () => {
@@ -33,9 +33,9 @@ describe('SettingsDrawer help data', () => {
       }
     });
 
-    it('first feature is Kanban Board', () => {
-      expect(FEATURES[0].title).toBe(UI_STRINGS.HELP_FEATURE_KANBAN);
-      expect(FEATURES[0].description).toBe(UI_STRINGS.HELP_DESC_KANBAN);
+    it('first feature is Keyboard Navigation', () => {
+      expect(FEATURES[0].title).toBe(UI_STRINGS.HELP_FEATURE_KEYBOARD_NAV);
+      expect(FEATURES[0].description).toBe(UI_STRINGS.HELP_DESC_KEYBOARD_NAV);
     });
 
     it('last feature is Auto-Hide Patterns', () => {

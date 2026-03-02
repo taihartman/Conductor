@@ -35,6 +35,7 @@ function makeSession(overrides: Partial<SessionInfo> = {}): SessionInfo {
     startedAt: new Date().toISOString(),
     lastActivityAt: new Date().toISOString(),
     turnCount: 1,
+    toolCallCount: 0,
     totalInputTokens: 0,
     totalOutputTokens: 0,
     totalCacheReadTokens: 0,

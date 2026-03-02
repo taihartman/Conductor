@@ -26,6 +26,7 @@ function makeSession(
     startedAt: overrides.startedAt ?? '2026-01-01T00:00:00Z',
     lastActivityAt: overrides.lastActivityAt ?? '2026-01-01T00:10:00Z',
     turnCount: 5,
+    toolCallCount: 0,
     totalInputTokens: 1000,
     totalOutputTokens: 500,
     totalCacheReadTokens: 0,

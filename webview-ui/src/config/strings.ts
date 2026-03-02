@@ -109,6 +109,11 @@ export const UI_STRINGS = {
   CONTINUATION_DIVIDER: 'Context cleared — continuation {n} of {total}',
   /** Placeholder shown in TerminalView when no PTY data has been received yet. */
   TERMINAL_NO_PTY_DATA: 'Waiting for terminal output...',
+  /** Button label for force-closing a stuck terminal. */
+  TERMINAL_FORCE_KILL: '\u23f9',
+  /** Tooltip for the force-kill terminal button. */
+  TERMINAL_FORCE_KILL_TOOLTIP:
+    'Force-close this terminal (use when stuck on "Waiting for terminal output")',
   SETTINGS_DRAWER_TITLE: 'Settings',
   SETTINGS_GEAR_TOOLTIP: 'Open settings',
   SETTINGS_AUTO_HIDE_HEADING: 'Auto-hide Patterns',
